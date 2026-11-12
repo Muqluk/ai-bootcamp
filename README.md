@@ -6,7 +6,15 @@ A hands-on course on Claude Code and LLMs in 24 modules and 120 labs. Each modul
 
 ## Start here
 
-You need only Claude Code, working in a terminal. Copy this prompt, paste it into Claude Code and press Enter:
+1. Download **[ai-bootcamp.zip](https://github.com/Muqluk/ai-bootcamp/releases/latest/download/ai-bootcamp.zip)** (about 1.3 MB).
+2. Unzip it. You get a folder named `ai-bootcamp`.
+3. Open `ai-bootcamp/index.html` in your web browser.
+
+That is the whole course. It needs no internet connection, no git and no account. When the catalogue opens, start with any Foundation module. The labs ask for an empty folder named `bootcamp-labs` in your home folder to work in; make it when your first lab asks.
+
+### Or let Claude Code set it up
+
+If you have Claude Code working in a terminal, it can do all of that and make the labs folder too. Copy this prompt, paste it into Claude Code and press Enter:
 
 ```text
 Set up the AI/LLM Bootcamp course for me. I am new to this, so before each step tell me in one plain sentence what it does.
@@ -17,7 +25,7 @@ Set up the AI/LLM Bootcamp course for me. I am new to this, so before each step 
 Do not install anything and do not change any settings.
 ```
 
-Claude asks before it runs each command. Read what it is about to run, then allow it: checking what the model does is the habit this course teaches. When the catalogue opens in your browser, start with any Foundation module.
+Claude asks before it runs each command. Read what it is about to run, then allow it: checking what the model does is the habit this course teaches.
 
 ## Pick by level
 
@@ -41,7 +49,7 @@ Claude asks before it runs each command. Read what it is about to run, then allo
 
 ## Modules
 
-About 92 hours in all. Each module lists its prerequisites and opens with a recap of them, so you can start anywhere. The links open the pages once the course is on your computer (the prompt above does that); on GitHub they show the page source.
+About 92 hours in all. Each module lists its prerequisites and opens with a recap of them, so you can start anywhere. The links below show the page source on GitHub; to read the pages, download the course as above.
 
 | # | Module | Level | Time | What you learn |
 | ---: | --- | --- | ---: | --- |

@@ -4,7 +4,8 @@
 #   mNN-*.html (module fragments), diagrams/<hash>.svg (Mermaid sources pre-rendered by ../tools/render-diagrams.mjs).
 # Outputs:
 #   ../dist/index.html, ../dist/mNN-*.html   self-contained files that link to each other (committed; open index.html)
-#   ../out/ai-bootcamp.zip                    the dist folder, zipped, for handing on (git-ignored)
+#   ../out/ai-bootcamp.zip                    the download: dist pages plus the content licence in ai-bootcamp/
+#                                             (git-ignored; published as the GitHub Release asset ai-bootcamp.zip)
 # The build fails if a private-looking name, host, address or path is in the output; the full check is tools/public-scan.js.
 param()
 $site = $PSScriptRoot
@@ -133,6 +134,18 @@ if ($leaks) { throw "build: $leaks leak hit(s); nothing written" }
 foreach ($p in $pages) { [IO.File]::WriteAllText((Join-Path $dist $p.file), $p.html, $utf8) }
 $out = Join-Path (Split-Path -Parent $site) 'out'; [void](New-Item -ItemType Directory -Force $out)
 $zip = Join-Path $out 'ai-bootcamp.zip'
-Compress-Archive -Path (Join-Path $dist '*.html') -DestinationPath $zip -Force
+# The download: the built pages and the content licence under one ai-bootcamp/ folder, so it unzips and opens offline.
+# Entries are sorted and carry a fixed timestamp, so the same pages always give the same zip.
+Add-Type -AssemblyName System.IO.Compression
+$fs = [IO.File]::Open($zip, [IO.FileMode]::Create)
+$za = [IO.Compression.ZipArchive]::new($fs, [IO.Compression.ZipArchiveMode]::Create)
+$stamp = [DateTimeOffset]::new(2026, 1, 1, 0, 0, 0, [TimeSpan]::Zero)
+$entries = @($pages | ForEach-Object { $_.file } | Sort-Object { $_ } -Culture ([Globalization.CultureInfo]::InvariantCulture) | ForEach-Object { @{ name = $_; src = Join-Path $dist $_ } }) +
+  @{ name = 'LICENSE-CONTENT.md'; src = Join-Path (Split-Path -Parent $site) 'LICENSE-CONTENT.md' }
+foreach ($e in $entries) {
+  $ze = $za.CreateEntry("ai-bootcamp/$($e.name)", [IO.Compression.CompressionLevel]::Optimal); $ze.LastWriteTime = $stamp
+  $w = $ze.Open(); $b = [IO.File]::ReadAllBytes($e.src); $w.Write($b, 0, $b.Length); $w.Dispose()
+}
+$za.Dispose(); $fs.Dispose()
 $labs = ($modules | ForEach-Object { $_.labs } | Measure-Object -Sum).Sum
 "built: $done of $($modules.Count) modules, $labs labs, $($pages.Count) pages; zip $zip"
