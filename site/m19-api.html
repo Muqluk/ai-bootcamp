@@ -1,0 +1,832 @@
+<section class="module" id="m19" data-title="Claude API building blocks" data-sub="Tool use, structured outputs, vision, citations, batch, computer use" data-level="practitioner" data-prereq="m2" data-minutes="220">
+  <div class="overview">
+    <p class="lede">Claude Code is one program built on the Messages API, and everything it does is a request body and a response body. Once you can read those two, tool use, structured output, image and PDF input, citations, batch jobs and computer use stop being separate products and become fields on the same request. This module walks each building block from the official docs, runs the parts that need no API key through Claude Code itself, and gives you complete, validated request bodies for the parts that do.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Read a Messages API request and response field by field, including <code>stop_reason</code> and <code>usage</code>, and say which of them you control.</li>
+      <li>Write a tool definition, run the <code>tool_use</code> and <code>tool_result</code> loop by hand, and explain what <code>tool_choice</code> and parallel calls change.</li>
+      <li>Say where each kind of tool runs (your code, Anthropic's servers, or a desktop you provide) and what that implies for risk and for who writes the loop.</li>
+      <li>Pick between <code>output_config.format</code>, strict tool use and Claude Code's <code>--json-schema</code>, and name the schema features and limits that make a request fail.</li>
+      <li>Estimate the input tokens of an image or a PDF from its size before sending it, then check the estimate against a measured run.</li>
+      <li>Price a bulk job as synchronous, batch, and batch with caching, and retrieve batch results by <code>custom_id</code>.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key). The measured labs were run on 2.1.322 on a subscription login.</li>
+      <li>Windows PowerShell 5.1 or PowerShell 7. Lab 3 uses <code>System.Drawing</code>, which is part of Windows PowerShell 5.1.</li>
+      <li>An API key from the Claude Console for the "send it" steps of Lab 4. Those steps are marked <b>not run in this build</b>: the course machine has no API key, so the request bodies are validated as JSON and the loop is exercised against canned replies, but nothing was sent to the API. Every other step needs no key.</li>
+      <li>About $0.03 of Haiku usage at API list price for Labs 1, 2, 3 and 5, or the same share of a subscription's 5-hour window.</li>
+    </ul>
+    <div class="recap"><h3>If you skipped the prerequisites</h3><p>Everything the model reads is counted in tokens, and every token is billed. There are four kinds on the bill: input, output, cache write and cache read. The API reports them in a <code>usage</code> object on every response. Output tokens cost five times what input tokens cost on every current model. A cache read costs a small fraction of normal input (0.1 times on Haiku 5.5, 0.05 times on Opus 5.5 and Sonnet 5.5), and a cache write costs 1.25 times (5-minute tier) or 2 times (1-hour tier). Prices per million input and output tokens are $4 and $20 for Opus 5.5, $2 and $10 for Sonnet 5.5, and $0.10 and $0.50 for Haiku 5.5 on prompts up to 100,000 tokens. On a subscription the same tokens draw down a 5-hour window and weekly limits instead of producing a bill. The module Tokens and their price covers all of this in depth.</p></div>
+  </div>
+
+  <div class="lesson" id="m19-l1" data-title="The Messages API: one request, one response" data-minutes="20">
+    <h3>What you send</h3>
+    <p>The Messages API is a single HTTPS endpoint, <code>POST https://api.anthropic.com/v1/messages</code>. Every example in the docs sends three headers: <code>x-api-key</code> (your Console key), <code>anthropic-version</code> (the docs examples use <code>2026-10-21</code>) and <code>content-type: application/json</code>. The body carries the whole conversation, because the API keeps no state between calls: you always send the full history, and earlier assistant turns do not have to have come from Claude.</p>
+    <pre data-file="hello.json"><code>{
+  "model": "claude-opus-5-5",
+  "max_tokens": 1024,
+  "messages": [
+    {"role": "user", "content": "Hello, Claude"}
+  ]
+}</code></pre>
+    <p>That is the minimal body from the docs. The fields you will meet in this module:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>What it does</th><th>Where it is taught</th></tr>
+      <tr><td><code>model</code></td><td>Model id, for example <code>claude-haiku-5-5</code>, <code>claude-sonnet-5-5</code>, <code>claude-opus-5-5</code></td><td>This lesson</td></tr>
+      <tr><td><code>max_tokens</code></td><td>Upper bound on output tokens for this response. Required. A response cut off here has <code>stop_reason: "max_tokens"</code></td><td>This lesson</td></tr>
+      <tr><td><code>messages</code></td><td>The history: objects with <code>role</code> (<code>user</code> or <code>assistant</code>) and <code>content</code> (a string, or an array of typed blocks)</td><td>This lesson</td></tr>
+      <tr><td><code>system</code></td><td>Top-level system prompt; applies from the first turn</td><td>This lesson</td></tr>
+      <tr><td><code>tools</code>, <code>tool_choice</code></td><td>Tool definitions and the rule for using them</td><td>Lessons 2 and 3</td></tr>
+      <tr><td><code>output_config.format</code></td><td>A JSON schema the output must match</td><td>Lesson 4</td></tr>
+      <tr><td>Block types in <code>content</code>: <code>image</code>, <code>document</code></td><td>Image and PDF input, with optional <code>citations</code></td><td>Lesson 5</td></tr>
+    </table></div>
+    <p><code>content</code> as a plain string is shorthand for one text block. The moment you send an image, a document or a tool result, <code>content</code> becomes an array of blocks, and the order of blocks is part of the request: the docs recommend PDFs before the question text, and tool results before any text in the same user message.</p>
+    <h3>What comes back</h3>
+    <pre data-cap="output" data-file="response.json"><code>{
+  "id": "msg_01XFDUDYJgAACzvnptvVoYEL",
+  "type": "message",
+  "role": "assistant",
+  "content": [{"type": "text", "text": "Hello!"}],
+  "model": "claude-opus-5-5",
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {"input_tokens": 12, "output_tokens": 6}
+}</code></pre>
+    <p>This is the docs' own example output. <code>content</code> is an array of blocks again, and its types grow with the features you enable: <code>text</code>, <code>tool_use</code>, <code>server_tool_use</code> and others. <code>usage</code> carries the token counts that the module Tokens and their price taught you to price, with the cache fields added when caching is in play.</p>
+    <h3>stop_reason is a branch, not decoration</h3>
+    <p>Every successful response says why the model stopped. Your code must branch on it, because only one value means "the answer is complete".</p>
+    <div class="tablewrap"><table>
+      <tr><th><code>stop_reason</code></th><th>Meaning</th><th>What your code does</th></tr>
+      <tr><td><code>end_turn</code></td><td>Claude finished naturally</td><td>Use the response</td></tr>
+      <tr><td><code>max_tokens</code></td><td>Hit your <code>max_tokens</code></td><td>Raise it, or continue the response</td></tr>
+      <tr><td><code>stop_sequence</code></td><td>Emitted one of your <code>stop_sequences</code></td><td>Read <code>stop_sequence</code> to see which</td></tr>
+      <tr><td><code>tool_use</code></td><td>Claude is calling a tool</td><td>Run it, send back the result (Lesson 2)</td></tr>
+      <tr><td><code>pause_turn</code></td><td>A server-tool loop hit its iteration limit</td><td>Send the assistant content back to continue (Lesson 3)</td></tr>
+      <tr><td><code>refusal</code></td><td>Claude declined</td><td>Read <code>stop_details</code>; consider a fallback model. Status is still 200 and you are billed for the tokens</td></tr>
+      <tr><td><code>model_context_window_exceeded</code></td><td>The response filled the context window</td><td>Treat it as truncated</td></tr>
+    </table></div>
+    <h3>Parameters that no longer exist</h3>
+    <p>Two older habits fail on current models, and the docs say so plainly. <code>temperature</code>, <code>top_p</code> and <code>top_k</code> are not supported on Claude 4.7 and later models, or on any model starting with API version <code>2026-10-21</code>. Prefilling the assistant turn (starting Claude's answer for it) returns a 400 error on Claude 4.6 and later; the docs point to structured outputs or system prompt instructions instead. If you port a script written for an older model, these two are the first things to remove.</p>
+    <h3>Subscription and API key</h3>
+    <p>This endpoint is the API-key side of the house: a Console key, pay per token, no 5-hour window. A subscription login does not give you a key, so no request in this module can be sent from a subscription alone. Claude Code on a subscription makes the same calls on your behalf, which is why the measured labs here run through <code>claude -p</code> and read the same <code>usage</code> fields.</p>
+    <aside class="rule">Branch on <code>stop_reason</code> every time. A response with <code>max_tokens</code> or <code>refusal</code> looks like success until the downstream parser breaks.</aside>
+    <aside class="trap">Writing a loop that only checks for <code>tool_use</code> and treats everything else as the final answer. A <code>max_tokens</code> cut-off or a <code>pause_turn</code> then ships half an answer as if it were whole.</aside>
+  </div>
+
+  <div class="lesson" id="m19-l2" data-title="Tool use: definitions and the loop" data-minutes="25">
+    <h3>The contract</h3>
+    <p>The docs put it as a contract between your application and the model. You declare which operations exist and what shape their inputs take. Claude decides when and how to call them. The model never runs anything: it emits a structured request, your code runs the operation, and the result goes back into the conversation. If you are writing a regex to pull a decision out of free text, the docs say that decision should have been a tool call.</p>
+    <h3>Defining a tool</h3>
+    <p>A client tool is an entry in the top-level <code>tools</code> array with three required parts.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Rule from the docs</th></tr>
+      <tr><td><code>name</code></td><td>Must match <code>^[a-zA-Z0-9_-]{1,128}$</code></td></tr>
+      <tr><td><code>description</code></td><td>A detailed plain-text account of what the tool does, when to use it and how it behaves. This is the main lever on whether Claude calls it correctly</td></tr>
+      <tr><td><code>input_schema</code></td><td>A JSON Schema object for the parameters</td></tr>
+      <tr><td><code>input_examples</code> (optional)</td><td>Example input objects that show Claude how to use the tool</td></tr>
+    </table></div>
+    <pre data-file="tool.json"><code>{
+  "name": "get_ticket_count",
+  "description": "Return the number of open tickets in a support queue. Use it whenever the user asks how many tickets are open.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "queue": { "type": "string", "description": "Queue name, for example web-01" }
+    },
+    "required": ["queue"]
+  }
+}</code></pre>
+    <p>Other per-tool properties exist (<code>cache_control</code>, <code>strict</code>, <code>defer_loading</code>, <code>allowed_callers</code>); this module uses <code>strict</code> in Lesson 4. Tool definitions are input tokens, billed on every request, and the API adds its own tool-use system prompt on top: 286 tokens for Opus 5.5, Sonnet 5.5 and Haiku 5.5 when <code>tool_choice</code> is <code>auto</code> or <code>none</code>. A change to the tool list also invalidates the prompt cache that follows it, which is why stable tool lists matter.</p>
+    <h3>The loop</h3>
+    <p>Client tools make your application drive a loop. The canonical shape is a <code>while</code> keyed on <code>stop_reason</code>:</p>
+    <ol>
+      <li>Send the request with your <code>tools</code> and the user message.</li>
+      <li>Claude answers with <code>stop_reason: "tool_use"</code> and one or more <code>tool_use</code> blocks, each with an <code>id</code>, a <code>name</code> and an <code>input</code> object that matches the schema.</li>
+      <li>Run each tool and wrap its output in a <code>tool_result</code> block with the same id in <code>tool_use_id</code>.</li>
+      <li>Send a new request: the original messages, Claude's response as an assistant message, and a user message holding the <code>tool_result</code> blocks.</li>
+      <li>Repeat while <code>stop_reason</code> is <code>"tool_use"</code>. Any other value ends the loop.</li>
+    </ol>
+<figure class="diagram">
+<pre class="mermaid">sequenceDiagram
+  participant app as Your app
+  participant api as Messages API
+  participant fn as Your tool code
+  app->>api: tools and user message
+  api-->>app: stop_reason tool_use, tool_use block
+  app->>fn: run with the input
+  fn-->>app: output
+  app->>api: history plus tool_result block
+  api-->>app: stop_reason end_turn, final text
+</pre>
+  <figcaption>Each tool call is a full round trip; the model asks, your code runs, and the API only sees the result on the next request.</figcaption>
+</figure>
+    <pre data-cap="output" data-file="turn 1 response (docs shape)"><code>{
+  "stop_reason": "tool_use",
+  "content": [
+    {"type": "text", "text": "I'll check the current weather in San Francisco for you."},
+    {"type": "tool_use", "id": "toolu_01A09q90qw90lq917835lq9", "name": "get_weather",
+     "input": {"location": "San Francisco, CA", "unit": "celsius"}}
+  ]
+}</code></pre>
+    <pre data-file="turn 2 user message (docs shape)"><code>{
+  "role": "user",
+  "content": [
+    {"type": "tool_result", "tool_use_id": "toolu_01A09q90qw90lq917835lq9", "content": "15 degrees"}
+  ]
+}</code></pre>
+    <h3>Formatting rules that cause real errors</h3>
+    <ul>
+      <li>The <code>tool_result</code> message must come immediately after the assistant message that holds the <code>tool_use</code>. Nothing may sit between them.</li>
+      <li>In the user message, <code>tool_result</code> blocks come first; any text goes after all of them.</li>
+      <li><code>content</code> in a result can be a string or a list of blocks (<code>text</code>, <code>image</code>, <code>document</code>), so a tool can return a screenshot.</li>
+      <li>Set <code>"is_error": true</code> when the tool failed. Write a message that says what went wrong and what to try next, because Claude reads it and adapts. If an input is invalid, Claude retries two or three times with corrections before apologising.</li>
+      <li>The error text "tool_use ids were found without tool_result blocks immediately after" means you broke one of the first two rules.</li>
+    </ul>
+    <aside class="trap">Tool results routinely carry content you do not control: web pages, inbound mail, uploaded files, third-party APIs. The docs warn that this is the route for indirect prompt injection. Keep such content inside <code>tool_result</code> blocks, not in the system prompt or a plain user text block.</aside>
+    <h3>tool_choice</h3>
+    <div class="tablewrap"><table>
+      <tr><th><code>tool_choice</code></th><th>Effect</th></tr>
+      <tr><td><code>{"type": "auto"}</code></td><td>Default when tools are present. Claude decides whether to call any tool</td></tr>
+      <tr><td><code>{"type": "any"}</code></td><td>Claude must call one of the tools</td></tr>
+      <tr><td><code>{"type": "tool", "name": "..."}</code></td><td>Claude must call that tool</td></tr>
+      <tr><td><code>{"type": "none"}</code></td><td>No tool calls. Default when there are no tools</td></tr>
+    </table></div>
+    <p>Forcing has costs. With <code>any</code> or <code>tool</code> the API prefills the assistant turn, so there is no natural-language text before the <code>tool_use</code> block and no thinking block. A change to <code>tool_choice</code> invalidates the cached message blocks (tool definitions and system prompt stay cached). Check the model before relying on it: the docs say <code>any</code> and <code>tool</code> return a 400 error on Fable 5.2, Mythos 5.2, Opus 5.5, Sonnet 5.5, Fable 5.1 and Mythos 5.1, and on any model with manual extended thinking enabled. On those models use <code>auto</code> together with strict tool use (Lesson 4). Haiku 5.5 is not on that list.</p>
+    <aside class="rule">Return exactly one <code>tool_result</code> per <code>tool_use</code>, matched by id, tool results first. If the loop is stuck, print the message array before you blame the model.</aside>
+  </div>
+
+  <div class="lesson" id="m19-l3" data-title="Parallel calls, server tools and computer use" data-minutes="20">
+    <h3>Parallel tool calls</h3>
+    <p>Claude 4 and later models may return several <code>tool_use</code> blocks in one response when a request benefits from it. How you run them is your decision: concurrently, in order, or mixed. The API only asks that you return one <code>tool_result</code> for every <code>tool_use</code>, all together in the next user message, with every result before any text. If you skip a call because an earlier one failed, still return a result for it with <code>is_error: true</code> and a one-line reason such as "Not executed: the preceding write_file call failed."</p>
+    <p>Parallel use is on by default. To turn it off, set <code>disable_parallel_tool_use: true</code> inside the <code>tool_choice</code> object; it is not a top-level request parameter. With <code>auto</code>, Claude then calls at most one tool per response and can still answer in plain text. Run read-only calls in parallel for latency and run calls with side effects or ordering needs one at a time.</p>
+    <h3>Where a tool runs</h3>
+    <p>The primary axis the docs use is where the code executes, and it decides what you are responsible for.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Kind</th><th>Examples</th><th>Who runs it</th><th>You build a <code>tool_result</code>?</th></tr>
+      <tr><td>User-defined client tool</td><td>Your <code>get_ticket_count</code></td><td>Your code</td><td>Yes</td></tr>
+      <tr><td>Anthropic-schema client tool</td><td><code>memory</code>, <code>bash</code>, <code>text_editor</code>, <code>computer</code></td><td>Your code; Anthropic publishes the schema, trained into the model</td><td>Yes</td></tr>
+      <tr><td>Server tool</td><td><code>web_search</code>, <code>web_fetch</code>, <code>code_execution</code>, <code>tool_search</code></td><td>Anthropic's servers</td><td>No</td></tr>
+    </table></div>
+<figure class="diagram">
+<pre class="mermaid">flowchart TD
+  a["Claude emits a tool call"] --> b{"Where does it run?"}
+  b -- "your tool" --> c["tool_use block"]:::info
+  b -- "bash, editor, computer" --> c
+  b -- "web_search, code_execution" --> d["server_tool_use block"]:::alt
+  c --> e["Your app runs it, sends tool_result"]:::hot
+  d --> f["Anthropic runs it, result is in the same response"]:::good
+</pre>
+  <figcaption>Client tools always come back to your app for a result; server tools finish inside the API call.</figcaption>
+</figure>
+    <p>A server tool appears as a <code>server_tool_use</code> block whose id starts with <code>srvtoolu_</code>, followed by its result block in the same assistant turn. You enable the tool and read the answer. Two cases bring you back into the loop. A server-side loop has an iteration limit, and when it is hit the response has <code>stop_reason: "pause_turn"</code>: send the conversation back, including the paused response, and the model continues. And when Claude calls a server tool and a client tool in the same group, the response comes back as <code>tool_use</code> with the server call still unresolved; the API runs it after you return the client results, and that user message must hold only <code>tool_result</code> blocks. Server tools can add usage-based charges on top of tokens, for example web search per search.</p>
+    <h3>Computer use</h3>
+    <p>Computer use is an Anthropic-schema client tool. One entry, <code>{"type": "computer_toolset_20260801"}</code>, in <code>tools</code> gives Claude 17 member tools such as <code>screenshot</code>, <code>left_click</code>, <code>type</code> and <code>zoom</code>. Your application executes every call in an environment you control. The toolset needs no beta header, and the docs list Fable 5.2, Mythos 5.2, Opus 5.5, Sonnet 5.5 and Haiku 5.5 as supporting it.</p>
+    <p>The loop is the one you already know, with two additions. Member calls arrive as <code>tool_use</code> blocks whose <code>name</code> is the member and which carry <code>"toolset_name": "computer"</code>, and your <code>tool_result</code> must echo the same <code>toolset_name</code> or it is rejected. A turn can hold several member calls (a batch action); run them in order and stop at the first failure. Return an image for <code>screenshot</code> and <code>zoom</code>, and a short text such as <code>OK</code> for the rest. Claude takes a screenshot, decides, clicks or types, takes another, and continues until it answers in text.</p>
+    <p>What it costs: declaring the default toolset adds about 4,500 input tokens to a request, and every screenshot or zoom returned in a result is billed as image input (Lesson 5 gives the formula). What it risks: the docs call the risks distinct from other API features and ask for four precautions.</p>
+    <ol>
+      <li>Use a dedicated virtual machine or container with minimal privileges.</li>
+      <li>Keep sensitive data, such as account logins, out of the model's reach.</li>
+      <li>Limit internet access to an allowlist of domains.</li>
+      <li>Have a human confirm decisions with real-world consequences, and anything needing affirmative consent such as accepting cookies, completing financial transactions or agreeing to terms of service.</li>
+    </ol>
+    <p>The docs add that Claude sometimes follows instructions found in screenshots or web pages even when they conflict with yours, that Anthropic runs classifiers over what the tool returns to flag likely injections, and that the precautions above remain necessary even with those classifiers. Limitations listed include latency too slow for human-paced interaction, unreliable coordinates, and weaker reliability on niche or multi-application tasks. The reference implementation runs inside a Docker container. For tasks that stay inside web pages, the docs point to the separate browser use tool instead.</p>
+    <aside class="rule">Treat a computer use agent as an untrusted user at a keyboard: give it a disposable machine, an allowlist and a human approval step before anything irreversible.</aside>
+    <aside class="trap">Giving the agent your own logged-in desktop because it is convenient. Any text on screen, including a web page or an image, can carry instructions the model may follow.</aside>
+  </div>
+
+  <div class="lesson" id="m19-l4" data-title="Structured outputs and strict tool use" data-minutes="20">
+    <h3>Two features, one grammar</h3>
+    <p>The docs describe structured outputs as two complementary features that you can use alone or together. <b>JSON outputs</b> constrain the reply text to a schema through <code>output_config.format</code>. <b>Strict tool use</b> sets <code>strict: true</code> on a tool definition so the tool name and inputs are guaranteed to match the schema. Both compile the schema into a grammar and constrain sampling, so a schema violation cannot be sampled. That replaces the retry-and-reparse loop most scripts grow around "answer as JSON".</p>
+    <pre data-file="body-structured.json (from the docs)"><code>{
+  "model": "claude-opus-5-5",
+  "max_tokens": 1024,
+  "messages": [
+    {"role": "user", "content": "Extract the key information from this email: John Smith (john@example.com) is interested in our Enterprise plan and wants to schedule a demo for next Tuesday at 2pm."}
+  ],
+  "output_config": {
+    "format": {
+      "type": "json_schema",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string"},
+          "email": {"type": "string"},
+          "plan_interest": {"type": "string"},
+          "demo_requested": {"type": "boolean"}
+        },
+        "required": ["name", "email", "plan_interest", "demo_requested"],
+        "additionalProperties": false
+      }
+    }
+  }
+}</code></pre>
+    <p>The reply is JSON in the response's text content block. The older <code>output_format</code> parameter and its beta header are deprecated; the current field is <code>output_config.format</code>, and structured outputs are available on every model.</p>
+    <h3>What a schema may contain</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Supported</th><th>Not supported (400 error)</th></tr>
+      <tr><td>object, array, string, integer, number, boolean, null</td><td>Recursive schemas</td></tr>
+      <tr><td><code>enum</code> (strings, numbers, booleans, nulls), <code>const</code></td><td>Numeric constraints: <code>minimum</code>, <code>maximum</code>, <code>multipleOf</code></td></tr>
+      <tr><td><code>anyOf</code>, <code>allOf</code> (not with <code>$ref</code>), <code>$ref</code> and <code>definitions</code> (not external)</td><td>String constraints: <code>minLength</code>, <code>maxLength</code></td></tr>
+      <tr><td><code>required</code>; <code>additionalProperties</code> set to <code>false</code></td><td><code>additionalProperties</code> set to anything but <code>false</code></td></tr>
+      <tr><td>String formats such as <code>date-time</code>, <code>date</code>, <code>email</code>, <code>uri</code>, <code>uuid</code></td><td>Array constraints beyond <code>minItems</code> of 0 or 1</td></tr>
+      <tr><td>Simple regex in <code>pattern</code></td><td>Regex backreferences, lookahead or lookbehind, <code>\b</code></td></tr>
+    </table></div>
+    <p>Complexity is limited too. Per request: 20 strict tools, 24 optional parameters in total across all strict schemas and JSON output schemas, and 16 parameters that use union types (<code>anyOf</code> or type arrays such as <code>["string","null"]</code>). Beyond those explicit limits the API can still reject a schema with "Schema is too complex for compilation", and compilation has a 180-second timeout. The docs' advice, in order: make only critical tools strict, make parameters required, flatten nesting, split the request.</p>
+    <h3>Costs and side effects</h3>
+    <ul>
+      <li>The first request with a new schema pays extra latency for grammar compilation. Compiled grammars are cached for 24 hours from last use; renaming a property is cheap, but changing the structure, or the tool set when both features are on, recompiles.</li>
+      <li>Claude receives an extra system prompt describing the format, so input tokens run slightly higher, and changing <code>output_config.format</code> invalidates the prompt cache for that conversation.</li>
+      <li>Required properties are emitted before optional ones, whatever order the schema lists them.</li>
+    </ul>
+    <h3>When the output still does not match</h3>
+    <p>The guarantee has documented exceptions. A <code>refusal</code> returns 200 with <code>stop_reason: "refusal"</code> and text that may not match the schema. A <code>max_tokens</code> cut-off leaves JSON incomplete, so retry with a larger limit. String <code>enum</code> and <code>const</code> values can come back with different capitalisation than the schema, with no error, so compare case-insensitively and do not define values that differ only in case. A property that asks for the model's step-by-step reasoning can trigger a <code>reasoning_extraction</code> refusal; ask for a short explanation instead.</p>
+    <p>Two incompatibilities matter when you combine features: citations (Lesson 5) return a 400 if enabled together with <code>output_config.format</code>, and prefilling is not supported with JSON outputs. Structured outputs do work with batch processing, token counting and streaming.</p>
+    <h3>Strict tools and forced calls</h3>
+    <p>With <code>strict: true</code> a tool's inputs always match its <code>input_schema</code>, which removes the missing-parameter and wrong-type retries from Lesson 2. On models that support forced tool use, <code>tool_choice: {"type": "any"}</code> plus strict tools guarantees both that a tool is called and that its input is valid. On Opus 5.5 and Sonnet 5.5, where forcing returns 400, use <code>auto</code> with strict tools.</p>
+    <h3>The Claude Code route: --json-schema</h3>
+    <p>In headless mode, <code>claude -p</code> takes <code>--json-schema</code> together with <code>--output-format json</code>. The parsed object arrives in the <code>structured_output</code> field of the result; the <code>result</code> field holds the same data as text. If a run ends without valid structured output, for example because Claude declined, the field is absent, so test for it before use. The page says the flag exits with an error when the value is not a valid JSON Schema, and that the <code>format</code> keyword is accepted but treated as an annotation, not enforced. Lab 1 runs this.</p>
+    <p>The Claude Code docs describe the flag and the field and do not say that the API's grammar-constrained decoding is what enforces it, so do not carry the API-level guarantee over without testing. In Lab 1 a one-shot extraction took 3 turns, so budget for more than one model call.</p>
+    <aside class="rule">Ask for a schema, not for "JSON". A prompt that says "answer as JSON" gets a code fence and keys of the model's choosing; a schema gets your keys.</aside>
+    <aside class="trap">Putting <code>minimum</code>, <code>maxLength</code> or a recursive <code>$ref</code> in a schema because the validator you use elsewhere accepts it. The API rejects it with a 400, and the fix is to validate those limits in your code after parsing.</aside>
+  </div>
+
+  <div class="lesson" id="m19-l5" data-title="Images, PDFs, files and citations" data-minutes="25">
+    <h3>Sending an image</h3>
+    <p>An image is a content block with a <code>source</code> of type <code>base64</code>, <code>url</code> or <code>file</code> (a Files API id). Supported media types are JPEG, PNG, GIF and WebP; an animated GIF contributes its first frame only.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Limit</th><th>Value</th></tr>
+      <tr><td>Images per request on the API</td><td class="num">100 on models with a 200k-token window; 600 on all others</td></tr>
+      <tr><td>Largest image</td><td>8000 x 8000 px; 10 MB base64-encoded on the Claude API</td></tr>
+      <tr><td>Whole request</td><td>128 MB on the first-party API; with more than 20 images a stricter per-image size applies</td></tr>
+    </table></div>
+    <h3>What an image costs</h3>
+    <p>Claude processes an image in 28 x 28 pixel patches, each one a visual token. An image costs <code>ceil(width / 28) x ceil(height / 28)</code> tokens, until it exceeds the model's native resolution and is downscaled first. Claude 4.7 and later models are high resolution (long edge up to 2,576 px, at most 4,784 tokens); other models cap at 1,568 px and 1,568 tokens.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Image size</th><th>Standard tier tokens</th><th>High-resolution tier tokens</th></tr>
+      <tr><td>200 x 200</td><td class="num">64</td><td class="num">64</td></tr>
+      <tr><td>1000 x 1000</td><td class="num">1,296</td><td class="num">1,296</td></tr>
+      <tr><td>1920 x 1080</td><td class="num">1,560</td><td class="num">2,691</td></tr>
+      <tr><td>3840 x 2160</td><td class="num">1,560</td><td class="num">4,784</td></tr>
+    </table></div>
+    <p>The cost is billed as input at the model's rate, so the 3840 x 2160 image costs about $19 per thousand images at Opus 5.5's $4 per million, as the docs compute. High-resolution tiers can use roughly three times the tokens of a standard tier for the same image, so downsample when fine detail does not matter. The docs' accuracy cautions are worth repeating to a platform audience: text must be legible after any resize, counting is approximate, coordinates are approximate, and Claude cannot tell you whether an image is AI-generated. Lab 3 measures three sizes through Claude Code.</p>
+    <h3>PDFs</h3>
+    <p>A <code>document</code> block carries a PDF the same three ways (base64, URL, file id). Each page is converted to an image and its text is extracted and supplied alongside, so Claude sees both the words and the charts or diagrams. Requirements: a standard PDF with no password or encryption; 600 pages per request (100 when the request's context window is under 1M tokens); 128 MB per request. The docs give the text cost as typically 1,500 to 3,000 tokens per page depending on density, with no extra PDF fee, plus the image cost of each page from the table above. Put the PDF before your question, and use the token counting endpoint for an estimate on your real documents. A dense PDF can fill the context window before the page limit.</p>
+    <h3>The Files API</h3>
+    <p>Uploading the same 40-page PDF with every request is wasteful. The Files API stores it once: <code>POST /v1/files</code> with a multipart <code>file</code> field returns an <code>id</code>, and you reference it as <code>{"type": "file", "file_id": "..."}</code> in the <code>source</code> of a <code>document</code> or <code>image</code> block.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Fact</th><th>Value from the docs</th></tr>
+      <tr><td>Maximum file size</td><td>500 MB each; 1 TB total per organization</td></tr>
+      <tr><td>Operations that cost money</td><td>None: upload, download, list, metadata and delete are free. File content used in a Messages request is billed as input tokens</td></tr>
+      <tr><td>Expiry</td><td>Optional <code>expires_in_seconds</code> at upload, between 3,600 and 7,776,000 (1 hour to 90 days); otherwise the file lives until you delete it</td></tr>
+      <tr><td>Scope</td><td>The workspace, not the user. Any key with access to the workspace can use any file in it</td></tr>
+      <tr><td>Downloads</td><td>Only files created by skills or the code execution tool. Files you upload are not downloadable</td></tr>
+      <tr><td>Data retention</td><td>Not eligible for zero data retention; files are kept until deleted or expired</td></tr>
+    </table></div>
+    <aside class="trap">Treating the Files API as per-user storage. The docs warn that files are visible to the whole workspace; a multitenant product needs a workspace per tenant, and a file id from an untrusted source must never be accepted.</aside>
+    <h3>Citations</h3>
+    <p>Citations make the model point at the exact passage behind each claim. You set <code>"citations": {"enabled": true}</code> on a <code>document</code> block; citations must be enabled on all documents in a request or none. Plain text and PDF documents are chunked into sentences automatically. A custom content document uses your own blocks as-is, which is the way to control granularity for bullet points, transcripts or retrieval chunks.</p>
+    <p>The response then splits into several text blocks, and a block that makes a claim carries a <code>citations</code> array. The location type depends on the source.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Source</th><th>Citation type</th><th>Position fields</th><th>Indexing</th></tr>
+      <tr><td>Plain text</td><td><code>char_location</code></td><td><code>start_char_index</code>, <code>end_char_index</code></td><td>0-based, end exclusive</td></tr>
+      <tr><td>PDF</td><td><code>page_location</code></td><td><code>start_page_number</code>, <code>end_page_number</code></td><td>1-based, end exclusive</td></tr>
+      <tr><td>Custom content</td><td><code>content_block_location</code></td><td><code>start_block_index</code>, <code>end_block_index</code></td><td>0-based, end exclusive</td></tr>
+    </table></div>
+    <p>Every citation also has <code>cited_text</code>, <code>document_index</code> (0-based over all document blocks in the request) and <code>document_title</code>. The <code>cited_text</code> field does not count toward output tokens, and does not count as input when you send it back in a later turn. Enabling citations adds a small amount of input from the system prompt additions and chunking. Only text is citable; images inside PDFs cannot be cited. Citations conflict with structured outputs (400 error). To get a citation per extracted value, ask for one line per field and parse the lines; a prompt such as "return only a JSON object" gets few or no citations.</p>
+    <aside class="rule">Cost an image or page before you send hundreds: compute the patches, or count tokens once on a sample and multiply.</aside>
+  </div>
+
+  <div class="lesson" id="m19-l6" data-title="Batch, caching and what Claude Code already does" data-minutes="20">
+    <h3>The Message Batches API</h3>
+    <p>A batch is a list of Messages requests processed asynchronously at 50 percent of the standard price, both input and output. You post <code>{"requests": [...]}</code> to <code>/v1/messages/batches</code>. Each element has a <code>custom_id</code> (1 to 64 characters, letters, digits, hyphen and underscore, unique) and a <code>params</code> object that is a normal Messages body.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Model</th><th>Standard in / out per MTok</th><th>Batch in / out per MTok</th></tr>
+      <tr><td>Opus 5.5</td><td class="num">$4 / $20</td><td class="num">$2 / $10</td></tr>
+      <tr><td>Sonnet 5.5</td><td class="num">$2 / $10</td><td class="num">$1 / $5</td></tr>
+      <tr><td>Haiku 5.5, prompts up to 100k tokens</td><td class="num">$0.10 / $0.50</td><td class="num">$0.05 / $0.25</td></tr>
+      <tr><td>Haiku 5.5, prompts over 100k tokens</td><td class="num">$0.50 / $2.50</td><td class="num">$0.25 / $1.25</td></tr>
+    </table></div>
+    <div class="tablewrap"><table>
+      <tr><th>Limit or behaviour</th><th>Value from the docs</th></tr>
+      <tr><td>Size of one batch</td><td>100,000 requests or 256 MB, whichever comes first</td></tr>
+      <tr><td>Time to finish</td><td>Most batches finish in under 1 hour. A batch expires if it is not done in 24 hours</td></tr>
+      <tr><td>Results kept</td><td>29 days from creation; after that the batch is visible, the results are not</td></tr>
+      <tr><td>Scope</td><td>The workspace</td></tr>
+      <tr><td>Not allowed in <code>params</code></td><td><code>stream: true</code>, <code>speed</code>, <code>fallbacks</code>, <code>max_tokens: 0</code></td></tr>
+      <tr><td>Allowed</td><td>Vision, tool use including server tools, system messages, multi-turn, extended thinking, structured outputs, citations</td></tr>
+      <tr><td>Spend limit</td><td>Batches can go slightly over a workspace spend limit</td></tr>
+    </table></div>
+<figure class="diagram">
+<pre class="mermaid">stateDiagram-v2
+  [*] --> in_progress: "POST /v1/messages/batches"
+  in_progress --> ended: "all requests finished"
+  in_progress --> canceling: "cancel endpoint"
+  canceling --> ended: "cancellation finalised"
+  in_progress --> ended: "24 hours pass"
+  ended --> [*]: "results for 29 days"
+</pre>
+  <figcaption>You poll <code>processing_status</code> until it reads <code>ended</code>; a canceled batch still ends and may hold partial results.</figcaption>
+</figure>
+    <h3>Retrieving results</h3>
+    <p>Poll <code>GET /v1/messages/batches/{id}</code> and read <code>processing_status</code> and <code>request_counts</code>. When it is <code>ended</code>, the <code>results_url</code> field points at a <code>.jsonl</code> file, one result per line; <code>GET /v1/messages/batches/{id}/results</code> streams it, and the docs recommend streaming over downloading everything. Each line has the <code>custom_id</code> and a <code>result</code> whose <code>type</code> is one of four values.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Result type</th><th>Meaning and billing</th></tr>
+      <tr><td><code>succeeded</code></td><td>Holds the full message. Billed</td></tr>
+      <tr><td><code>errored</code></td><td>Invalid request or server error; no message. Fix the body for a validation error, retry directly for a server error. Not billed</td></tr>
+      <tr><td><code>canceled</code></td><td>Cancelled before it was sent to the model. Not billed</td></tr>
+      <tr><td><code>expired</code></td><td>The 24 hours ran out first. Not billed</td></tr>
+    </table></div>
+    <aside class="trap">Reading the results file in order. Results can come back in any order. Match every line to its request by <code>custom_id</code>, and use meaningful ids such as a ticket number. Validation of <code>params</code> also happens asynchronously, so errors show up in the results, not at creation: send one request through the synchronous endpoint first.</aside>
+    <h3>Where prompt caching fits</h3>
+    <p>Batch and caching discounts stack, but cache hits inside a batch are best-effort because requests run concurrently and in any order; the docs quote hit rates anywhere from 30 to 98 percent. To raise them: put identical <code>cache_control</code> blocks on every request, keep requests flowing, share as much prefix as you can, and use the 1-hour cache tier, because a batch can take longer than the 5-minute default lifetime. Remember the prefix order is tools, then system, then messages; a stable tool list and system prompt at the front of every request is what makes a shared cache possible. The module Cutting cost covers the price arithmetic.</p>
+    <h3>Which of this Claude Code already uses for you</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Building block</th><th>In Claude Code</th><th>Evidence</th></tr>
+      <tr><td>Messages API and tool use</td><td>Every built-in tool call (Read, Bash, Glob and the rest) is a client tool in this loop</td><td>Lab 2 shows the <code>tool_use</code> and <code>tool_result</code> pair</td></tr>
+      <tr><td>Prompt caching</td><td>On; 1-hour tier on a subscription for the main conversation</td><td>Cache fields in the <code>usage</code> block (Lab 5)</td></tr>
+      <tr><td>Images and PDFs</td><td>The Read tool returns images as visual content, resized and recompressed to fit the model's limits. PDFs are read whole when short, and in ranges of up to 20 pages when over 10 pages</td><td>Tools reference; Lab 3</td></tr>
+      <tr><td>Structured output</td><td><code>--json-schema</code> with <code>--output-format json</code></td><td>Lab 1</td></tr>
+      <tr><td>Batch API, citations, Files API, computer use</td><td>No flag or tool for them appears in the CLI reference or the tools reference read for this module</td><td>Absence in those two pages only; check the current docs before you rely on it</td></tr>
+    </table></div>
+    <p>The practical split: use Claude Code and <code>claude -p</code> when the work is an agent in a repository on a flat-fee plan or with an API key, and go to the raw API when you need one of the blocks Claude Code does not expose, a high-volume job at the batch discount, or a product that serves other people.</p>
+    <aside class="rule">Work that no one is waiting for belongs in a batch, and work that shares a prefix belongs behind a cache breakpoint. Doing both is allowed.</aside>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m19-lab1" data-title="Get a typed extraction from Claude Code with --json-schema" data-minutes="15">
+      <p class="goal">You run one extraction with a schema and one without, and end up holding a parsed object in <code>structured_output</code> next to a code-fenced guess.</p>
+      <ol class="steps">
+        <li><p>Make the folder and define the text and the schema. Every headless run in this module carries <code>--setting-sources project</code> and <code>--strict-mcp-config</code>: those two flags keep your personal settings, hooks and MCP servers out of the measurement. Windows PowerShell 5.1 strips the double quotes from an argument passed to a native program, so the schema is passed with each <code>"</code> escaped as <code>\"</code>. Without the escape, <code>claude</code> exits 1 with <code>--json-schema is not valid JSON: JSON Parse error: Expected '}'</code>.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m19/lab1 | Out-Null
+Set-Location {{LAB}}/m19/lab1
+$text = 'Order 4417 from acme: 3 units of widget-A at 12.50 each and 1 unit of widget-B at 40, ship to the web-01 depot, delivery wanted by 2026-12-01.'
+$schema = '{"type":"object","properties":{"order_id":{"type":"string"},"customer":{"type":"string"},"items":{"type":"array","items":{"type":"object","properties":{"sku":{"type":"string"},"qty":{"type":"integer"},"unit_price":{"type":"number"}},"required":["sku","qty","unit_price"],"additionalProperties":false}},"deliver_by":{"type":"string"}},"required":["order_id","customer","items","deliver_by"],"additionalProperties":false}'
+$arg = $schema.Replace('"', '\"')</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Run the extraction with the schema and look at the result object.</p>
+          <pre><code>$raw = claude -p "Extract the order from this text: $text" --model haiku --setting-sources project --strict-mcp-config --output-format json --json-schema $arg --max-turns 3
+$r = $raw | ConvertFrom-Json
+$r.structured_output | ConvertTo-Json -Depth 6
+"is_error=$($r.is_error) subtype=$($r.subtype) num_turns=$($r.num_turns)"</code></pre>
+          <p class="expect"><b>Expected:</b> a parsed object with <code>order_id</code> "4417", <code>customer</code> "acme", two <code>items</code> (<code>widget-A</code>, qty 3, unit price 12.5; <code>widget-B</code>, qty 1, unit price 40) and <code>deliver_by</code> "2026-12-01", exactly the keys of your schema. Then <code>is_error=False subtype=success num_turns=3</code>. The result object also has a <code>result</code> field holding the same data as a JSON string. The key list of the whole object includes <code>structured_output</code>, <code>usage</code>, <code>total_cost_usd</code> and <code>stop_reason</code>.</p></li>
+        <li><p>Ask for the same thing without a schema, "as JSON".</p>
+          <pre><code>$raw2 = claude -p "Extract the order from this text and answer as JSON: $text" --model haiku --setting-sources project --strict-mcp-config --output-format json --max-turns 1
+$r2 = $raw2 | ConvertFrom-Json
+"has structured_output: $($null -ne $r2.structured_output)"
+$r2.result</code></pre>
+          <p class="expect"><b>Expected:</b> <code>has structured_output: False</code>. The <code>result</code> text is JSON inside a Markdown code fence, and the keys are the model's choice: in the measured run <code>line_items</code>, <code>product</code>, <code>quantity</code>, <code>ship_to</code> and <code>requested_delivery_date</code>, none of which are in your schema. Your keys will differ from run to run; they will not match yours.</p></li>
+        <li><p>Pass something that is not JSON and check the exit code.</p>
+          <pre><code>claude -p "hi" --model haiku --setting-sources project --strict-mcp-config --output-format json --json-schema 'not-json'
+"exit: $LASTEXITCODE"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>Error: --json-schema is not valid JSON: JSON Parse error: Unexpected identifier "not"</code> and <code>exit: 1</code>. No model call is made.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Which field would your script read, and what must it test first? <b>Answer:</b> <code>structured_output</code>; the docs say the field is absent when the run ends without valid structured output, so test that it exists before use.</p>
+        <p>What did the unschema'd run do that would break a parser? <b>Answer:</b> It wrapped the JSON in a code fence and used keys you never asked for.</p>
+        <p>Why is the 3-turn count worth noting? <b>Answer:</b> A one-shot extraction was more than one model call, so a schema run costs more input tokens than a plain single-turn call.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m19-lab2" data-title="Watch a tool-use loop in stream-json" data-minutes="15">
+      <p class="goal">You make Claude Code read a file with its Read tool and print each step of the loop, ending with proof that the <code>tool_use</code> and <code>tool_result</code> ids match.</p>
+      <ol class="steps">
+        <li><p>Make a small file and run headless with the Read tool allowed and <code>stream-json</code> output. <code>stream-json</code> needs <code>--verbose</code>.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m19/lab2 | Out-Null
+Set-Location {{LAB}}/m19/lab2
+Set-Content -Encoding utf8 notes.txt "deploy window: Tuesday 02:00`nowner: ops`nrollback: snapshot first`nstatus: approved"
+claude -p "Read notes.txt and tell me who owns the deploy. Answer in one short sentence." --model haiku --setting-sources project --strict-mcp-config --allowedTools Read --output-format stream-json --verbose --max-turns 4 | Set-Content -Encoding utf8 stream.jsonl
+"exit: $LASTEXITCODE"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>exit: 0</code>. The file <code>stream.jsonl</code> has one JSON event per line.</p></li>
+        <li><p>Print the loop: one line per content block.</p>
+          <pre><code>$n = 0
+foreach ($line in Get-Content stream.jsonl) {
+  $e = $line | ConvertFrom-Json
+  $n++
+  if ($e.type -eq 'system') { Write-Host "$n system/$($e.subtype) tools=$($e.tools.Count) model=$($e.model)"; continue }
+  if ($e.type -eq 'result') { Write-Host "$n result subtype=$($e.subtype) turns=$($e.num_turns) stop=$($e.stop_reason) cost=$($e.total_cost_usd)"; continue }
+  foreach ($b in $e.message.content) {
+    switch ($b.type) {
+      'text'        { Write-Host "$n $($e.type) text: $($b.text)" }
+      'tool_use'    { Write-Host "$n $($e.type) tool_use id=$($b.id) name=$($b.name) input=$($b.input | ConvertTo-Json -Compress)" }
+      'tool_result' { $c = [string]$b.content; Write-Host "$n $($e.type) tool_result for=$($b.tool_use_id) content=$($c.Substring(0,[Math]::Min(60,$c.Length)).Replace("`n",' | '))" }
+    }
+  }
+}</code></pre>
+          <p class="expect"><b>Expected:</b> five lines with a gap in the numbering. Line 1 is <code>system/init</code> with about 26 tools and model <code>claude-haiku-5-5</code>. Line 2 is an <code>assistant tool_use</code> with a <code>toolu_</code> id, <code>name=Read</code> and a <code>file_path</code> input. Line 4 is a <code>user tool_result</code> whose <code>for=</code> is the same <code>toolu_</code> id, with content starting <code>1&#9;deploy window: Tuesday 02:00 | 2&#9;owner: ops</code> (the Read tool numbers lines). Line 5 is an <code>assistant</code> text such as "The deploy is owned by ops". Line 6 is <code>result subtype=success turns=2 stop=end_turn</code> with a cost near $0.002. Line 3 is a <code>rate_limit_event</code> that the script skips.</p></li>
+        <li><p>Confirm the two ids match.</p>
+          <pre><code>$ev = Get-Content stream.jsonl | ForEach-Object { $_ | ConvertFrom-Json }
+$use = $ev | Where-Object { $_.type -eq 'assistant' } | ForEach-Object { $_.message.content } | Where-Object type -eq 'tool_use'
+$res = $ev | Where-Object { $_.type -eq 'user' } | ForEach-Object { $_.message.content } | Where-Object type -eq 'tool_result'
+"tool_use id   : $($use.id)"
+"tool_result id: $($res.tool_use_id)"
+"match: $($use.id -eq $res.tool_use_id)"</code></pre>
+          <p class="expect"><b>Expected:</b> two identical <code>toolu_</code> ids and <code>match: True</code>. That is the pairing from Lesson 2, produced by Claude Code's own loop.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>How many model calls did the loop make, and why? <b>Answer:</b> Two: the first ended in a <code>tool_use</code> (the Read), the second saw the result and answered. The result line says <code>turns=2</code>.</p>
+        <p>The <code>assistant</code> events in the stream showed a null <code>stop_reason</code>; where did <code>end_turn</code> appear? <b>Answer:</b> On the final <code>result</code> event. The streamed assistant messages are snapshots, so the loop is visible in the block order and ids rather than in a per-message <code>stop_reason</code>.</p>
+        <p>Which side ran the Read? <b>Answer:</b> Claude Code, on your machine. The API only ever saw the <code>tool_result</code> text.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m19-lab3" data-title="Measure what an image and a PDF cost through the Read tool" data-minutes="20">
+      <p class="goal">You generate three images and two PDFs, read each through Claude Code, and end up with a table of the extra input tokens each one adds, to compare with the patch formula.</p>
+      <ol class="steps">
+        <li><p>Generate the sample files. The PDFs are hand-built one-page and five-page text documents; the images are white canvases of 280 x 280, 1000 x 1000 and 3000 x 2000 pixels with the words "ACME 4417".</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m19/lab3 | Out-Null
+Set-Location {{LAB}}/m19/lab3
+Add-Type -AssemblyName System.Drawing
+function New-Png($path, $w, $h) {
+  $bmp = New-Object System.Drawing.Bitmap $w, $h
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  $g.Clear([System.Drawing.Color]::White)
+  $font = New-Object System.Drawing.Font 'Arial', ([Math]::Max(12, [int]($h / 8)))
+  $g.DrawString('ACME 4417', $font, [System.Drawing.Brushes]::Black, [single]($w / 20), [single]($h / 3))
+  $g.Dispose(); $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
+}
+function New-Pdf($path, $pages) {
+  $objs = New-Object System.Collections.ArrayList
+  $kids = (1..$pages | ForEach-Object { "$(3 + 2 * ($_ - 1)) 0 R" }) -join ' '
+  [void]$objs.Add('&lt;&lt; /Type /Catalog /Pages 2 0 R &gt;&gt;')
+  [void]$objs.Add("&lt;&lt; /Type /Pages /Kids [$kids] /Count $pages &gt;&gt;")
+  for ($p = 1; $p -le $pages; $p++) {
+    $cid = 4 + 2 * ($p - 1)
+    [void]$objs.Add("&lt;&lt; /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents $cid 0 R /Resources &lt;&lt; /Font &lt;&lt; /F1 &lt;&lt; /Type /Font /Subtype /Type1 /BaseFont /Helvetica &gt;&gt; &gt;&gt; &gt;&gt; &gt;&gt;")
+    $s = "BT /F1 14 Tf 72 700 Td (Page $p of $pages. Change ticket 4417 for acme.) Tj 0 -24 Td (Owner: ops. Window: Tuesday 02:00. Rollback: snapshot first.) Tj ET"
+    [void]$objs.Add("&lt;&lt; /Length $($s.Length) &gt;&gt;`nstream`n$s`nendstream")
+  }
+  $sb = New-Object System.Text.StringBuilder
+  [void]$sb.Append("%PDF-1.4`n")
+  $off = @()
+  for ($i = 0; $i -lt $objs.Count; $i++) { $off += $sb.Length; [void]$sb.Append("$($i + 1) 0 obj`n$($objs[$i])`nendobj`n") }
+  $xref = $sb.Length
+  [void]$sb.Append("xref`n0 $($objs.Count + 1)`n0000000000 65535 f `n")
+  foreach ($o in $off) { [void]$sb.Append(('{0:D10} 00000 n ' -f $o) + "`n") }
+  [void]$sb.Append("trailer`n&lt;&lt; /Size $($objs.Count + 1) /Root 1 0 R &gt;&gt;`nstartxref`n$xref`n%%EOF`n")
+  [IO.File]::WriteAllText($path, $sb.ToString(), [Text.Encoding]::ASCII)
+}
+New-Png "$PWD\small.png" 280 280
+New-Png "$PWD\medium.png" 1000 1000
+New-Png "$PWD\large.png" 3000 2000
+New-Pdf "$PWD\one.pdf" 1
+New-Pdf "$PWD\five.pdf" 5
+Set-Content -Encoding utf8 control.txt 'ACME 4417'
+Get-ChildItem | Select-Object Name, Length</code></pre>
+          <p class="expect"><b>Expected:</b> six files: <code>control.txt</code> (14 bytes), <code>five.pdf</code> (about 2.3 KB), <code>large.png</code> (about 43 KB), <code>medium.png</code> (about 14 KB), <code>one.pdf</code> (about 650 bytes), <code>small.png</code> (about 2.7 KB). PNG sizes can differ a little by Windows version.</p></li>
+        <li><p>Read each file through Claude Code and record the input size of the <b>last</b> model call, the one that already has the file in context. Comparing the last call, not the run total, keeps the tool round trip itself out of the figure. The control is a 9-character text file.</p>
+          <pre><code>function Measure-Run($file) {
+  $prompt = "Read $file and reply with only the text or key words you see in it, nothing else."
+  $lines = claude -p $prompt --model haiku --setting-sources project --strict-mcp-config --allowedTools Read --output-format stream-json --verbose --max-turns 4
+  $calls = @(); $tools = @()
+  foreach ($l in $lines) {
+    $e = $l | ConvertFrom-Json
+    if ($e.type -eq 'assistant') {
+      $u = $e.message.usage
+      $calls += [int]$u.input_tokens + [int]$u.cache_creation_input_tokens + [int]$u.cache_read_input_tokens
+      foreach ($b in $e.message.content) { if ($b.type -eq 'tool_use') { $tools += $b.name } }
+    }
+    if ($e.type -eq 'result') { $reply = $e.result }
+  }
+  [pscustomobject]@{ file = $file; calls = $calls.Count; tools = ($tools -join ','); last_call_input = $calls[-1]; reply = ($reply -replace '\s+', ' ').Substring(0, [Math]::Min(50, $reply.Length)) }
+}
+$rows = foreach ($f in 'control.txt', 'small.png', 'medium.png', 'large.png', 'one.pdf', 'five.pdf') { Measure-Run $f }
+$base = ($rows | Where-Object file -eq 'control.txt').last_call_input
+$rows | ForEach-Object { $_ | Add-Member -NotePropertyName extra_vs_control -NotePropertyValue ($_.last_call_input - $base) -PassThru } | Format-Table -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> six rows, each reply containing "ACME 4417" or the PDF text. About 21,900 tokens for the control's last call (Claude Code's own system prompt and tools dominate), then in <code>extra_vs_control</code>: <code>small.png</code> about 97, <code>medium.png</code> about 1,295, <code>large.png</code> about 4,750, <code>one.pdf</code> about 1,700 to 1,800, <code>five.pdf</code> about 8,100 to 8,400. The <code>calls</code> and <code>tools</code> columns can differ from run to run: in two runs a <code>Glob</code> step before the <code>Read</code> showed up on a different file each time, which is why the figure is the last call and not the run total. Expect a variation of a few percent on the PDFs and a few tokens on the images.</p></li>
+        <li><p>Compare with the formula.</p>
+          <pre><code>foreach ($d in @(@(280,280), @(1000,1000))) { "{0} x {1}: {2} tokens" -f $d[0], $d[1], ([Math]::Ceiling($d[0]/28) * [Math]::Ceiling($d[1]/28)) }
+$e = @{}; $rows | ForEach-Object { $e[$_.file] = $_.extra_vs_control }
+"PDF cost per added page: {0:N0}" -f (($e['five.pdf'] - $e['one.pdf']) / 4)</code></pre>
+          <p class="expect"><b>Expected:</b> <code>280 x 280: 100 tokens</code> and <code>1000 x 1000: 1296 tokens</code>, against 97 and 1,295 measured. The 3000 x 2000 image would be 108 x 72 = 7,776 patches at full size; it measured about 4,750, just under the 4,784-token cap that the docs give for high-resolution models, because Claude Code downscales large images before sending them. The second line prints a figure between about 1,550 and 1,700 per added page for these sparse text pages: the page image plus a little extracted text.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Why does a 3000 x 2000 image cost less than its patch count suggests? <b>Answer:</b> Images over the model's native resolution are downscaled first, and the high-resolution tier caps at 4,784 tokens (long edge 2,576 px); the Read tool also resizes large images.</p>
+        <p>What would a dense page of 12-point text cost compared with the PDF pages here? <b>Answer:</b> More: the docs give 1,500 to 3,000 text tokens per page for typical pages, on top of the page image. These pages are almost empty.</p>
+        <p>How do you check the estimate on a real 80-page report before sending it a hundred times? <b>Answer:</b> Send it once, read the <code>usage</code> block, and multiply; or use the token counting endpoint, which the docs recommend for PDFs.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m19-lab4" data-title="Write the request bodies and run the loops" data-minutes="25">
+      <p class="goal">You write complete request bodies for tool use, structured output, citations and batch, run the tool-use loop against canned replies, and match batch results by <code>custom_id</code>; with an API key you then send them for real.</p>
+      <ol class="steps">
+        <li><p>Make the folder and write the tool-use body. This and the next three bodies are written from the docs' examples with the model changed to <code>claude-haiku-5-5</code> and the data made synthetic.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m19/lab4 | Out-Null
+Set-Location {{LAB}}/m19/lab4
+@'
+{
+  "model": "claude-haiku-5-5",
+  "max_tokens": 1024,
+  "tools": [
+    {
+      "name": "get_ticket_count",
+      "description": "Return the number of open tickets in a support queue. Use it whenever the user asks how many tickets are open.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "queue": { "type": "string", "description": "Queue name, for example web-01" }
+        },
+        "required": ["queue"]
+      }
+    }
+  ],
+  "messages": [
+    { "role": "user", "content": "How many open tickets does the queue web-01 have?" }
+  ]
+}
+'@ | Set-Content -Encoding utf8 body-tool.json</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Write the structured-output body, the citations body and the batch body.</p>
+          <pre><code>@'
+{
+  "model": "claude-haiku-5-5",
+  "max_tokens": 1024,
+  "messages": [
+    { "role": "user", "content": "Extract the order: Order 4417 from acme, 3 units of widget-A at 12.50, delivery by 2026-12-01." }
+  ],
+  "output_config": {
+    "format": {
+      "type": "json_schema",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "order_id": { "type": "string" },
+          "customer": { "type": "string" },
+          "qty": { "type": "integer" },
+          "deliver_by": { "type": "string" }
+        },
+        "required": ["order_id", "customer", "qty", "deliver_by"],
+        "additionalProperties": false
+      }
+    }
+  }
+}
+'@ | Set-Content -Encoding utf8 body-structured.json
+
+@'
+{
+  "model": "claude-haiku-5-5",
+  "max_tokens": 1024,
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "document",
+          "source": {
+            "type": "text",
+            "media_type": "text/plain",
+            "data": "Change window: Tuesday 02:00. Owner: ops. Rollback: restore the snapshot taken before the change."
+          },
+          "title": "Change notes",
+          "citations": { "enabled": true }
+        },
+        { "type": "text", "text": "Who owns the change and what is the rollback?" }
+      ]
+    }
+  ]
+}
+'@ | Set-Content -Encoding utf8 body-citations.json
+
+@'
+{
+  "requests": [
+    {
+      "custom_id": "ticket-1001",
+      "params": {
+        "model": "claude-haiku-5-5",
+        "max_tokens": 256,
+        "messages": [ { "role": "user", "content": "Classify this ticket as hardware, software or network: printer shows paper jam" } ]
+      }
+    },
+    {
+      "custom_id": "ticket-1002",
+      "params": {
+        "model": "claude-haiku-5-5",
+        "max_tokens": 256,
+        "messages": [ { "role": "user", "content": "Classify this ticket as hardware, software or network: cannot reach the VPN gateway" } ]
+      }
+    }
+  ]
+}
+'@ | Set-Content -Encoding utf8 body-batch.json
+
+foreach ($f in 'body-tool.json', 'body-structured.json', 'body-citations.json', 'body-batch.json') {
+  $b = Get-Content -Raw $f | ConvertFrom-Json
+  "{0,-22} valid JSON, top-level keys: {1}" -f $f, (($b.PSObject.Properties.Name) -join ', ')
+}</code></pre>
+          <p class="expect"><b>Expected:</b> four lines, each saying valid JSON. Top-level keys: <code>model, max_tokens, tools, messages</code>; <code>model, max_tokens, messages, output_config</code>; <code>model, max_tokens, messages</code>; <code>requests</code>. This validates the JSON syntax only. Whether the API accepts each body was not machine-verified in this build.</p></li>
+        <li><p>Write the loop. With <code>-Stub</code> it replays two canned replies in the docs' response shape, so you can test your message handling without a key; without it, the same code calls the API. Keep the formatting rules from Lesson 2 in mind: <code>tool_result</code> blocks first, matched by id.</p>
+          <pre><code>@'
+param([switch]$Stub)
+$uri = 'https://api.anthropic.com/v1/messages'
+$headers = @{ 'x-api-key' = $env:ANTHROPIC_API_KEY; 'anthropic-version' = '2026-10-21' }
+$queues = @{ 'web-01' = 4; 'db-02' = 0 }
+
+$canned = New-Object System.Collections.Queue
+if ($Stub) {
+  $canned.Enqueue('{"id":"msg_stub1","type":"message","role":"assistant","model":"claude-haiku-5-5","stop_reason":"tool_use","content":[{"type":"text","text":"I will check the queue."},{"type":"tool_use","id":"toolu_stub01","name":"get_ticket_count","input":{"queue":"web-01"}}],"usage":{"input_tokens":410,"output_tokens":58}}')
+  $canned.Enqueue('{"id":"msg_stub2","type":"message","role":"assistant","model":"claude-haiku-5-5","stop_reason":"end_turn","content":[{"type":"text","text":"Queue web-01 has 4 open tickets."}],"usage":{"input_tokens":498,"output_tokens":14}}')
+}
+function Send-Messages($body) {
+  $json = ConvertTo-Json -InputObject $body -Depth 20
+  if ($Stub) { Write-Host ("  request: " + $json.Length + " chars"); return ($canned.Dequeue() | ConvertFrom-Json) }
+  Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($json))
+}
+
+$body = Get-Content -Raw body-tool.json | ConvertFrom-Json
+$messages = New-Object System.Collections.ArrayList
+foreach ($m in $body.messages) { [void]$messages.Add($m) }
+$body.messages = $messages
+
+for ($turn = 1; $turn -le 5; $turn++) {
+  $resp = Send-Messages $body
+  Write-Host "turn $turn stop_reason=$($resp.stop_reason) in=$($resp.usage.input_tokens) out=$($resp.usage.output_tokens)"
+  [void]$messages.Add([pscustomobject]@{ role = 'assistant'; content = $resp.content })
+  if ($resp.stop_reason -ne 'tool_use') {
+    ($resp.content | Where-Object type -eq 'text').text
+    break
+  }
+  $results = New-Object System.Collections.ArrayList
+  foreach ($block in ($resp.content | Where-Object type -eq 'tool_use')) {
+    Write-Host "  tool_use $($block.name) id=$($block.id) input=$($block.input | ConvertTo-Json -Compress)"
+    $count = $queues[$block.input.queue]
+    [void]$results.Add([pscustomobject]@{ type = 'tool_result'; tool_use_id = $block.id; content = "$count open tickets" })
+  }
+  [void]$messages.Add([pscustomobject]@{ role = 'user'; content = $results })
+}
+ConvertTo-Json -InputObject $body -Depth 20 | Set-Content -Encoding utf8 final-request.json
+'@ | Set-Content -Encoding utf8 loop.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\loop.ps1 -Stub
+$final = Get-Content -Raw final-request.json | ConvertFrom-Json
+"final request: {0} messages, roles: {1}" -f $final.messages.Count, (($final.messages | ForEach-Object role) -join ' &gt; ')
+"user message block types: " + (($final.messages[2].content | ForEach-Object type) -join ', ')</code></pre>
+          <p class="expect"><b>Expected:</b> <code>request: 1397 chars</code>, then <code>turn 1 stop_reason=tool_use in=410 out=58</code> and <code>tool_use get_ticket_count id=toolu_stub01 input={"queue":"web-01"}</code>, then <code>request: 2784 chars</code> and <code>turn 2 stop_reason=end_turn in=498 out=14</code>, then <code>Queue web-01 has 4 open tickets.</code> Finally <code>final request: 4 messages, roles: user &gt; assistant &gt; user &gt; assistant</code> and <code>user message block types: tool_result</code>. The loop logic ran against canned replies; the HTTP call in <code>Send-Messages</code> was not machine-verified in this build.</p></li>
+        <li><p>Match batch results by <code>custom_id</code>. The two lines below are in the shape the docs show and are deliberately out of order.</p>
+          <pre><code>@'
+{"custom_id":"ticket-1002","result":{"type":"succeeded","message":{"id":"msg_b2","type":"message","role":"assistant","model":"claude-haiku-5-5","content":[{"type":"text","text":"network"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":31,"output_tokens":3}}}}
+{"custom_id":"ticket-1001","result":{"type":"succeeded","message":{"id":"msg_b1","type":"message","role":"assistant","model":"claude-haiku-5-5","content":[{"type":"text","text":"hardware"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":30,"output_tokens":3}}}}
+'@ | Set-Content -Encoding utf8 results.jsonl
+$req = (Get-Content -Raw body-batch.json | ConvertFrom-Json).requests
+$res = @{}
+foreach ($line in Get-Content results.jsonl) { $o = $line | ConvertFrom-Json; $res[$o.custom_id] = $o }
+foreach ($r in $req) {
+  $o = $res[$r.custom_id]
+  "{0}: {1} -&gt; {2}" -f $r.custom_id, $o.result.type, $o.result.message.content[0].text
+}</code></pre>
+          <p class="expect"><b>Expected:</b> <code>ticket-1001: succeeded -&gt; hardware</code> and <code>ticket-1002: succeeded -&gt; network</code>, in request order although the file listed 1002 first.</p></li>
+        <li><p>Send them. <b>Needs an API key from the Claude Console; not run in this build.</b> Set the key for this session only, then send the structured-output body, the citations body and the tool loop without <code>-Stub</code>.</p>
+          <pre><code>$env:ANTHROPIC_API_KEY = Read-Host 'API key'
+$h = @{ 'x-api-key' = $env:ANTHROPIC_API_KEY; 'anthropic-version' = '2026-10-21' }
+$s = Invoke-RestMethod -Uri https://api.anthropic.com/v1/messages -Method Post -Headers $h -ContentType 'application/json' -Body (Get-Content -Raw body-structured.json | ConvertFrom-Json | ConvertTo-Json -Depth 20)
+$s.stop_reason
+$s.content[0].text
+$c = Invoke-RestMethod -Uri https://api.anthropic.com/v1/messages -Method Post -Headers $h -ContentType 'application/json' -Body (Get-Content -Raw body-citations.json | ConvertFrom-Json | ConvertTo-Json -Depth 20)
+$c.content | ForEach-Object { $_.text; $_.citations | ForEach-Object { "  [$($_.type)] $($_.cited_text)" } }
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\loop.ps1</code></pre>
+          <p class="expect"><b>Expected, from the docs, not run in this build:</b> <code>end_turn</code>, then a JSON string in <code>content[0].text</code> with exactly the keys <code>order_id</code>, <code>customer</code>, <code>qty</code> and <code>deliver_by</code>. The citations call returns several text blocks; the ones that make a claim carry a <code>char_location</code> citation whose <code>cited_text</code> is a sentence of your document (for example <code>Owner: ops.</code>). The loop prints the same two turns as the stub, with real token counts. The API bills these requests per token to your Console workspace; at Haiku 5.5 rates the three together cost a small fraction of a cent.</p></li>
+        <li><p>Submit the batch and fetch its results. <b>Needs an API key; not run in this build.</b></p>
+          <pre><code>$b = Invoke-RestMethod -Uri https://api.anthropic.com/v1/messages/batches -Method Post -Headers $h -ContentType 'application/json' -Body (Get-Content -Raw body-batch.json | ConvertFrom-Json | ConvertTo-Json -Depth 20)
+$b.id; $b.processing_status
+do { Start-Sleep -Seconds 30; $st = Invoke-RestMethod -Uri "https://api.anthropic.com/v1/messages/batches/$($b.id)" -Headers $h; $st.processing_status } until ($st.processing_status -eq 'ended')
+$st.request_counts
+Invoke-WebRequest -Uri "https://api.anthropic.com/v1/messages/batches/$($b.id)/results" -Headers $h -OutFile results.jsonl</code></pre>
+          <p class="expect"><b>Expected, from the docs, not run in this build:</b> an id starting <code>msgbatch_</code> and <code>in_progress</code>; later <code>ended</code> (most batches finish in under an hour); <code>request_counts</code> with 2 under <code>succeeded</code>; and <code>results.jsonl</code> with one line per request in any order. Re-run the matching code from step 4 on it. Remove the key from the session with <code>Remove-Item Env:ANTHROPIC_API_KEY</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>In the final request, which block type does the third message start with, and what would the API do if you put a text block first? <b>Answer:</b> <code>tool_result</code>. The docs require tool results before any text in that user message; text first breaks the pairing rule and can produce the "tool_use ids were found without tool_result blocks" error.</p>
+        <p>Why does the citations body fail if you add <code>output_config</code> to it? <b>Answer:</b> Citations and structured outputs are incompatible; the API returns a 400 error.</p>
+        <p>Why must the batch parser key on <code>custom_id</code>? <b>Answer:</b> Results may come back in any order, as your two-line file showed.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m19-lab5" data-title="Price your own workload: synchronous versus batch" data-minutes="15">
+      <p class="goal">You price one real run by hand until your figure matches the reported cost, then project a bulk job of your own as synchronous and as batch.</p>
+      <ol class="steps">
+        <li><p>Run one classification, then price its <code>usage</code> block with Haiku 5.5 list prices: $0.10 in and $0.50 out per million tokens, cache read at 0.1 times input, a 5-minute cache write at 1.25 times and a 1-hour cache write at 2 times.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m19/lab5 | Out-Null
+Set-Location {{LAB}}/m19/lab5
+$raw = claude -p "Classify this ticket as hardware, software or network: printer shows paper jam. One word." --model haiku --setting-sources project --strict-mcp-config --output-format json --max-turns 1
+$r = $raw | ConvertFrom-Json
+$u = $r.usage
+$in = 0.10; $out = 0.50
+$cw5 = [double]$u.cache_creation.ephemeral_5m_input_tokens
+$cw1 = [double]$u.cache_creation.ephemeral_1h_input_tokens
+$cost = ($u.input_tokens * $in + $cw5 * $in * 1.25 + $cw1 * $in * 2 + $u.cache_read_input_tokens * $in * 0.1 + $u.output_tokens * $out) / 1e6
+"usage: input={0} cache_write_5m={1} cache_write_1h={2} cache_read={3} output={4}" -f $u.input_tokens, $cw5, $cw1, $u.cache_read_input_tokens, $u.output_tokens
+"computed cost : {0:N6}" -f $cost
+"reported cost : {0:N6}" -f $r.total_cost_usd
+"difference    : {0:P1}" -f (($cost - $r.total_cost_usd) / $r.total_cost_usd)</code></pre>
+          <p class="expect"><b>Expected:</b> a usage line close to <code>input=2 cache_write_5m=0 cache_write_1h=7232 cache_read=14517 output=6</code> (the cache figures depend on your Claude Code version and how warm the cache is), a computed cost near $0.0016 that equals the reported cost to six places, and <code>difference    : 0.0%</code>. On a subscription the dollar figure is what the same tokens would cost at list price, not a charge.</p></li>
+        <li><p>Project a bulk job. The API-shaped part of a classification request is far smaller than Claude Code's, which carries its own system prompt and tools, so set the sizes to what your own request would be on the raw API: the prompt tokens you send and the tokens you get back.</p>
+          <pre><code>$n = 10000; $inTok = 150; $outTok = 4
+$sync = $n * ($inTok * $in + $outTok * $out) / 1e6
+"{0:N0} requests of {1} in / {2} out on Haiku 5.5: synchronous {3:N4} USD, batch {4:N4} USD" -f $n, $inTok, $outTok, $sync, ($sync / 2)</code></pre>
+          <p class="expect"><b>Expected:</b> <code>10,000 requests of 150 in / 4 out on Haiku 5.5: synchronous 0.1700 USD, batch 0.0850 USD</code>. Batch is exactly half because the 50 percent discount applies to input and output alike.</p></li>
+        <li><p>Now do it on your own workload. Pick a job you really run on a loop (classify tickets, summarise logs, extract fields). Measure one request's input and output tokens, set <code>$n</code>, <code>$inTok</code>, <code>$outTok</code> and the model's prices from the lesson tables, and decide: synchronous, batch, or batch with a shared cached prefix.</p>
+          <p class="expect"><b>Done when</b> you have a one-line decision with three numbers (synchronous cost, batch cost, and the deadline that justifies the choice), and your hand-priced one-request figure matched the reported cost within 1 percent.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>When is batch the wrong choice even at half price? <b>Answer:</b> When someone is waiting. A batch can take up to 24 hours before it expires, and results arrive as a file you poll for.</p>
+        <p>What would change in your projection if the 150-token prefix were identical across all 10,000 requests? <b>Answer:</b> You could cache it: cache reads cost a fraction of input, and the batch and caching discounts stack, though hits in a batch are best-effort (the docs quote 30 to 98 percent).</p>
+        <p>What did the match in step 1 prove? <b>Answer:</b> That you can reconstruct the bill from the four <code>usage</code> fields, which is the skill every cost figure in this course rests on.</p>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Request and response cheat sheet</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Item</th><th>Value</th></tr>
+      <tr><td>Endpoint</td><td><code>POST https://api.anthropic.com/v1/messages</code></td></tr>
+      <tr><td>Headers</td><td><code>x-api-key</code>, <code>anthropic-version</code> (docs examples: <code>2026-10-21</code>), <code>content-type: application/json</code></td></tr>
+      <tr><td>Required body fields</td><td><code>model</code>, <code>max_tokens</code>, <code>messages</code></td></tr>
+      <tr><td>State</td><td>None on the server; send the full history each time</td></tr>
+      <tr><td>Removed on current models</td><td><code>temperature</code>, <code>top_p</code>, <code>top_k</code> (4.7 and later, and API version 2026-10-21); prefill (4.6 and later)</td></tr>
+      <tr><td>Model ids used here</td><td><code>claude-haiku-5-5</code>, <code>claude-sonnet-5-5</code>, <code>claude-opus-5-5</code></td></tr>
+      <tr><td>Prefix order for caching</td><td>tools, then system, then messages</td></tr>
+    </table></div>
+    <h3>Blocks and fields by feature</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Feature</th><th>Request side</th><th>Response side</th></tr>
+      <tr><td>Client tool</td><td><code>tools[]</code> with <code>name</code>, <code>description</code>, <code>input_schema</code>; <code>tool_choice</code></td><td><code>tool_use</code> block (<code>id</code>, <code>name</code>, <code>input</code>); <code>stop_reason: "tool_use"</code></td></tr>
+      <tr><td>Tool result</td><td>User message with <code>tool_result</code> (<code>tool_use_id</code>, <code>content</code>, <code>is_error</code>), results first</td><td>Next assistant turn</td></tr>
+      <tr><td>Parallel off</td><td><code>tool_choice</code> with <code>disable_parallel_tool_use: true</code></td><td>At most one <code>tool_use</code></td></tr>
+      <tr><td>Server tool</td><td><code>{"type": "web_search_20260209", "name": "web_search"}</code> style entry</td><td><code>server_tool_use</code> (<code>srvtoolu_</code> id) and its result block; <code>pause_turn</code> if capped</td></tr>
+      <tr><td>Computer use</td><td><code>{"type": "computer_toolset_20260801"}</code></td><td>Member <code>tool_use</code> with <code>toolset_name: "computer"</code>; echo it in the result</td></tr>
+      <tr><td>JSON output</td><td><code>output_config.format</code> with <code>type: "json_schema"</code> and <code>schema</code></td><td>JSON in the text block</td></tr>
+      <tr><td>Strict tool</td><td><code>strict: true</code> on the tool</td><td>Inputs match the schema</td></tr>
+      <tr><td>Image</td><td><code>image</code> block, <code>source.type</code> of <code>base64</code>, <code>url</code> or <code>file</code></td><td>Text</td></tr>
+      <tr><td>PDF</td><td><code>document</code> block, same source types</td><td>Text</td></tr>
+      <tr><td>Citations</td><td><code>"citations": {"enabled": true}</code> on each <code>document</code></td><td>Text blocks with <code>citations[]</code></td></tr>
+      <tr><td>Files</td><td><code>POST /v1/files</code>; <code>source: {"type": "file", "file_id": ...}</code></td><td>File metadata with <code>id</code></td></tr>
+      <tr><td>Batch</td><td><code>POST /v1/messages/batches</code> with <code>requests[]</code> of <code>custom_id</code> and <code>params</code></td><td><code>processing_status</code>, <code>request_counts</code>, <code>results_url</code>, <code>.jsonl</code> results</td></tr>
+    </table></div>
+    <h3>Limits at a glance</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Area</th><th>Limit</th></tr>
+      <tr><td>Tool name</td><td><code>^[a-zA-Z0-9_-]{1,128}$</code></td></tr>
+      <tr><td>Strict schemas per request</td><td>20 strict tools; 24 optional parameters; 16 union-type parameters; 180 s compile timeout</td></tr>
+      <tr><td>Images</td><td>100 per request (200k-window models) or 600; 8000 x 8000 px; 10 MB base64; request 128 MB</td></tr>
+      <tr><td>Image tokens</td><td>ceil(w/28) x ceil(h/28); caps 1,568 (standard) and 4,784 (high-resolution)</td></tr>
+      <tr><td>PDF</td><td>600 pages (100 under a 1M-token window); 128 MB; no encryption; about 1,500 to 3,000 text tokens per page plus page images</td></tr>
+      <tr><td>Files API</td><td>500 MB per file; 1 TB per organization; expiry 3,600 to 7,776,000 s; roughly 500 calls per minute</td></tr>
+      <tr><td>Batch</td><td>100,000 requests or 256 MB; 24 h expiry; results 29 days; <code>custom_id</code> 1 to 64 characters; 50 percent price</td></tr>
+      <tr><td>Computer use overhead</td><td>About 4,500 input tokens for the default toolset</td></tr>
+      <tr><td>Tool-use system prompt</td><td>286 tokens on Opus 5.5, Sonnet 5.5, Haiku 5.5 (<code>auto</code> or <code>none</code>)</td></tr>
+    </table></div>
+    <h3>Claude Code flags and fields used in the labs</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Item</th><th>Use</th></tr>
+      <tr><td><code>--output-format json</code></td><td>One result object: <code>result</code>, <code>structured_output</code> (with a schema), <code>usage</code>, <code>total_cost_usd</code>, <code>num_turns</code>, <code>is_error</code>, <code>subtype</code>, <code>stop_reason</code></td></tr>
+      <tr><td><code>--output-format stream-json --verbose</code></td><td>One event per line: <code>system</code> init, <code>assistant</code> and <code>user</code> messages holding <code>tool_use</code> and <code>tool_result</code> blocks, a <code>result</code> at the end</td></tr>
+      <tr><td><code>--json-schema '&lt;json&gt;'</code></td><td>Headless structured output; exits 1 on an invalid value</td></tr>
+      <tr><td><code>--allowedTools Read</code></td><td>Grant the Read tool without a prompt</td></tr>
+      <tr><td><code>--max-turns N</code></td><td>Cap the loop</td></tr>
+    </table></div>
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>400 on <code>tool_choice</code> <code>any</code> or <code>tool</code></td><td>Model does not support forced tool use (Opus 5.5, Sonnet 5.5, and others listed), or manual extended thinking is on</td><td>Use <code>auto</code> with strict tools</td></tr>
+      <tr><td>"tool_use ids were found without tool_result blocks immediately after"</td><td>A message sits between the call and the result, or text precedes the results</td><td>Result message directly after the assistant message, results first</td></tr>
+      <tr><td>400 "Schema is too complex for compilation"</td><td>Too many optional or union parameters, deep nesting</td><td>Make parameters required, flatten, mark fewer tools strict, split the request</td></tr>
+      <tr><td>400 on a schema</td><td>Unsupported keyword such as <code>minimum</code>, <code>maxLength</code>, recursion</td><td>Remove it; validate in your code</td></tr>
+      <tr><td>400 with citations on</td><td><code>output_config.format</code> in the same request</td><td>Drop one; use a per-field line format for cited extraction</td></tr>
+      <tr><td>Output JSON is cut off</td><td><code>stop_reason: "max_tokens"</code></td><td>Raise <code>max_tokens</code>, retry</td></tr>
+      <tr><td>Enum value has different capitalisation</td><td>Documented behaviour of structured outputs</td><td>Compare case-insensitively</td></tr>
+      <tr><td>Few or no citations</td><td>Prompt demands "only JSON"</td><td>Ask for one line per field and parse it</td></tr>
+      <tr><td>Batch results do not line up</td><td>Results arrive in any order</td><td>Match on <code>custom_id</code></td></tr>
+      <tr><td>Batch results missing</td><td>More than 29 days since creation, or request <code>errored</code>, <code>canceled</code> or <code>expired</code></td><td>Download earlier; resubmit unbilled requests</td></tr>
+      <tr><td>Computer use result rejected</td><td><code>toolset_name</code> not echoed</td><td>Copy it from the <code>tool_use</code> block</td></tr>
+      <tr><td>No <code>structured_output</code> in a Claude Code result</td><td>Run ended without valid output, for example a refusal</td><td>Test for the field before use</td></tr>
+      <tr><td><code>--json-schema is not valid JSON</code> in PowerShell 5.1</td><td>Quotes stripped from the argument</td><td>Escape each <code>"</code> as <code>\"</code></td></tr>
+    </table></div>
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+        <li>Claude API docs, "Working with messages": <a href="https://platform.claude.com/docs/en/build-with-claude/working-with-messages" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/working-with-messages</a></li>
+        <li>Claude API docs, "Stop reasons and fallback": <a href="https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/handling-stop-reasons</a></li>
+        <li>Claude API docs, "How tool use works": <a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/how-tool-use-works" target="_blank" rel="noopener">platform.claude.com/docs/en/agents-and-tools/tool-use/how-tool-use-works</a></li>
+        <li>Claude API docs, "Define tools": <a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools" target="_blank" rel="noopener">platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools</a></li>
+        <li>Claude API docs, "Handle tool calls": <a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls" target="_blank" rel="noopener">platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls</a></li>
+        <li>Claude API docs, "Parallel tool use": <a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use" target="_blank" rel="noopener">platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use</a></li>
+        <li>Claude API docs, "Server tools": <a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/server-tools" target="_blank" rel="noopener">platform.claude.com/docs/en/agents-and-tools/tool-use/server-tools</a></li>
+        <li>Claude API docs, "Structured outputs": <a href="https://platform.claude.com/docs/en/build-with-claude/structured-outputs" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/structured-outputs</a></li>
+        <li>Claude API docs, "Vision" and "PDF support": <a href="https://platform.claude.com/docs/en/build-with-claude/vision" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/vision</a>, <a href="https://platform.claude.com/docs/en/build-with-claude/pdf-support" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/pdf-support</a></li>
+        <li>Claude API docs, "Citations" and "Files API": <a href="https://platform.claude.com/docs/en/build-with-claude/citations" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/citations</a>, <a href="https://platform.claude.com/docs/en/build-with-claude/files" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/files</a></li>
+        <li>Claude API docs, "Message Batches API": <a href="https://platform.claude.com/docs/en/build-with-claude/batch-processing" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/batch-processing</a></li>
+        <li>Claude API docs, "Computer use tool": <a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool" target="_blank" rel="noopener">platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool</a></li>
+        <li>Claude Code docs, "Tools reference" and "Run Claude Code programmatically": <a href="https://code.claude.com/docs/en/tools-reference" target="_blank" rel="noopener">code.claude.com/docs/en/tools-reference</a>, <a href="https://code.claude.com/docs/en/headless" target="_blank" rel="noopener">code.claude.com/docs/en/headless</a></li>
+        <li>Measured: Labs 1, 2, 3 and 5 come from runs on Claude Code 2.1.322 on 11 November 2026, subscription login, Haiku 5.5. Lab 4's request bodies were validated as JSON and its loop was run against canned replies; nothing was sent to the Claude API, so the API calls and their Expected lines come from the docs and are not machine-verified.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "Your loop sends a request with tools, gets a response whose stop_reason is tool_use, runs the tool, and sends back a user message that has a short text note followed by the tool_result block. The API returns an error about tool_use ids without tool_result blocks. What is the fix?", "o": ["Add disable_parallel_tool_use to tool_choice", "Put the tool_result block first in the content array, with the text after it", "Resend the tool definition inside the user message", "Set tool_choice to none for the second request"], "a": 1, "why": "The docs require the tool_result message to follow the assistant tool_use message directly, with every tool_result block before any text in that user message. Text first breaks the pairing. Parallel settings, tool definitions and tool_choice are not involved."},
+    {"q": "You need guaranteed-valid JSON from Opus 5.5 where one of your tools must always be called with schema-valid input. Forcing the tool with tool_choice type tool returns a 400. What do you do?", "o": ["Use tool_choice auto and strict: true on the tool, and check stop_reason", "Prefill the assistant turn with an opening brace", "Switch the schema to use minimum and maxLength so the model is constrained harder", "Ask for JSON in the prompt and parse with a retry loop"], "a": 0, "why": "The docs say any and tool return 400 on Opus 5.5 and Sonnet 5.5 and recommend auto with strict tool use. Prefill is unsupported on current models, minimum and maxLength are rejected by structured outputs, and a retry loop is what strict mode replaces."},
+    {"q": "You must classify 200,000 support tickets overnight. Nobody needs results before morning, and every request shares the same 2,000-token instruction prefix. Which setup is right?", "o": ["Synchronous requests in parallel, no caching, so cache misses cannot occur", "One batch of 200,000 requests, since batch has no size limit", "Batches of at most 100,000 requests (or 256 MB), identical cache_control on the shared prefix, the 1-hour cache tier, and results matched by custom_id", "A single request containing all tickets, because input is cheaper than output"], "a": 2, "why": "Batch halves input and output prices, the limit is 100,000 requests or 256 MB per batch, cache hits in a batch are best-effort so the 1-hour tier and identical cache_control blocks help, and results come back in any order so custom_id is the join key."},
+    {"q": "You send a 3840 x 2160 screenshot to a high-resolution model and also to a standard-tier model. What should you expect from the token counts?", "o": ["Identical, since both models count 28 by 28 patches of the original image", "About 1,560 tokens on the standard tier and up to 4,784 on the high-resolution tier, because each model downscales to its own limits first", "The standard tier costs more because it must upscale small text", "Zero extra tokens, since images are billed separately from text"], "a": 1, "why": "Images over a model's native resolution are downscaled to fit its long-edge and token limits before counting. The docs table gives 1,560 tokens on the standard tier and 4,784 on the high-resolution tier for that size, and images are billed as ordinary input tokens."},
+    {"q": "A colleague wants a computer use agent to fill in a vendor's web form using your logged-in browser profile on the team's admin workstation, because it saves setup time. What is the right response?", "o": ["Approve it; the classifiers that scan screenshots make the other precautions unnecessary", "Approve it if the agent only types and never clicks", "Refuse the shortcut: run it in a dedicated, minimal-privilege VM or container, with no logged-in sessions, an allowlist of domains, and human confirmation before consequential steps", "Approve it but set max_tokens low to limit what the agent can do"], "a": 2, "why": "The docs list four precautions: isolated VM or container, no sensitive data such as logins, a domain allowlist, and human confirmation for consequential actions. They state that injection classifiers do not replace those precautions, and a token limit does not bound what actions the agent takes."}
+  ]</script>
+</section>

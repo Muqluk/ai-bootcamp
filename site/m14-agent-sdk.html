@@ -1,0 +1,625 @@
+<section class="module" id="m14" data-title="Agent SDK and agent teams" data-sub="Your own agent loop, and sessions that message each other" data-level="advanced" data-prereq="m7" data-minutes="230">
+  <div class="overview">
+    <p class="lede">The Agent SDK is Claude Code's agent loop as a library: the same tools, permissions, hooks, subagents and sessions, driven from your own Python or TypeScript program instead of a terminal. Agent teams and SendMessage are the other direction: several Claude Code sessions that coordinate with each other while you watch. This module covers what the SDK adds over <code>claude -p</code>, how each piece maps to code, how team messaging is delivered, and when none of it is worth the bother.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Explain how the Agent SDK relates to <code>claude -p</code> and name what you gain by writing code instead of a shell line.</li>
+      <li>Read the SDK message stream (<code>init</code>, <code>assistant</code>, tool results, <code>result</code>) and branch on the result <code>subtype</code> instead of assuming success.</li>
+      <li>Write the options that matter in code: allowed and disallowed tools, permission mode, turn and budget caps, hooks, <code>canUseTool</code>, subagents and an in-process custom tool.</li>
+      <li>Run your own agent loop over the stream-json channel from a dependency-free Node script: send a message, read events, send a follow-up in the same session.</li>
+      <li>Resume and fork a session, and define a subagent from JSON.</li>
+      <li>Say what an agent team is, how SendMessage reaches a teammate or another session, which limits apply, and choose between a team, subagents and plain messaging.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key). The labs were run on 2.1.322.</li>
+      <li>Node 22 and Windows PowerShell 5.1 or PowerShell 7. Labs 1 to 4 install nothing.</li>
+      <li>Lab 5 is the one lab that needs the SDK package and an API key. It is written so you can run it, but it was not run when this module was built (the build machine has no key and no package).</li>
+      <li>Labs 1 to 4 use Haiku and short prompts. The two-message run in lab 1 priced at about $0.003 at API list price; on a subscription the same runs draw on your plan window.</li>
+    </ul>
+    <div class="recap"><h3>If you skipped the prerequisites</h3><p>A headless run is <code>claude -p "prompt"</code>: the same agent loop as the terminal, with no person in it. It reads stdin, prints a result, and returns an exit code. <code>--output-format json</code> returns one result object with <code>result</code>, <code>session_id</code>, <code>total_cost_usd</code> and <code>usage</code>; <code>stream-json</code> returns one JSON event per line as the loop runs. <code>--allowedTools</code> pre-approves tools, <code>--max-turns</code> caps the loop, and <code>--resume</code> continues a stored session. A subagent is a second agent instance the main agent starts with the Agent tool; it works in its own context window and only its final message comes back. Every headless run should say which settings and MCP servers it loads, because the defaults pick up whatever is on the machine.</p></div>
+  </div>
+
+  <div class="lesson" id="m14-l1" data-title="What the Agent SDK is" data-minutes="15">
+    <h3>Claude Code, as a library</h3>
+    <p>The docs define the Agent SDK in one sentence: it gives you the same tools, agent loop and context management that power Claude Code, programmable in Python and TypeScript. It is not a thin client for the Messages API. Both packages bundle a native Claude Code binary and run it as a subprocess, so what your program drives is the real loop: prompt, model response, tool calls, tool results, repeat until a response has no tool calls.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Package</th><th>Install (from the docs)</th><th>Entry points</th></tr>
+      <tr><td>TypeScript</td><td><code>npm install @anthropic-ai/claude-agent-sdk</code></td><td><code>query()</code>, <code>tool()</code>, <code>createSdkMcpServer()</code></td></tr>
+      <tr><td>Python</td><td><code>pip install claude-agent-sdk</code></td><td><code>query()</code>, <code>ClaudeSDKClient</code>, <code>@tool</code>, <code>create_sdk_mcp_server</code></td></tr>
+    </table></div>
+    <p>Most installs need no separate Claude Code install. The exceptions the docs list: a Python source distribution on a platform with no wheel (ARM64 Windows is the example), and a TypeScript install that skips optional dependencies (<code>npm ci --omit=optional</code>). In both cases you install Claude Code natively and the SDK finds it.</p>
+    <h3>Where it sits among the other ways to run Claude</h3>
+    <div class="tablewrap"><table>
+      <tr><th>You want to</th><th>Use</th><th>Who runs the agent loop</th></tr>
+      <tr><td>Work interactively in a terminal, or run a one-off task</td><td>Claude Code CLI</td><td>The CLI process, with you in it</td></tr>
+      <tr><td>Run the loop from a script or CI job in any language</td><td><code>claude -p</code> as a subprocess</td><td>The CLI process, once per call</td></tr>
+      <tr><td>Embed the loop in your own Python or TypeScript program</td><td>Agent SDK</td><td>A Claude Code process your program starts and holds</td></tr>
+      <tr><td>Call the model and write the tool loop yourself</td><td>Client SDK (Messages API)</td><td>Your code</td></tr>
+      <tr><td>Have Anthropic host the agent</td><td>Managed Agents</td><td>A hosted harness</td></tr>
+    </table></div>
+    <p>The docs' own pointer for other languages is the second row: run the CLI as a subprocess with <code>-p</code> and <code>--output-format json</code>. So <code>claude -p</code> and the SDK are two front doors on one loop. The SDK is the door with native message objects, callbacks that run inside your process, and a session you hold open.</p>
+    <figure class="diagram">
+<pre class="mermaid">sequenceDiagram
+  participant H as Your host program
+  participant C as claude process
+  participant A as Model API
+  H->>C: user message
+  loop until a reply has no tool calls
+    C->>A: request with tools and history
+    A-->>C: text or tool call
+    C->>C: run the tool, check permissions
+  end
+  C-->>H: assistant messages, then result
+  H->>C: next user message, same session
+</pre>
+      <figcaption>The host owns the conversation and the Claude Code process owns the loop; tool execution and permission checks happen inside the process, between your two messages.</figcaption>
+    </figure>
+    <h3>Defaults that differ from what you expect</h3>
+    <p>Two defaults from the TypeScript options table matter on day one. <code>settingSources</code> defaults to the CLI defaults, meaning user, project and local settings all load, so an SDK program on your laptop picks up your CLAUDE.md, skills and hooks. Pass <code>[]</code> to load none. <code>systemPrompt</code> defaults to a minimal prompt; to get Claude Code's own prompt you pass the <code>claude_code</code> preset. The first is the SDK counterpart of the <code>--setting-sources</code> flag this course uses on every headless run; MCP servers are configured separately through <code>mcpServers</code>.</p>
+    <aside class="rule">Decide settings isolation in the first lines of any SDK program: a program that behaves differently on your machine and on the build server is almost always loading different settings sources.</aside>
+    <aside class="trap">The SDK is the same loop, so it is the same cost model. An open-ended prompt with no <code>maxTurns</code> and no <code>maxBudgetUsd</code> runs until Claude decides it is done, and the docs say so plainly: without limits the loop can run long on open-ended prompts.</aside>
+  </div>
+
+  <div class="lesson" id="m14-l2" data-title="The query call, the message stream and the result" data-minutes="20">
+    <h3>One call, an async stream</h3>
+    <p>In TypeScript, <code>query({ prompt, options })</code> returns a <code>Query</code>: an async generator of messages that also has control methods (<code>interrupt()</code>, <code>setPermissionMode()</code>, <code>setModel()</code> among them). <code>prompt</code> is a string, or an async iterable of user messages for streaming input (lesson 4). You consume it with <code>for await</code>. In Python, <code>query()</code> is the one-shot form and <code>ClaudeSDKClient</code> holds a session across several calls; the docs recommend the client when the next action depends on Claude's answer.</p>
+    <pre data-file="agent.mjs"><code>import { query } from "@anthropic-ai/claude-agent-sdk";
+
+for await (const message of query({
+  prompt: "Summarize this project",
+  options: { allowedTools: ["Read", "Glob", "Grep"], maxTurns: 6 },
+})) {
+  if (message.type === "assistant") {
+    for (const block of message.message.content) {
+      if (block.type === "tool_use") console.log("tool:", block.name);
+    }
+  }
+  if (message.type === "result") console.log(message.subtype, message.total_cost_usd);
+}</code></pre>
+    <p>Note the TypeScript shape: assistant and user messages wrap the raw API message, so content blocks are at <code>message.message.content</code>. In Python you check classes with <code>isinstance</code> (<code>AssistantMessage</code>, <code>ResultMessage</code>, <code>TextBlock</code>, <code>ToolUseBlock</code>) and read <code>message.content</code> directly.</p>
+    <h3>The five message types</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Type</th><th>When it appears</th><th>What you do with it</th></tr>
+      <tr><td><code>SystemMessage</code></td><td><code>init</code> at the start of a run; also <code>compact_boundary</code> after compaction, <code>informational</code> banners</td><td>Capture the session id and the tool list</td></tr>
+      <tr><td><code>AssistantMessage</code></td><td>One per content block: text, or a tool call request</td><td>Show progress; detect which tools ran</td></tr>
+      <tr><td><code>UserMessage</code></td><td>After each tool execution (the tool result), and for input you stream mid-loop</td><td>Usually ignore; read it to debug</td></tr>
+      <tr><td><code>StreamEvent</code></td><td>Only with partial messages enabled (<code>includePartialMessages</code>)</td><td>Token-by-token display</td></tr>
+      <tr><td><code>ResultMessage</code></td><td>End of the loop</td><td>Check <code>subtype</code>, read <code>result</code>, cost, usage, session id</td></tr>
+    </table></div>
+    <p>Iterate the stream to completion rather than breaking on the result: the docs warn that a few trailing system events, <code>prompt_suggestion</code> for one, can arrive after it.</p>
+    <h3>The result, and why <code>subtype</code> comes first</h3>
+    <div class="tablewrap"><table>
+      <tr><th><code>subtype</code></th><th>Meaning</th><th><code>result</code> text?</th></tr>
+      <tr><td><code>success</code></td><td>Claude finished normally</td><td>Yes</td></tr>
+      <tr><td><code>error_max_turns</code></td><td>Hit <code>maxTurns</code></td><td>No</td></tr>
+      <tr><td><code>error_max_budget_usd</code></td><td>Hit <code>maxBudgetUsd</code></td><td>No</td></tr>
+      <tr><td><code>error_during_execution</code></td><td>An error interrupted the loop, for example a cancelled request</td><td>No</td></tr>
+      <tr><td><code>error_max_structured_output_retries</code></td><td>No valid structured output within the retry limit</td><td>No</td></tr>
+    </table></div>
+    <p>Every result variant carries <code>total_cost_usd</code>, <code>usage</code>, <code>num_turns</code> and <code>session_id</code>, so you can log cost and resume even after a failure. A single-shot <code>query()</code> raises after yielding an error result, so wrap it and keep the branch on <code>subtype</code> inside the loop. <code>total_cost_usd</code> is the SDK's client-side estimate, the same number <code>maxBudgetUsd</code> is compared against; the docs add that spend can pass the cap by the cost of the response that crosses it, plus whatever running subagents spend before they stop.</p>
+    <h3>Counting turns</h3>
+    <p>A turn is one pass through the loop. The docs count each turn with tool calls plus one for the final text-only response, so <code>maxTurns</code> of 2 would have stopped a "run tests, read file, edit, re-run" task before the edit. Lab 2 measures this on the command line: with <code>--max-turns 1</code> a read-one-file task ended as <code>error_max_turns</code> with no answer, and the result reported <code>num_turns</code> 2.</p>
+    <aside class="rule">Write the result handler before the prompt. If your code only handles <code>success</code>, the first turn cap or budget cap turns into a silent empty answer.</aside>
+    <aside class="trap">Reading <code>message.result</code> without checking <code>subtype</code>. On every error subtype the field is absent, so you get <code>undefined</code> or a type error where you expected text.</aside>
+  </div>
+
+  <div class="lesson" id="m14-l3" data-title="Tools, permissions, hooks and custom tools from code" data-minutes="20">
+    <h3>Tools and the permission options</h3>
+    <p>The built-in tools are the Claude Code set: <code>Read</code>, <code>Edit</code>, <code>Write</code>, <code>Glob</code>, <code>Grep</code>, <code>Bash</code>, <code>WebSearch</code>, <code>WebFetch</code>, <code>ToolSearch</code>, and the orchestration tools (<code>Agent</code>, <code>Skill</code>, <code>AskUserQuestion</code>, <code>TaskCreate</code>, <code>TaskUpdate</code>). Read-only tools can run in parallel; tools that change state run one at a time.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Option (TypeScript / Python)</th><th>What it does</th></tr>
+      <tr><td><code>allowedTools</code> / <code>allowed_tools</code></td><td>Auto-approves the listed tools. It does not restrict Claude to them: unlisted tools stay available and fall through to the mode and <code>canUseTool</code>.</td></tr>
+      <tr><td><code>disallowedTools</code> / <code>disallowed_tools</code></td><td>Denies. A bare name such as <code>"Bash"</code> removes the tool from Claude's context; a scoped rule such as <code>"Bash(rm *)"</code> keeps the tool and denies matching calls in every mode.</td></tr>
+      <tr><td><code>tools</code></td><td>The set of built-in tools Claude gets at all (an array of names or the <code>claude_code</code> preset).</td></tr>
+      <tr><td><code>permissionMode</code> / <code>permission_mode</code></td><td><code>default</code>, <code>acceptEdits</code>, <code>plan</code>, <code>dontAsk</code>, <code>auto</code>, <code>bypassPermissions</code>.</td></tr>
+      <tr><td><code>canUseTool</code> / <code>can_use_tool</code></td><td>Your callback, asked only when nothing earlier decided the call. Returns allow (optionally with <code>updatedInput</code>) or deny with a message.</td></tr>
+      <tr><td><code>maxTurns</code>, <code>maxBudgetUsd</code></td><td>Caps on the loop; no limit by default.</td></tr>
+    </table></div>
+    <p>In TypeScript, <code>bypassPermissions</code> also needs <code>allowDangerouslySkipPermissions: true</code>, and the docs reserve it for CI, containers and other isolated environments. The Security and Unattended and CI modules cover that decision; here the point is that it is an explicit flag in code.</p>
+    <h3>The order a tool call is judged in</h3>
+    <figure class="diagram">
+<pre class="mermaid">flowchart TD
+  a["Tool call requested"] --> b["1 Hooks"]
+  b --> c["2 Deny rules"]
+  c --> d["3 Ask rules"]
+  d --> e["4 Permission mode"]
+  e --> f["5 Allow rules"]
+  f --> g["6 canUseTool callback"]:::hot
+  c -- match --> x["Denied"]:::bad
+  f -- match --> y["Approved"]:::good
+  g -- "your answer" --> z["Allow or deny"]:::info
+</pre>
+      <figcaption>Deny rules sit above everything except hooks, so a deny still wins in bypass mode and over a hook that said allow; your callback is only asked about what is left.</figcaption>
+    </figure>
+    <p>The docs list six steps: hooks, deny rules, ask rules, the permission mode, allow rules, then <code>canUseTool</code>. Two consequences matter. A hook that returns <code>allow</code> does not skip the deny and ask steps. And a callback you wrote may never run: with <code>bypassPermissions</code>, or with a bare tool name in <code>allowedTools</code>, calls are approved before the callback is consulted. The TypeScript SDK emits a process warning with code <code>CLAUDE_SDK_CAN_USE_TOOL_SHADOWED</code> when you configure that combination.</p>
+    <h3>Hooks as callbacks</h3>
+    <p>The Hooks module covers hooks as shell commands in settings files. In the SDK the same events take functions in <code>options.hooks</code>: an object keyed by event name, each value a list of matchers with a <code>hooks</code> array of callbacks. A callback receives the event input (it always carries <code>session_id</code>, <code>cwd</code> and <code>hook_event_name</code>; <code>PreToolUse</code> adds <code>tool_name</code> and <code>tool_input</code>), a tool use id and a context with an abort signal. It returns <code>{}</code> to allow, or an object whose <code>hookSpecificOutput</code> holds <code>permissionDecision</code> (<code>allow</code>, <code>deny</code>, <code>ask</code>, <code>defer</code>), <code>permissionDecisionReason</code> and optionally <code>updatedInput</code>.</p>
+    <pre data-file="guard.mjs"><code>const denyEnvWrites = async (input) =&gt; {
+  const path = String(input.tool_input?.file_path ?? "");
+  if (/(^|[\\/])\.env$/i.test(path)) {
+    return { hookSpecificOutput: {
+      hookEventName: input.hook_event_name,
+      permissionDecision: "deny",
+      permissionDecisionReason: "Cannot modify .env files",
+    } };
+  }
+  return {};
+};
+// register it in options:
+// hooks: { PreToolUse: [{ matcher: "Write|Edit", hooks: [denyEnvWrites],
+//                         onFailure: "block" }] }</code></pre>
+    <p>Three details from the hooks page. When several <code>PreToolUse</code> hooks disagree, <code>deny</code> beats <code>defer</code> beats <code>ask</code> beats <code>allow</code>. A callback that throws normally lets the action go ahead and your app gets an informational message tagged <code>hook_callback_failed</code>, so a guard that crashes fails open; <code>onFailure: "block"</code> (Python <code>on_failure="block"</code>, needs recent SDK versions) makes it fail closed. And a matcher of <code>Write|Edit</code> does not see a <code>Bash</code> command that writes the same file, which is the usual hole in file guards.</p>
+    <h3>Custom tools as an in-process MCP server</h3>
+    <p>You give Claude a tool of your own by defining it with <code>tool(name, description, schema, handler)</code> and wrapping it in <code>createSdkMcpServer({ name, version, tools })</code>. The server runs in your process, not as a separate program, and you pass it in <code>mcpServers</code>. The tool's fully qualified name follows the MCP convention <code>mcp__{server}__{tool}</code>, and that is the string you put in <code>allowedTools</code> (a wildcard such as <code>mcp__weather__*</code> covers a whole server). A tool that sets <code>readOnlyHint</code> in its annotations may run in parallel with others; custom tools run sequentially by default. TypeScript schemas are Zod shapes. The MCP module covers the protocol underneath.</p>
+    <aside class="rule">Put the policy in a hook or a deny rule, put the convenience in <code>allowedTools</code>. A tool allowed by name is approved before your callback is consulted.</aside>
+    <aside class="trap">Treating <code>allowedTools</code> as a sandbox. In lab 2 the run allowed only <code>Read</code>, and the model still ran a read-only <code>Bash</code> command, because read-only shell commands are approved without a rule. Restrict with <code>tools</code> or <code>disallowedTools</code>.</aside>
+  </div>
+
+  <div class="lesson" id="m14-l4" data-title="Subagents in code, sessions and streaming input" data-minutes="20">
+    <h3>Defining a subagent programmatically</h3>
+    <p>The Headless runs and subagents module covers subagents as markdown files. The SDK page recommends the third way for SDK programs: the <code>agents</code> option, a map from name to <code>AgentDefinition</code>. Claude starts one through the <code>Agent</code> tool. The CLI takes the same shape as JSON in <code>--agents</code>, and lab 3 uses it.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Required</th><th>Meaning</th></tr>
+      <tr><td><code>description</code></td><td>Yes</td><td>When Claude should use this agent. This is what automatic delegation matches on.</td></tr>
+      <tr><td><code>prompt</code></td><td>Yes</td><td>The agent's system prompt.</td></tr>
+      <tr><td><code>tools</code></td><td>No</td><td>Allowed tool names; omitted means it inherits what subagents can use.</td></tr>
+      <tr><td><code>model</code></td><td>No</td><td>An alias (<code>haiku</code>, <code>sonnet</code>, <code>opus</code>, <code>fable</code>), a full model id, or <code>inherit</code>.</td></tr>
+      <tr><td><code>maxTurns</code>, <code>effort</code>, <code>permissionMode</code>, <code>skills</code>, <code>mcpServers</code>, <code>background</code></td><td>No</td><td>Per-agent overrides and extras.</td></tr>
+    </table></div>
+    <p>A non-fork subagent starts with a fresh context: no parent conversation, no parent system prompt. The only thing that crosses is the Agent tool's prompt string, so file paths, error text and decisions have to be in it. It does receive its own prompt and the project CLAUDE.md. Only its final message returns to the parent, which is the context saving the Headless runs and subagents module describes.</p>
+    <p>To see delegation in your stream, look for a <code>tool_use</code> block named <code>Agent</code>; messages produced inside a subagent carry <code>parent_tool_use_id</code>. The tool appears as <code>Agent</code> in blocks but as <code>Task</code> in the <code>init</code> tool list, so match both. Lab 4 shows the same split.</p>
+    <h3>Limits on how far it fans out</h3>
+    <p>Each subagent makes its own API requests and can spawn subagents of its own. The docs give three caps. Depth: <code>CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH</code>, default 3 layers below your main agent. Concurrency: <code>CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS</code>, default 20 running at once, past which the spawn returns <code>Concurrent subagent limit reached</code>. Spend: <code>maxBudgetUsd</code> counts subagent requests too, refuses new spawns with <code>Budget limit reached</code>, and stops background subagents. The two environment variables go through the <code>env</code> option, which replaces the subprocess environment in TypeScript (spread <code>process.env</code> into it) and merges into it in Python.</p>
+    <h3>Sessions: continue, resume, fork</h3>
+    <div class="tablewrap"><table>
+      <tr><th>You want</th><th>SDK option</th><th>CLI equivalent</th></tr>
+      <tr><td>Next message in the same process</td><td>Python <code>ClaudeSDKClient</code>; TypeScript <code>continue: true</code> or streaming input</td><td>One stream-json process, or <code>--continue</code></td></tr>
+      <tr><td>A specific past session</td><td><code>resume: sessionId</code> (Python <code>resume</code>)</td><td><code>--resume &lt;id&gt;</code></td></tr>
+      <tr><td>Branch without touching the original</td><td><code>forkSession: true</code> together with <code>resume</code></td><td><code>--resume &lt;id&gt; --fork-session</code></td></tr>
+      <tr><td>Nothing written to disk</td><td><code>persistSession: false</code> (TypeScript)</td><td>Not covered here</td></tr>
+    </table></div>
+    <p>You get the session id from <code>ResultMessage.session_id</code>. Resuming restores the full prior context; forking copies the history into a new session id and leaves the original unchanged. Sessions store the conversation, not the filesystem: a forked agent that edits files edits the real files, and file checkpointing is the separate feature for reverting them. Session files are local to the machine that wrote them, at <code>~/.claude/projects/&lt;encoded-cwd&gt;/&lt;session-id&gt;.jsonl</code>. To resume on another host (CI workers, containers) you pass a <code>sessionStore</code> adapter so transcripts are mirrored to your own backend, move the file, or skip resume and pass the results you need into a fresh prompt, which the docs call often more robust.</p>
+    <h3>Streaming input versus a single message</h3>
+    <p>The docs prefer streaming input mode: a long-lived process where you yield user messages from an async generator. It gives you queued messages that run in order and can be interrupted, images in messages, and the full tool set, with context persisting across turns. Single-message mode is one string and one answer, with session options for follow-ups. The user message shape is <code>{ type: "user", message: { role: "user", content } }</code>, plus <code>parent_tool_use_id: null</code> in TypeScript. Lab 1 sends exactly that shape to the CLI.</p>
+    <aside class="rule">One conversation, many messages: hold one session open or resume by id. Do not rebuild context by pasting the transcript into a new <code>query()</code>.</aside>
+    <aside class="trap">Assuming a subagent sees what the parent saw. It does not; a prompt that says "fix the failing test" with no path gives the subagent nothing to work with, and it will spend turns rediscovering it.</aside>
+  </div>
+
+  <div class="lesson" id="m14-l5" data-title="Agent teams and SendMessage" data-minutes="20">
+    <h3>What a team is, and how you turn one on</h3>
+    <p>An agent team is several Claude Code sessions coordinating: one lead, which spawns teammates and synthesizes results, and teammates, each a full session with its own context window. They share a task list and message each other directly, and you can talk to any teammate without going through the lead. The docs label the feature experimental and off by default. You enable it with the environment variable <code>CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1</code>, in your shell or in the <code>env</code> block of a settings file.</p>
+    <p>Enabling it changes ordinary delegation. When agent teams are on, a subagent that Claude gives a <code>name</code> launches as a teammate, and Claude Code does not ask you to confirm. Claude names subagents on its own so it can message them later, so a team can form when you never asked for one. Spawning teammates also requires an interactive session: in <code>claude -p</code> and in Agent SDK sessions, Claude does not spawn teammates, and a named subagent runs as an ordinary subagent even with the variable set. Lab 4 shows that on the command line.</p>
+    <h3>Subagents, teams and plain messaging</h3>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>Subagents</th><th>Agent team</th><th>Cross-session messaging</th></tr>
+      <tr><td>Who talks to whom</td><td>Callee returns a result to the caller; named subagents can also message each other</td><td>Teammates message each other and the lead</td><td>Any of your sessions to any other</td></tr>
+      <tr><td>Coordination</td><td>The main agent manages everything</td><td>Shared task list plus messages</td><td>None; one text message at a time</td></tr>
+      <tr><td>Context</td><td>Own window, final report returns</td><td>Own window each, fully independent</td><td>Each session keeps its own</td></tr>
+      <tr><td>Works in <code>claude -p</code> or the SDK</td><td>Yes</td><td>No</td><td>Yes (a <code>-p</code> session binds an inbox, except in bare mode)</td></tr>
+      <tr><td>Token cost</td><td>Lower: results are summarized back</td><td>Higher: each teammate is a separate instance</td><td>A delivered message counts like a prompt you type</td></tr>
+    </table></div>
+    <figure class="diagram">
+<pre class="mermaid">flowchart TD
+  subgraph S["Subagents"]
+    m["Main agent"]:::hot
+    s1["Subagent A"]
+    s2["Subagent B"]
+    m --&gt; s1
+    m --&gt; s2
+    s1 -. "final report" .-&gt; m
+    s2 -. "final report" .-&gt; m
+  end
+  subgraph T["Agent team"]
+    l["Lead session"]:::hot
+    t1["Teammate one"]:::alt
+    t2["Teammate two"]:::alt
+    tl["Shared task list"]:::info
+    l --- tl
+    t1 --- tl
+    t2 --- tl
+    t1 &lt;--&gt;|"messages"| t2
+  end
+</pre>
+      <figcaption>Subagents form a tree in which results flow up to the caller; a team is a mesh around a shared task list, with messages going sideways between teammates.</figcaption>
+    </figure>
+    <h3>What the docs say is inside a team</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Part</th><th>What it is</th><th>Where it lives</th></tr>
+      <tr><td>Team lead</td><td>The session that spawned the team; fixed for its lifetime</td><td>Your terminal</td></tr>
+      <tr><td>Teammates</td><td>Separate Claude Code instances; the lead assigns each a name and any teammate can message any other by name</td><td>In-process, or split panes</td></tr>
+      <tr><td>Task list</td><td>Tasks are pending, in progress or completed, can depend on each other, and claiming uses file locking</td><td><code>~/.claude/tasks/{team-name}/</code>, kept after the session ends</td></tr>
+      <tr><td>Mailbox</td><td>One JSON file per agent</td><td><code>~/.claude/teams/{team-name}/inboxes/{agent-name}.json</code></td></tr>
+      <tr><td>Team config</td><td>Members and runtime state; do not edit by hand</td><td><code>~/.claude/teams/{team-name}/config.json</code>, removed when the session ends</td></tr>
+    </table></div>
+    <p>The team name is <code>session-</code> plus the first eight characters of the session id. A message counts as sent only when the write to the recipient's mailbox file succeeds; on failure the sender gets an error and nothing is delivered. Messages arrive without the lead polling, and when a teammate finishes it notifies the lead with its final answer (or, if its turn ended on an API error, with the error text).</p>
+    <h3>Display modes</h3>
+    <p>The default is in-process: all teammates run inside your terminal, you pick one with the arrow keys in the agent panel, press Enter to view it and type to message it, press <code>x</code> to stop it, and Ctrl+T toggles the task list. Split panes give each teammate its own pane and need tmux or iTerm2 with the <code>it2</code> command. The <code>teammateMode</code> setting takes <code>"in-process"</code>, <code>"auto"</code>, <code>"tmux"</code> or <code>"iterm2"</code>; <code>claude --teammate-mode</code> sets it for one session and, per the docs, does not appear in <code>claude --help</code>. Split panes are not supported in VS Code's integrated terminal, Windows Terminal or Ghostty.</p>
+    <h3>SendMessage and how a message gets delivered</h3>
+    <p><code>SendMessage</code> is a tool Claude calls; you never call it yourself. Its documented targets: a teammate, a subagent it resumes by agent id or name, or one of your other Claude Code sessions on this machine or beyond it (Claude Code 2.1.224 or later; native Windows 2.1.234). <code>ListAgents</code> is the companion tool that lists who can be reached, and <code>/list-agents</code> (also <code>/peers</code>) shows you the same list. <code>SendMessage</code> does not need agent teams: only structured team-protocol messages such as <code>shutdown_request</code> and <code>plan_approval_response</code> do. Resuming a finished subagent by messaging it works without any team.</p>
+    <figure class="diagram">
+<pre class="mermaid">flowchart LR
+  a["Message arrives"] --&gt; b{"Inbound controls"}
+  b -- delivered --&gt; c{"Recipient busy?"}
+  b -- held --&gt; h["Waits for approval"]:::hot
+  b -- refused --&gt; r["Dropped"]:::bad
+  c -- "mid-turn" --&gt; d["Read between tool calls"]:::good
+  c -- idle --&gt; e["New turn starts"]:::good
+</pre>
+      <figcaption>The receiving session decides first (delivered, held or refused); only a delivered message is then read between tool calls or starts a turn.</figcaption>
+    </figure>
+    <p>Delivery between your own sessions works like this. The receiver reads the message between tool calls during an active turn; if it is idle, Claude Code starts a new turn with it. It arrives as plain text, framed as coming from another session, and it cannot approve a permission prompt, change settings or CLAUDE.md, or run a slash command in its text. The receiver's own permission rules still apply to whatever the message asks for. The inbound check ends in one of three outcomes, delivered, held (set aside until you approve) or refused (dropped). A <code>-p</code> session cannot show the approval dialog, so a held message there waits up to <code>dialogExpiry</code>, five minutes by default, then is dropped; setting <code>crossSessionInbound</code> to <code>accept</code> in that worker's <code>--settings</code> lets it take messages unattended, and <code>refuse</code> stops a session from receiving them.</p>
+    <p>The channel has limits written into the docs. It carries plain text only. A same-machine message over about a million characters is refused at the sender. A rapid burst to one session is refused at the sender. In the receiver, repeats from one sender are rate-limited, identical repeats in a short window are dropped, and at most 50 accepted messages queue, so a loop between two sessions stops by itself. In auto mode a classifier reviews each agent-to-agent message before it is delivered and treats a relayed "the user approved this" as untrusted.</p>
+    <h3>Team limits and permissions</h3>
+    <ul>
+      <li>Teammates start in the lead's permission mode; you cannot set a mode per teammate at spawn. If the lead is in <code>dontAsk</code> mode, a teammate starts in manual mode. Teammate permission prompts appear in the lead session.</li>
+      <li>One team per session; no nested teams (teammates cannot spawn teammates); the lead is fixed.</li>
+      <li><code>/resume</code> and <code>/rewind</code> do not restore in-process teammates, and the lead may then message teammates that no longer exist.</li>
+      <li>Task status can lag: a teammate may not mark a task completed, which blocks dependents.</li>
+      <li>Hooks give you gates: <code>TeammateIdle</code>, <code>TaskCreated</code> and <code>TaskCompleted</code> each accept exit code 2 to send feedback and keep the work going (or block the task).</li>
+      <li>Size: the docs suggest 3 to 5 teammates to start; there is no hard limit, and token cost scales with the number active. An in-process teammate's cache holds five minutes by default, even on a subscription; <code>subagentPromptCacheTtl</code> set to <code>1h</code> raises it, at the higher cache-write rate.</li>
+    </ul>
+    <aside class="rule">Use a team when the workers need to argue with each other or own separate pieces; use subagents when only the result matters.</aside>
+    <aside class="trap">Turning the variable on in a shared settings file and then watching a plain "use a subagent" prompt launch teammates. The setting changes what a named subagent means, for everyone who loads that file.</aside>
+  </div>
+
+  <div class="lesson" id="m14-l6" data-title="SDK or claude -p, and what each costs" data-minutes="15">
+    <h3>Choosing between the front doors</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Situation</th><th>Use</th><th>Why</th></tr>
+      <tr><td>One prompt in, one result out, from a script, CI step or scheduled job</td><td><code>claude -p</code></td><td>Exit code, JSON and <code>--json-schema</code> cover it; no package, any language</td></tr>
+      <tr><td>The run needs a human or policy decision mid-flight, inside your own application</td><td>SDK with <code>canUseTool</code></td><td>The callback runs in your process and can stay pending as long as needed</td></tr>
+      <tr><td>Guards that need your program's state (a database, a budget counter)</td><td>SDK hooks</td><td>Callbacks are functions in your process; shell hooks start a new process per event</td></tr>
+      <tr><td>A tool that is just a function in your code</td><td>SDK custom tool (in-process MCP)</td><td>No separate server to run or authenticate</td></tr>
+      <tr><td>A chat-like app: many messages, one context, interrupts</td><td>SDK streaming input or <code>ClaudeSDKClient</code></td><td>One held session instead of re-resuming per message</td></tr>
+      <tr><td>Fan-out of independent jobs</td><td><code>claude -p</code> per job, or subagents in one run</td><td>Simpler failure handling, one result per job</td></tr>
+      <tr><td>Workers that must coordinate and argue</td><td>Agent team, interactive</td><td>Teams do not start in <code>-p</code> or SDK sessions</td></tr>
+    </table></div>
+    <p>There is a middle path that needs no package: hold a <code>claude -p --input-format stream-json --output-format stream-json</code> process open and talk to it as lab 1 does. It gives you a held session and per-event visibility. It also makes you the owner of the protocol: the docs describe the flags and the SDK, not a wire format to build on, so a host like this is a teaching tool and a stopgap. If you need callbacks, typed messages and supported control methods, install the SDK.</p>
+    <h3>What each one bills</h3>
+    <p>Both run Claude Code, so both spend model tokens at the same rates; the question is whose meter. The docs' guidance on authentication is blunt about the SDK. The quickstart sets <code>ANTHROPIC_API_KEY</code> in the shell where the agent runs (the SDK does not load <code>.env</code> files on its own), and names Bedrock (<code>CLAUDE_CODE_USE_BEDROCK=1</code>) and Google Cloud (<code>CLAUDE_CODE_USE_VERTEX=1</code>) as the other routes. The overview and quickstart both carry the same note: unless previously approved, third-party developers may not offer claude.ai login or rate limits in their products, including agents built on the SDK, and should use API key authentication.</p>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>Subscription plan login</th><th>API key</th></tr>
+      <tr><td><code>claude -p</code> on your own machine</td><td>Runs on the plan login. Measured here: the <code>init</code> event reported <code>apiKeySource</code> <code>none</code>, and usage draws on the plan windows</td><td>Per token at list price, billed to the key's workspace</td></tr>
+      <tr><td>An SDK program you ship to others</td><td>Not allowed unless Anthropic previously approved it</td><td>The documented route</td></tr>
+      <tr><td>An SDK program you run for yourself</td><td>Not stated on the pages read for this module; use an API key if you need to be sure whose meter runs</td><td>Per token</td></tr>
+      <tr><td>Agent team</td><td>Each teammate is a full session drawing on the same plan windows</td><td>Each teammate is billed separately; cost scales with active teammates</td></tr>
+    </table></div>
+    <p>Three cost controls exist in code. <code>maxTurns</code> and <code>maxBudgetUsd</code> (CLI: <code>--max-turns</code>, <code>--max-budget-usd</code>) cap one run, and the budget cap includes subagents. <code>total_cost_usd</code> is a client-side estimate used for that cap, not your invoice, so reconcile against the console on an API key. The model you pick per subagent (<code>model: "haiku"</code> in an <code>AgentDefinition</code>) is the biggest lever; the Cutting cost module covers the rest. On a subscription, cached prefixes of the main conversation get the one-hour lifetime, while a team's in-process teammates default to five minutes.</p>
+    <aside class="rule">Write the budget cap into the program, not the runbook. A loop with no cap is an invoice or a drained plan window waiting for a prompt that never converges.</aside>
+    <aside class="trap">Building a product on your own subscription login because it works on your machine. It works until it is shipped, and then it is the one thing the docs say you may not do.</aside>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m14-lab1" data-title="Write your own agent loop over stream-json" data-minutes="20">
+      <p class="goal">You write a 40-line Node host that starts Claude Code in stream-json mode, sends two messages in one session, and prints every event it receives.</p>
+      <p>Every <code>claude -p</code> run in this module carries <code>--setting-sources project</code> and <code>--strict-mcp-config</code>, so your personal settings, hooks and MCP servers stay out of the measurement. The script below puts them in its argument list for the same reason.</p>
+      <ol class="steps">
+        <li><p>Make the lab folder and write the host. The here-string is single-quoted, so nothing in it is expanded.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m14 | Out-Null
+Set-Location {{LAB}}/m14
+@'
+// host.mjs: drive a Claude Code process over stream-json and print one trace line per event.
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
+import { readFileSync } from "node:fs";
+
+const [promptsFile, ...extra] = process.argv.slice(2);
+const prompts = JSON.parse(readFileSync(promptsFile, "utf8"));
+const base = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+  "--model", "haiku", "--setting-sources", "project", "--strict-mcp-config"];
+const child = spawn(process.env.CLAUDE_BIN || "claude", [...base, ...extra], { stdio: ["pipe", "pipe", "inherit"] });
+
+let sent = 0;
+const send = (text) =&gt; {
+  child.stdin.write(JSON.stringify({ type: "user", message: { role: "user", content: text } }) + "\n");
+  console.log(`SEND user ${++sent}: ${text}`);
+};
+
+createInterface({ input: child.stdout }).on("line", (line) =&gt; {
+  if (!line.trim()) return;
+  const ev = JSON.parse(line);
+  const who = ev.parent_tool_use_id ? " (from subagent)" : "";
+  if (ev.type === "system" &amp;&amp; ev.subtype === "init") {
+    console.log(`RECV init session=${ev.session_id.slice(0, 8)} model=${ev.model} tools=${ev.tools.length} apiKeySource=${ev.apiKeySource}`);
+  } else if (ev.type === "assistant") {
+    for (const b of ev.message.content) {
+      if (b.type === "text") console.log(`RECV assistant text${who}: ${b.text.slice(0, 80).replace(/\s+/g, " ")}`);
+      if (b.type === "tool_use") console.log(`RECV assistant tool_use${who}: ${b.name} ${JSON.stringify(b.input).slice(0, 110)}`);
+    }
+  } else if (ev.type === "user") {
+    for (const b of ev.message.content ?? []) {
+      if (b.type === "tool_result") console.log(`RECV tool_result${who}: is_error=${!!b.is_error}`);
+    }
+  } else if (ev.type === "result") {
+    console.log(`RECV result subtype=${ev.subtype} turns=${ev.num_turns} denials=${ev.permission_denials?.length ?? 0} session=${ev.session_id.slice(0, 8)}`);
+    if (sent &lt; prompts.length) send(prompts[sent]); else child.stdin.end();
+  }
+});
+child.on("exit", (code) =&gt; console.log(`child exit ${code}`));
+send(prompts[0]);
+'@ | Set-Content -Encoding ascii host.mjs
+'["Remember the code word PELICAN. Reply with the single word OK.", "What was the code word? Reply with that one word only."]' | Set-Content -Encoding ascii p1.json</code></pre>
+          <p class="expect"><b>Expected:</b> no output. <code>Get-Content host.mjs | Measure-Object -Line</code> reports about 40 lines. If <code>claude</code> on your machine is a <code>.cmd</code> shim rather than an executable, set <code>$env:CLAUDE_BIN</code> to the full path of the executable, or add <code>shell: true</code> to the <code>spawn</code> options.</p></li>
+        <li><p>Run it. The host sends the first message, waits for a <code>result</code> event, sends the second, and closes stdin after the second result.</p>
+          <pre><code>node host.mjs p1.json --max-turns 3</code></pre>
+          <p class="expect"><b>Expected:</b> eight lines plus an exit line: <code>SEND user 1</code>, <code>RECV init</code> (model <code>claude-haiku-5-5</code>, 26 tools, <code>apiKeySource=none</code> on a subscription login), <code>RECV assistant text: OK</code>, <code>RECV result subtype=success turns=1</code>, then the same four for message 2 with the answer <code>PELICAN</code>, then <code>child exit 0</code>. Both <code>session=</code> values are the same 8 characters, and a second <code>init</code> appears for the second message.</p></li>
+        <li><p>Prove the context carries by editing <code>p1.json</code> so the second prompt asks for something the first never mentioned, such as <code>"What is the capital of France? One word."</code>, and run it again.</p>
+          <pre><code>'["Remember the code word PELICAN. Reply with the single word OK.", "What is the capital of France? One word."]' | Set-Content -Encoding ascii p1.json
+node host.mjs p1.json --max-turns 3</code></pre>
+          <p class="expect"><b>Expected:</b> the same shape, with <code>Paris</code> as the second answer. The host code did not change, only the messages. Restore the original <code>p1.json</code> if you want to rerun step 2.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>1. How many <code>init</code> events did two messages produce? <b>Two, one per user message, both carrying the same session id.</b></p>
+        <p>2. What ends the child process? <b>The host closing stdin after the last result; the exit line shows code 0.</b></p>
+        <p>3. Which part of this is the SDK's job in a real program? <b>Parsing and typing the events, the control methods (interrupt, set model), and permission callbacks. The host here only shuttles JSON lines.</b></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m14-lab2" data-title="Watch the loop: tool calls, turn caps and a denial" data-minutes="20">
+      <p class="goal">You run the same host three ways and read what the stream says about a tool call, a turn cap and a denied write.</p>
+      <ol class="steps">
+        <li><p>Create a three-line file and the two prompt files, then run a read task with <code>Read</code> allowed.</p>
+          <pre><code>Set-Location {{LAB}}/m14
+Set-Content -Path notes.txt -Value 'alpha','beta','gamma'
+'["Read notes.txt and reply with the number of lines it has, as digits only."]' | Set-Content -Encoding ascii p2.json
+'["Create a file named out.txt containing the word hello, then say done."]' | Set-Content -Encoding ascii p2w.json
+node host.mjs p2.json --allowedTools Read --max-turns 5</code></pre>
+          <p class="expect"><b>Expected:</b> <code>RECV assistant tool_use: Read {"file_path":".../notes.txt"}</code>, <code>RECV tool_result: is_error=false</code>, then <code>RECV assistant text: 3</code> and <code>RECV result subtype=success</code> with <code>turns=2</code> (a run in this build also took <code>turns=3</code> when the model followed the read with a <code>wc</code> command through <code>Bash</code>, which was not in the allowed list: read-only shell commands need no rule). <code>child exit 0</code>.</p></li>
+        <li><p>Run the identical prompt with a one-turn cap.</p>
+          <pre><code>node host.mjs p2.json --allowedTools Read --max-turns 1</code></pre>
+          <p class="expect"><b>Expected:</b> the <code>Read</code> tool call and its result, no assistant text, then <code>RECV result subtype=error_max_turns turns=2</code> and <code>child exit 1</code>. The cap fired before the model could answer, the cap of 1 still reports 2 turns, and the process exit code is nonzero.</p></li>
+        <li><p>Ask for a write without allowing it.</p>
+          <pre><code>Remove-Item out.txt -ErrorAction SilentlyContinue
+node host.mjs p2w.json --max-turns 5
+"out.txt exists: $(Test-Path out.txt)"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>RECV assistant tool_use: Write ...out.txt</code>, <code>RECV tool_result: is_error=true</code>, an assistant message explaining that the write was blocked by permissions, <code>RECV result subtype=success turns=2 denials=1</code> and <code>out.txt exists: False</code>. Note the subtype: a denial does not fail the run, so <code>subtype</code> alone does not tell you a tool was refused; <code>permission_denials</code> does.</p></li>
+        <li><p>Allow it and compare.</p>
+          <pre><code>node host.mjs p2w.json --allowedTools Write --max-turns 5
+"out.txt exists: $(Test-Path out.txt)"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>tool_result: is_error=false</code>, <code>denials=0</code> and <code>out.txt exists: True</code>. The model answers <code>Done.</code> Delete <code>out.txt</code> afterwards.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>1. Which result field proves a tool was refused even though the run succeeded? <b><code>permission_denials</code> (length 1 in step 3).</b></p>
+        <p>2. Why did a read task use <code>Bash</code> with only <code>Read</code> allowed? <b><code>allowedTools</code> auto-approves, it does not restrict; read-only shell commands are approved without a rule.</b></p>
+        <p>3. What does your program have to do with <code>error_max_turns</code>? <b>Treat it as a failed run with no answer, and decide whether to retry with a higher cap.</b></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m14-lab3" data-title="A subagent from JSON, then resume and fork" data-minutes="25">
+      <p class="goal">You define a subagent in a JSON file, watch the parent delegate to it in the stream, then resume and fork a session by id.</p>
+      <ol class="steps">
+        <li><p>Write the agent definition and the prompt.</p>
+          <pre><code>Set-Location {{LAB}}/m14
+@'
+{
+  "first-liner": {
+    "description": "Returns the first line of a text file. Use whenever the user asks for the first line of a file.",
+    "prompt": "You read files. Read the file, then reply with only its first line.",
+    "tools": ["Read"],
+    "model": "haiku"
+  }
+}
+'@ | Set-Content -Encoding ascii agents.json
+'["Use the first-liner agent to get the first line of notes.txt, then tell me that line."]' | Set-Content -Encoding ascii p3.json</code></pre>
+          <p class="expect"><b>Expected:</b> no output. (The file form of <code>--agents</code> needs Claude Code 2.1.281 or later with <code>-p</code>; you can also pass the JSON inline.)</p></li>
+        <li><p>Run the host with <code>--agents</code>. <code>--forward-subagent-text</code> makes the subagent's own text appear in the stream.</p>
+          <pre><code>node host.mjs p3.json --agents agents.json --allowedTools "Read,Agent" --forward-subagent-text --max-turns 6</code></pre>
+          <p class="expect"><b>Expected:</b> <code>RECV assistant tool_use: Agent {"subagent_type":"first-liner",...}</code>, then lines marked <code>(from subagent)</code>: a <code>Read</code> call with <code>"limit":1</code> in the run here, its result, and <code>assistant text (from subagent): alpha</code>, and finally an assistant text from the parent containing <code>alpha</code>. The subagent sometimes runs in the background: in the run here the first <code>result</code> arrived with the parent saying it had started the agent, the subagent line came after it, a second <code>init</code> followed and a second <code>result</code> closed the run. Handle both orders, and do not treat the first <code>result</code> as the last event.</p></li>
+        <li><p>Create a session, resume it, fork it, and read both branches back. These lines call <code>claude -p</code> directly with the isolation flags.</p>
+          <pre><code>New-Item -ItemType Directory -Force sess | Out-Null
+Set-Location sess
+$o = claude -p "Remember the code word PELICAN. Reply OK." --output-format json --model haiku --setting-sources project --strict-mcp-config | ConvertFrom-Json
+$id = $o.session_id
+"first : session=$($id.Substring(0,8)) result=$($o.result)"
+$r = claude -p "What was the code word? One word." --resume $id --output-format json --model haiku --setting-sources project --strict-mcp-config | ConvertFrom-Json
+"resume: session=$($r.session_id.Substring(0,8)) same=$($r.session_id -eq $id) result=$($r.result)"
+$f = claude -p "Change of plan: the code word is now HERON. Reply OK." --resume $id --fork-session --output-format json --model haiku --setting-sources project --strict-mcp-config | ConvertFrom-Json
+$fid = $f.session_id
+"fork  : session=$($fid.Substring(0,8)) same=$($fid -eq $id) result=$($f.result)"
+$a = claude -p "What is the code word? One word." --resume $id --output-format json --model haiku --setting-sources project --strict-mcp-config | ConvertFrom-Json
+"original after fork: $($a.result)"
+$b = claude -p "What is the code word? One word." --resume $fid --output-format json --model haiku --setting-sources project --strict-mcp-config | ConvertFrom-Json
+"fork after fork    : $($b.result)"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>first</code> prints <code>OK</code>; <code>resume</code> has <code>same=True</code> and <code>PELICAN</code>; <code>fork</code> has <code>same=False</code>, a new 8-character id, and <code>OK</code>; <code>original after fork: PELICAN</code>; <code>fork after fork    : HERON</code>. Session ids differ run to run; the pattern does not.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>1. Which field in the stream tells you a message came from inside a subagent? <b><code>parent_tool_use_id</code>; the host prints it as <code>(from subagent)</code>.</b></p>
+        <p>2. What does the fork change and what does it leave alone? <b>It gets a new session id and its own history from the branch point; the original keeps PELICAN. Neither branch affects files differently, since a fork branches the conversation, not the filesystem.</b></p>
+        <p>3. Why did the subagent's prompt include the file name? <b>A non-fork subagent sees only the Agent tool prompt, not the parent conversation.</b></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m14-lab4" data-title="Agent teams: what -p does, and one real team" data-minutes="25">
+      <p class="goal">You confirm on the command line that a headless run does not spawn teammates, then run a two-teammate team in an interactive session.</p>
+      <ol class="steps">
+        <li><p>Compare the tool list with the team variable off and on, then ask a headless run for a teammate.</p>
+          <pre><code>Set-Location {{LAB}}/m14
+'["Spawn a teammate named scout that replies with the word hi, then report what scout said."]' | Set-Content -Encoding ascii p4.json
+function Get-Tools($label) {
+  $line = claude -p "Reply OK." --output-format stream-json --verbose --max-turns 1 --model haiku --setting-sources project --strict-mcp-config | Select-Object -First 1
+  $init = $line | ConvertFrom-Json
+  $names = @($init.tools) | Where-Object { $_ -match 'SendMessage|ListAgents|Task|Agent' }
+  "$label : $($init.tools.Count) tools; matching: $($names -join ', ')"
+}
+Remove-Item Env:CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS -ErrorAction SilentlyContinue
+Get-Tools "teams flag off"
+$env:CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"
+Get-Tools "teams flag on "
+node host.mjs p4.json --allowedTools "Agent,SendMessage" --max-turns 6
+Remove-Item Env:CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS</code></pre>
+          <p class="expect"><b>Expected:</b> both <code>Get-Tools</code> lines read <code>26 tools; matching: Task, ListAgents, SendMessage, TaskStop</code>: the Agent tool is listed as <code>Task</code> in <code>init</code>, and <code>SendMessage</code> and <code>ListAgents</code> are present with or without the variable. The host run shows <code>RECV assistant tool_use: Agent {...,"name":"scout",...}</code>, <code>tool_result: is_error=false</code>, <code>assistant text: Scout replied "hi".</code> and <code>result subtype=success</code>. The call carried a <code>name</code>, and it still ran as a plain subagent: no team formed, as the docs say for non-interactive sessions.</p></li>
+        <li><p>Start a real team. This step needs an interactive session, so it was not run when this module was built; the Expected line comes from the agent teams page. It starts three sessions (the lead and two teammates), so keep it small. Run it in a folder with <code>notes.txt</code> from lab 2.</p>
+          <pre><code>Set-Location {{LAB}}/m14
+$env:CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"
+claude --model haiku</code></pre>
+          <p>At the prompt, type:</p>
+          <pre><code>Spawn two teammates named reviewer-a and reviewer-b, using Haiku for each. reviewer-a reads notes.txt and reports the line count. reviewer-b reports the first line of notes.txt. When both are done, message each other to confirm, then summarize for me and shut them down.</code></pre>
+          <p class="expect"><b>Expected (from the docs, not machine-verified):</b> Claude spawns the two teammates without asking you to confirm. The agent panel lists the lead (the <code>main</code> row) and both teammates; Up and Down select one, Enter opens its session, Ctrl+T shows the shared task list with its pending, in progress and completed states. Each teammate's finish arrives at the lead as an idle notification that carries its final answer. <code>/list-agents</code> lists the teammates. The final summary has the line count 3 and the first line <code>alpha</code>.</p></li>
+        <li><p>Read the team's storage while the session is still open, from a second terminal, then close down.</p>
+          <pre><code>Get-ChildItem ~/.claude/teams -Recurse -Depth 3 | Select-Object -ExpandProperty FullName
+Get-ChildItem ~/.claude/tasks</code></pre>
+          <p class="expect"><b>Expected (from the docs, not machine-verified):</b> a folder named <code>session-</code> plus eight characters of the session id, holding <code>config.json</code> and <code>inboxes\reviewer-a.json</code> and <code>inboxes\reviewer-b.json</code>; the task list under <code>~/.claude/tasks</code> has the same folder name. After you exit, the <code>teams</code> folder for that session is gone and the <code>tasks</code> folder remains. Then run <code>Remove-Item Env:CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS</code> in the terminal where you set it.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>1. Why did step 1 not create a team even with the variable set? <b>Teammates spawn only in interactive sessions; in <code>-p</code> and SDK sessions a named subagent runs as an ordinary subagent.</b></p>
+        <p>2. Where is a teammate's inbox? <b><code>~/.claude/teams/{team-name}/inboxes/{agent-name}.json</code>.</b></p>
+        <p>3. Which of the two directories survives the session, and which setting controls how long? <b>The task list under <code>~/.claude/tasks</code>; <code>cleanupPeriodDays</code>.</b></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m14-lab5" data-title="Port the loop to the SDK: a custom tool and a guard" data-minutes="30">
+      <p class="goal">You write the same agent with the real SDK package: an in-process custom tool, a hook that denies shell use, and a result handler that checks the subtype. The code follows the custom tools and hooks pages of the docs. This lab was not run when this module was built, because the build machine has no SDK package and no API key.</p>
+      <p>You need Node 22, the package <code>@anthropic-ai/claude-agent-sdk</code> (and <code>zod</code>, which the docs' tool examples import) and an API key from the Claude Console. Install them in a throwaway folder, and review what you install the way you review any new dependency.</p>
+      <ol class="steps">
+        <li><p>Set up a project the way the quickstart does, and set the key in the shell that will run the agent.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m14/sdk | Out-Null
+Set-Location {{LAB}}/m14/sdk
+npm init -y
+npm pkg set type=module
+npm install @anthropic-ai/claude-agent-sdk zod
+$env:ANTHROPIC_API_KEY = "your-api-key"</code></pre>
+          <p class="expect"><b>Expected (from the quickstart, not run here):</b> npm prints <code>added N packages</code>. The SDK needs no separate Claude Code install on most platforms because it bundles a binary.</p></li>
+        <li><p>Write the agent.</p>
+          <pre data-file="agent.mjs"><code>import { query, tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+
+const openCount = tool(
+  "open_count",
+  "Number of open tickets in a queue",
+  { queue: z.string().describe("Queue name") },
+  async ({ queue }) =&gt; ({ content: [{ type: "text", text: `${queue}: 7 open` }] }),
+  { annotations: { readOnlyHint: true } },
+);
+const tickets = createSdkMcpServer({ name: "tickets", version: "1.0.0", tools: [openCount] });
+
+const noShell = async (input) =&gt; ({
+  hookSpecificOutput: {
+    hookEventName: input.hook_event_name,
+    permissionDecision: "deny",
+    permissionDecisionReason: "Shell is off in this agent",
+  },
+});
+
+const prompt = process.argv[2] ?? "How many tickets are open in the web queue? Use the tickets tool.";
+for await (const m of query({
+  prompt,
+  options: {
+    model: "haiku",
+    settingSources: [],
+    mcpServers: { tickets },
+    allowedTools: ["mcp__tickets__open_count"],
+    hooks: { PreToolUse: [{ matcher: "Bash", hooks: [noShell], onFailure: "block" }] },
+    maxTurns: 6,
+    maxBudgetUsd: 0.25,
+  },
+})) {
+  if (m.type === "assistant") {
+    for (const b of m.message.content) if (b.type === "tool_use") console.log("tool:", b.name);
+  }
+  if (m.type === "result") {
+    console.log("result:", m.subtype, "turns:", m.num_turns, "cost:", m.total_cost_usd);
+    if (m.subtype === "success") console.log(m.result);
+  }
+}</code></pre>
+          <p class="expect"><b>Expected:</b> a file. Nothing runs yet.</p></li>
+        <li><p>Run it.</p>
+          <pre><code>node agent.mjs</code></pre>
+          <p class="expect"><b>Expected (described from the docs, not run here):</b> a line <code>tool: mcp__tickets__open_count</code>, then <code>result: success turns: 2</code> (or a similar small number) with a small <code>cost</code>, then the model's answer, which mentions 7 open tickets in the web queue. The tool name has the <code>mcp__{server}__{tool}</code> form.</p></li>
+        <li><p>Trigger the guard.</p>
+          <pre><code>node agent.mjs "Run the shell command echo hi and tell me its output."</code></pre>
+          <p class="expect"><b>Expected (described from the docs, not run here):</b> the model attempts <code>tool: Bash</code>, the hook denies it, and Claude receives the reason as the tool result. The run finishes with <code>result: success</code> and an answer saying it could not run the command. If your hook never fires, check that the matcher string is the tool name and that you ran the file you edited.</p></li>
+        <li><p>Now do it on your own. Replace the console prints with the host's trace format from lab 2 (<code>RECV assistant tool_use</code>, <code>RECV tool_result</code>, <code>RECV result subtype=... turns=... denials=...</code>) and run your agent on the lab 2 prompts with <code>maxTurns: 1</code> and with Write not allowed. Done when the SDK run reports <code>error_max_turns</code> for the first and a nonzero <code>permission_denials</code> length for the second, matching what the command-line host showed.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>1. Why does <code>allowedTools</code> hold the string <code>mcp__tickets__open_count</code> and not <code>open_count</code>? <b>An in-process custom tool is exposed as an MCP tool, named <code>mcp__{server}__{tool}</code>.</b></p>
+        <p>2. What does <code>onFailure: "block"</code> change if <code>noShell</code> throws? <b>The Bash call is blocked instead of going ahead; without it a crashing guard fails open.</b></p>
+        <p>3. Which line makes the program ignore your own CLAUDE.md and hooks? <b><code>settingSources: []</code>.</b></p>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Options, TypeScript and Python names</h3>
+    <div class="tablewrap"><table>
+      <tr><th>TypeScript</th><th>Python</th><th>Default</th><th>Note</th></tr>
+      <tr><td><code>allowedTools</code></td><td><code>allowed_tools</code></td><td><code>[]</code></td><td>Auto-approve; not a restriction</td></tr>
+      <tr><td><code>disallowedTools</code></td><td><code>disallowed_tools</code></td><td><code>[]</code></td><td>Bare name removes the tool; scoped rule denies calls</td></tr>
+      <tr><td><code>permissionMode</code></td><td><code>permission_mode</code></td><td><code>default</code></td><td><code>bypassPermissions</code> also needs <code>allowDangerouslySkipPermissions</code> (TypeScript)</td></tr>
+      <tr><td><code>canUseTool</code></td><td><code>can_use_tool</code></td><td>none</td><td>Asked last; no callback means deny in <code>default</code> mode</td></tr>
+      <tr><td><code>maxTurns</code>, <code>maxBudgetUsd</code></td><td><code>max_turns</code>, <code>max_budget_usd</code></td><td>no limit</td><td>Results <code>error_max_turns</code>, <code>error_max_budget_usd</code></td></tr>
+      <tr><td><code>agents</code></td><td><code>agents</code></td><td>none</td><td>Map of name to <code>AgentDefinition</code></td></tr>
+      <tr><td><code>resume</code>, <code>forkSession</code>, <code>continue</code></td><td><code>resume</code>, <code>continue_conversation</code></td><td>off</td><td>Session options</td></tr>
+      <tr><td><code>settingSources</code></td><td><code>setting_sources</code></td><td>CLI defaults</td><td><code>[]</code> loads none</td></tr>
+      <tr><td><code>mcpServers</code>, <code>hooks</code>, <code>env</code>, <code>cwd</code>, <code>model</code></td><td>same, snake case</td><td>varies</td><td><code>env</code> replaces (TypeScript) or merges (Python)</td></tr>
+    </table></div>
+    <h3>Stream messages and result subtypes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Item</th><th>Values</th></tr>
+      <tr><td>Message types</td><td><code>system</code> (<code>init</code>, <code>compact_boundary</code>, <code>informational</code>), <code>assistant</code>, <code>user</code>, <code>stream_event</code> (partial messages only), <code>result</code></td></tr>
+      <tr><td>Result subtypes</td><td><code>success</code>, <code>error_max_turns</code>, <code>error_max_budget_usd</code>, <code>error_during_execution</code>, <code>error_max_structured_output_retries</code></td></tr>
+      <tr><td>Fields on every result</td><td><code>total_cost_usd</code>, <code>usage</code>, <code>num_turns</code>, <code>session_id</code>; <code>permission_denials</code> seen in the lab runs</td></tr>
+    </table></div>
+    <h3>Command line equivalents</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Flag or variable</th><th>Effect</th></tr>
+      <tr><td><code>--input-format stream-json</code> with <code>--output-format stream-json --verbose</code></td><td>Two-way JSON-lines channel in print mode</td></tr>
+      <tr><td><code>--replay-user-messages</code></td><td>Echo your user messages back on stdout (needs both stream-json formats)</td></tr>
+      <tr><td><code>--include-partial-messages</code></td><td>Token-level stream events</td></tr>
+      <tr><td><code>--agents &lt;json-or-file&gt;</code></td><td>Define subagents; file form needs 2.1.281 with <code>-p</code></td></tr>
+      <tr><td><code>--forward-subagent-text</code></td><td>Subagent text in the stream, tagged with <code>parent_tool_use_id</code></td></tr>
+      <tr><td><code>--resume &lt;id&gt;</code>, <code>--fork-session</code>, <code>--session-id &lt;uuid&gt;</code></td><td>Resume, branch, or pick the id</td></tr>
+      <tr><td><code>--max-turns</code>, <code>--max-budget-usd</code></td><td>Caps (print mode)</td></tr>
+      <tr><td><code>CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH</code>, <code>CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS</code></td><td>Depth (default 3) and concurrency (default 20) caps</td></tr>
+    </table></div>
+    <h3>Agent teams and messaging</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Item</th><th>Value</th></tr>
+      <tr><td>Enable teams</td><td><code>CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1</code> in the environment or settings <code>env</code></td></tr>
+      <tr><td>Display</td><td><code>teammateMode</code>: <code>in-process</code> (default), <code>auto</code>, <code>tmux</code>, <code>iterm2</code>; <code>--teammate-mode</code> not in <code>--help</code></td></tr>
+      <tr><td>Team hooks</td><td><code>TeammateIdle</code>, <code>TaskCreated</code>, <code>TaskCompleted</code> (exit 2 blocks or continues)</td></tr>
+      <tr><td>Storage</td><td><code>~/.claude/teams/{team}/config.json</code>, <code>.../inboxes/{agent}.json</code>; <code>~/.claude/tasks/{team}/</code></td></tr>
+      <tr><td>Messaging tools</td><td><code>SendMessage</code>, <code>ListAgents</code>; commands <code>/list-agents</code>, <code>/peers</code></td></tr>
+      <tr><td>Inbound control</td><td>Setting <code>crossSessionInbound</code>: <code>accept</code>, <code>refuse</code>, hold; <code>dialogExpiry</code> default 5 minutes</td></tr>
+      <tr><td>Limits</td><td>Plain text; about 1 million characters per same-machine message; queue of 50; one team per session; no nested teams</td></tr>
+    </table></div>
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td><code>message.result</code> is undefined</td><td>Result subtype is an error variant</td><td>Branch on <code>subtype</code> first</td></tr>
+      <tr><td><code>canUseTool</code> never called</td><td>Tool allowed by name, or <code>bypassPermissions</code></td><td>Use a scoped rule or remove the allow entry</td></tr>
+      <tr><td>Guard hook crashed and the tool ran anyway</td><td>Callback failures fail open by default</td><td><code>onFailure: "block"</code> and let errors propagate</td></tr>
+      <tr><td>SDK program behaves differently on the server</td><td>Different settings sources loaded</td><td>Set <code>settingSources</code> explicitly</td></tr>
+      <tr><td>Two results in one stream</td><td>A background subagent finished after the first result</td><td>Read to the end; do not stop on the first result</td></tr>
+      <tr><td>Teammates not spawned</td><td>Non-interactive session, or the variable is not set</td><td>Run interactively with the variable set</td></tr>
+      <tr><td>Lead messages a teammate that is gone</td><td>Session resumed; in-process teammates are not restored</td><td>Tell the lead to spawn new teammates</td></tr>
+      <tr><td>Message to a <code>-p</code> worker never arrives</td><td>Held with no one to approve; expires after <code>dialogExpiry</code></td><td>Set <code>crossSessionInbound</code> to <code>accept</code> in the worker's <code>--settings</code></td></tr>
+    </table></div>
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+        <li>Claude Code docs, "Agent SDK overview": <a href="https://code.claude.com/docs/en/agent-sdk/overview" target="_blank" rel="noopener">code.claude.com/docs/en/agent-sdk/overview</a></li>
+        <li>Claude Code docs, "Agent SDK quickstart": <a href="https://code.claude.com/docs/en/agent-sdk/quickstart" target="_blank" rel="noopener">code.claude.com/docs/en/agent-sdk/quickstart</a></li>
+        <li>Claude Code docs, "How the agent loop works": <a href="https://code.claude.com/docs/en/agent-sdk/agent-loop" target="_blank" rel="noopener">code.claude.com/docs/en/agent-sdk/agent-loop</a></li>
+        <li>Claude Code docs, "Agent SDK reference, TypeScript": <a href="https://code.claude.com/docs/en/agent-sdk/typescript" target="_blank" rel="noopener">code.claude.com/docs/en/agent-sdk/typescript</a></li>
+        <li>Claude Code docs, "Agent SDK reference, Python": <a href="https://code.claude.com/docs/en/agent-sdk/python" target="_blank" rel="noopener">code.claude.com/docs/en/agent-sdk/python</a></li>
+        <li>Claude Code docs, "Work with sessions": <a href="https://code.claude.com/docs/en/agent-sdk/sessions" target="_blank" rel="noopener">code.claude.com/docs/en/agent-sdk/sessions</a></li>
+        <li>Claude Code docs, "Subagents in the SDK": <a href="https://code.claude.com/docs/en/agent-sdk/subagents" target="_blank" rel="noopener">code.claude.com/docs/en/agent-sdk/subagents</a></li>
+        <li>Claude Code docs, "Give Claude custom tools": <a href="https://code.claude.com/docs/en/agent-sdk/custom-tools" target="_blank" rel="noopener">code.claude.com/docs/en/agent-sdk/custom-tools</a></li>
+        <li>Claude Code docs, "Intercept and control agent behavior with hooks": <a href="https://code.claude.com/docs/en/agent-sdk/hooks" target="_blank" rel="noopener">code.claude.com/docs/en/agent-sdk/hooks</a></li>
+        <li>Claude Code docs, "Configure permissions": <a href="https://code.claude.com/docs/en/agent-sdk/permissions" target="_blank" rel="noopener">code.claude.com/docs/en/agent-sdk/permissions</a></li>
+        <li>Claude Code docs, "Orchestrate teams of Claude Code sessions": <a href="https://code.claude.com/docs/en/agent-teams" target="_blank" rel="noopener">code.claude.com/docs/en/agent-teams</a></li>
+        <li>Claude Code docs, "Message your other Claude Code sessions": <a href="https://code.claude.com/docs/en/cross-session-messaging" target="_blank" rel="noopener">code.claude.com/docs/en/cross-session-messaging</a></li>
+        <li>Measured: every Expected line in labs 1 to 4 that is not marked "from the docs" comes from runs on Claude Code 2.1.322 on 11 November 2026 (Haiku 5.5, subscription login). Lab 5 and the interactive steps of lab 4 were not run.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "You pass allowedTools: [\"Bash\"] and also write a canUseTool callback that asks a person to confirm shell commands. In testing the callback never runs. What is the cause?", "o": ["Callbacks only run for custom tools", "A tool allowed by name is approved before the callback is consulted, so Bash never reaches it", "canUseTool must be registered as a hook", "The permission mode must be plan for callbacks to fire"], "a": 1, "why": "The evaluation order is hooks, deny rules, ask rules, mode, allow rules, then canUseTool. A bare tool name in allowedTools approves the call at the allow step, so the callback only sees calls nothing earlier decided. Use a scoped rule such as Bash(npm *) or drop the allow entry."},
+    {"q": "A nightly job built on query() logs undefined for message.result on some nights and the downstream step then breaks. What is the right fix?", "o": ["Wrap the read in a try block and default to an empty string", "Raise maxTurns until it stops happening", "Branch on the result subtype and treat each error subtype as a failed run with its own handling", "Switch to streaming input so a result always has text"], "a": 2, "why": "The result field exists only on the success subtype. error_max_turns, error_max_budget_usd and error_during_execution carry cost and session id but no text. A default string hides the failure and a higher cap just moves it; the handler has to decide what each subtype means for the job."},
+    {"q": "You run reviews in CI with claude -p and want three reviewers that challenge each other's findings. You set CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 and prompt for three named teammates. What happens, and what do you do?", "o": ["No team forms, because teammates spawn only in interactive sessions; use subagents or three separate runs and merge the results yourself", "Three teammates start and message each other as in a terminal session", "The run fails at startup with an unknown variable error", "A team forms but only the lead can see the task list"], "a": 0, "why": "The docs state that in non-interactive mode, including SDK sessions, Claude does not spawn teammates, and a named subagent runs as an ordinary subagent. Lab 4 shows this: the call carried a name and still ran as a plain subagent. For CI, use subagents or independent runs and reconcile the findings in code."},
+    {"q": "A vendor wants to ship an agent built on the Agent SDK and let its customers sign in with their own Claude subscription so the customers' plan limits are used. What do the docs say?", "o": ["It is fine, because the SDK runs Claude Code and Claude Code accepts plan logins", "It is fine if the vendor adds its own rate limiter", "It is allowed on Team and Enterprise plans only", "Not unless Anthropic previously approved it; third-party products should use API key authentication"], "a": 3, "why": "The overview and quickstart carry the same note: unless previously approved, third-party developers may not offer claude.ai login or rate limits in their products, including agents built on the SDK, and should use the API key methods. The same pages name Bedrock and the Google Cloud route as alternatives."},
+    {"q": "An agent analysed the auth module in session S. You want to try an OAuth approach while keeping the JWT line of work, and the agent will edit files. Which is the accurate plan?", "o": ["Fork S: both branches are fully independent, files included", "Fork S for the conversation branch, and use file checkpointing or a separate working copy because both branches edit the same files", "Resume S twice in parallel, which creates two branches automatically", "Start a new query() and paste the transcript, since a fork cannot carry history"], "a": 1, "why": "A fork copies the history into a new session id and leaves the original untouched, but it branches the conversation, not the filesystem. Edits from either branch are real in the shared directory. The docs point to file checkpointing for reverting changes. Resuming twice just continues the same session."}
+  ]</script>
+</section>

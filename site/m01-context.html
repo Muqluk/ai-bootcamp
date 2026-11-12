@@ -260,7 +260,7 @@ If the file does not say, answer "not in the file".</code></pre>
 $init = $lines[0] | ConvertFrom-Json
 "tools: $($init.tools.Count)  skills: $($init.skills.Count)  mcp_servers: $(@($init.mcp_servers).Count)  agents: $($init.agents.Count)"
 $init.memory_paths</code></pre>
-          <p class="expect"><b>Expected:</b> about 26 tools, 17 skills, 0 MCP servers and 6 agents on Claude Code 2.1.322 for Windows. <code>memory_paths</code> shows only an <code>auto</code> folder: no CLAUDE.md loaded.</p></li>
+          <p class="expect"><b>Expected:</b> about 26 tools, 17 skills, 0 MCP servers and 6 agents on Claude Code 2.1.322 for Windows. <code>memory_paths</code> shows only an <code>auto</code> folder. It lists only that folder even when a project CLAUDE.md is loaded (measured in the Writing for agents and Where Claude Code runs modules), so it does not tell you whether a CLAUDE.md loaded.</p></li>
         <li><p>Read the <code>usage</code> block on the last line: how big it was.</p>
           <pre><code>$u = ($lines[-1] | ConvertFrom-Json).usage
 $u | Select-Object input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens

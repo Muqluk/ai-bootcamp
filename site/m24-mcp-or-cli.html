@@ -1,0 +1,720 @@
+<section class="module" id="m24" data-title="MCP server or CLI tool" data-sub="The same job both ways, measured in tokens and turns" data-level="advanced" data-prereq="m2,m23" data-minutes="230">
+  <div class="overview">
+    <p class="lede">An agent can reach a capability two ways: through an MCP server that publishes typed tools, or through a command-line program it drives with the shell tool. The choice looks like a matter of taste until you price it, and the price is not where the folklore says. This module builds one small capability both ways, runs the same task through each with the same model, and reads the difference off the transcript: tokens by type, requests, cost, tool-result size, permissions and what each approach leaves behind for an auditor.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Build one capability as a shared core with a CLI front end and an MCP front end, and show that both return the same answers.</li>
+      <li>Run the same task through each front end three times with <code>--output-format stream-json</code> and tabulate input, cache-write, cache-read and output tokens, API requests, cost and correctness.</li>
+      <li>Explain, from the measured numbers, what a tool definition costs with tool search on and off, and where the larger fixed cost of a request actually sits.</li>
+      <li>Show how an unfiltered tool result raises the size of every later request, and design a result that is filtered at the source.</li>
+      <li>Write the permission rule for one MCP tool and for one CLI subcommand, and say what each leaves in the transcript.</li>
+      <li>Pick MCP or CLI for a new capability from a decision table that weighs surfaces, auth, auditing and maintenance, not only tokens.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key). The labs were run on 2.1.322 with Haiku 5.5.</li>
+      <li>Node 22 or later and Windows PowerShell 5.1 or PowerShell 7. The labs use no packages: the CLI and the MCP server are plain Node files.</li>
+      <li>About $0.10 of Haiku usage at API list price for all the labs, or the same share of a subscription's 5-hour window. The labs make about 40 headless runs.</li>
+    </ul>
+    <div class="recap"><h3>If you skipped the prerequisites</h3>
+      <p>Tokens and their price: every API request re-sends the whole prompt (system prompt, tool definitions, history). The usage block splits it into <span class="tok in">input</span> tokens (not cached), <span class="tok cw">cache write</span> tokens (stored for later, priced above input), <span class="tok cr">cache read</span> tokens (a repeat of a stored prefix, priced far below input) and <span class="tok out">output</span> tokens. A long prefix is cheap per request once cached, so what matters is how large the prefix is and how many requests a task needs. MCP: a server is a separate process that Claude Code talks to with JSON-RPC. It answers <code>tools/list</code> with a name, description and JSON Schema per tool, and answers <code>tools/call</code> with content blocks and an <code>isError</code> flag. A stdio server is started by Claude Code and speaks over its stdin and stdout; a remote server speaks Streamable HTTP. Claude Code exposes each tool as <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>.</p></div>
+  </div>
+
+  <div class="lesson" id="m24-l1" data-title="One capability, two front ends" data-minutes="15">
+    <h3>The same job, two shapes</h3>
+    <p>"Query the ticket system" is a capability. The MCP version publishes it as three tools, each with a JSON Schema. The CLI version publishes it as one program with subcommands and a usage text. The agent meets them differently. A CLI is reached through the shell tool the agent already has: it runs <code>--help</code> if it does not know the syntax, writes a command line, reads stdout, and sees stderr and the exit code when something fails. An MCP tool is reached through the MCP client inside Claude Code: the model produces a structured call, Claude Code validates nothing for you beyond transport, and the server replies with content blocks. The model never sees a command line, and the server never sees a shell.</p>
+    <figure class="diagram">
+<pre class="mermaid">flowchart LR
+  a["Agent"] --> b["Bash tool"]:::info
+  a --> c["MCP client in Claude Code"]:::alt
+  b --> d["tk.mjs: CLI front end"]
+  c --> e["tk-mcp.mjs: MCP front end"]
+  d --> f["store.mjs: the capability"]:::hot
+  e --> f
+  f --> g["tickets.json"]:::ghost
+</pre>
+      <figcaption>Both front ends call one core. The lab builds exactly this, so any difference you measure comes from the front end, not from the capability.</figcaption>
+    </figure>
+    <h3>What each side has to provide</h3>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>MCP server</th><th>CLI tool</th></tr>
+      <tr><td>How the model learns the interface</td><td>Tool name, description and input schema from <code>tools/list</code>, plus optional server <code>instructions</code></td><td>The usage text, read on demand with <code>--help</code>, or a line in CLAUDE.md or a skill that says how to call it</td></tr>
+      <tr><td>How a call is written</td><td>A JSON object that must fit the schema</td><td>A command line the model composes as text</td></tr>
+      <tr><td>How a failure is reported</td><td>A normal result with <code>isError: true</code> and a message the model reads</td><td>stderr and a non-zero exit code, shown to the model in the tool result</td></tr>
+      <tr><td>Who starts the process</td><td>Claude Code, once per session, for a stdio server</td><td>The shell tool, once per call</td></tr>
+      <tr><td>Name the permission system sees</td><td><code>mcp__tickets__ticket_count</code></td><td><code>Bash(node tk.mjs count *)</code></td></tr>
+    </table></div>
+    <h3>The shape you will build</h3>
+    <p>The lab writes four small files: <code>store.mjs</code> (the core, about 2 KB), <code>tk.mjs</code> (the CLI front end, about 1.3 KB) and <code>tk-mcp.mjs</code> (the MCP front end, about 2.5 KB), plus a generator for 120 synthetic tickets. The MCP front end is larger because it also carries the schemas and the JSON-RPC plumbing. That is a real cost of the MCP path, and it is paid once by the author, not per request by the agent.</p>
+    <aside class="rule">Put the logic in a core both front ends call. Then the choice between MCP and CLI stays reversible, and a thin wrapper can be added later for the other kind of client.</aside>
+    <aside class="trap">Writing the capability inside the MCP server first and the CLI "later" ends with two implementations that disagree on filtering, defaults and error text. Build the core first.</aside>
+  </div>
+
+  <div class="lesson" id="m24-l2" data-title="What each path costs in a request" data-minutes="20">
+    <h3>What a request carries</h3>
+    <p>Every request to the model carries the system prompt, the definitions of the tools the model may call, and the whole history so far (see Tokens and their price). Tool definitions are the part this choice changes. A CLI adds none: the Bash tool is already there, and the program's usage text enters the history only if the model asks for it. An MCP tool adds a name, a description and an input schema, which is the cost most people mean when they say "MCP is heavy".</p>
+    <p>Claude Code defers that cost by default. With tool search on, only the names of MCP tools (and server instructions) load at session start. The model finds a tool through the built-in <code>ToolSearch</code> tool, and the matching definitions are loaded on demand. At the API level this is the tool search tool: tool definitions carry <code>defer_loading: true</code>, and a search returns <code>tool_reference</code> blocks that the API expands into full definitions. The platform docs recommend tool search when you have 10 or more tools or more than 10k tokens of definitions, and say standard tool calling is the better fit for fewer than 10 tools or when every tool is used in every request.</p>
+    <p>Three switches control it. <code>ENABLE_TOOL_SEARCH</code> unset or <code>true</code> defers MCP tools, <code>false</code> loads all of them upfront, and <code>auto</code> or <code>auto:N</code> loads them upfront while their definitions stay under 10% (or N%) of the context window. <code>"alwaysLoad": true</code> in a server entry exempts that server. A description is cut at 4,096 characters when it loads upfront and at 16,384 when it loads through tool search, so put the words a search would match near the start.</p>
+    <h3>Measured: the fixed part of a request</h3>
+    <p>Lab 4 sends one trivial prompt and reads the prompt size from the usage block (input plus cache write plus cache read), with different MCP servers attached. The padding server has 10 or 40 tools nobody calls, each with a 4-field schema (23,712 characters of JSON for 40).</p>
+    <div class="tablewrap"><table>
+      <tr><th>Configuration</th><th class="num">Tool search on (default)</th><th class="num">Tool search off</th></tr>
+      <tr><td>No MCP server</td><td class="num">21,725</td><td class="num">37,356</td></tr>
+      <tr><td>Tickets server, 3 tools</td><td class="num">21,834 (+109)</td><td class="num">37,998 (+642)</td></tr>
+      <tr><td>Padding server, 10 tools</td><td class="num">21,861 (+136)</td><td class="num">39,886 (+2,530)</td></tr>
+      <tr><td>Padding server, 40 tools</td><td class="num">22,281 (+556)</td><td class="num">47,476 (+10,120)</td></tr>
+      <tr><td>Tickets server with <code>alwaysLoad</code></td><td class="num">22,363 (+638)</td><td class="num">37,998 (+642)</td></tr>
+    </table></div>
+    <p>Two things stand out. First, a request is about 21,700 tokens before any MCP server is attached, and a three-tool server adds about 110 of them with tool search on and about 640 with it off. At this size the tool schemas are not where the cost is. Second, turning tool search off adds about 15,600 tokens even with no MCP server at all. The headless <code>/context</code> report shows why: with tool search on, "System tools" is 11.6k and "System tools (deferred)" is 13.8k; with it off, "System tools" is 27.7k. Claude Code's own built-in tools are deferred by the same mechanism, so switching it off loads them too. The padding server's 40 tools cost 9.9k in both reports, about 247 tokens per tool.</p>
+    <aside class="rule">With tool search on, the MCP overhead of a handful of tools is small enough to ignore. It scales with tool count and schema size, so measure a server with 30 tools, not 3.</aside>
+    <h3>Measured: one task, both ways</h3>
+    <p>Lab 2 runs the same prompt three times through each front end: how many open high-severity tickets does db-01 have, and what is the oldest one's id. The CLI arm is told only that a program exists (<code>--append-system-prompt</code>), the equivalent of the MCP server's own instructions. A warm-up run of each arm comes first so the counted runs share a cache state.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Arm</th><th class="num">Requests</th><th class="num">Prompt per request</th><th class="num">Total prompt</th><th class="num"><span class="tok out">Output</span></th><th class="num">Cost</th><th>Correct</th></tr>
+      <tr><td>MCP, 3 runs</td><td class="num">3, 3, 3</td><td class="num">21,878 / 22,668 / 23,108</td><td class="num">67,654 each</td><td class="num">609 to 612</td><td class="num">$0.00098 to $0.00122</td><td>3 of 3</td></tr>
+      <tr><td>CLI, 3 runs</td><td class="num">3, 3, 3</td><td class="num">21,807 / 22,112 / 22,420 (run 1: 22,467)</td><td class="num">66,339 or 66,385</td><td class="num">462 to 527</td><td class="num">$0.00089 to $0.00102</td><td>3 of 3</td></tr>
+    </table></div>
+    <figure class="diagram">
+<pre class="mermaid">sequenceDiagram
+  participant M as Model
+  participant C as Claude Code
+  participant T as Server or program
+  Note over M,T: MCP with tool search
+  M->>C: ToolSearch for the ticket tools
+  C-->>M: 3 definitions load
+  M->>T: ticket_count with typed arguments
+  T-->>M: 4
+  M->>T: ticket_search with a limit
+  T-->>M: 4 lines
+  Note over M,T: CLI
+  M->>C: Bash node tk.mjs --help
+  C-->>M: 447 characters of usage
+  M->>T: Bash count and search in one command
+  T-->>M: 5 lines
+</pre>
+      <figcaption>Each arm needed three requests: one to learn the interface, one or two to call it, one to answer. The MCP learning step loaded three schemas, the CLI step one usage text.</figcaption>
+    </figure>
+    <p>The expected story, that the CLI is clearly cheaper, did not appear. Prompt size per request differed by about 70 tokens on the first request and by about 700 on the last. The MCP arm paid for the schemas it loaded (the second request grew by 790 tokens, against 304 for the CLI's usage text), and the CLI arm paid for a slightly longer answer. Almost every token in both runs was a cache read of the same 22k prefix: 67,648 of 67,654 in a warm MCP run. Cost was within about 10% either way. When a run is the first to touch a cache entry it pays a cache write instead (the $0.00122 MCP run and the $0.00102 CLI run), which is why the counted runs follow a warm-up.</p>
+    <p>One variable is not visible in the table: how many requests the model needs. The MCP runs above all searched first. In two other passes of the same lab on the same day, MCP runs took between two and four requests: the model sometimes called a deferred tool directly from its name, once with empty arguments before it searched. Every CLI run took three. Lab 5 shows what happens when the guessed arguments are wrong.</p>
+    <p>If you work from a plan, the same numbers matter as limit usage rather than dollars. Paste the <code>usage</code> block of any run into the meter to see the four token types and the cost with and without caching.</p>
+    <div class="tool" data-tool="cost"></div>
+    <aside class="trap">A deferred MCP tool whose arguments are easy to guess is sometimes called without its schema. It works until a schema has an unusual field name. Put argument names in the tool description, and use <code>alwaysLoad</code> for the two or three tools that are used on every turn.</aside>
+  </div>
+
+  <div class="lesson" id="m24-l3" data-title="Output size and filtering at the source" data-minutes="15">
+    <h3>A tool result is paid for on every later request</h3>
+    <p>A tool result joins the history and stays in the prefix of every request after it. Cached, it is cheap per request, but it makes each request larger and it lengthens the whole task. Which front end returned it does not matter. The size of the result is set by the program, so that is where it has to be controlled.</p>
+    <p>Claude Code has backstops, and they sit high. MCP output is limited to 25,000 tokens by default (<code>MAX_MCP_OUTPUT_TOKENS</code>), a warning shows above 10,000 tokens, and a successful text result over 50,000 characters is saved to a file. Bash output read back into a result is limited to 30,000 characters by default (<code>BASH_MAX_OUTPUT_LENGTH</code>, maximum 150,000). A result of 27,000 characters passes both. For Bash calls the cost docs also show a PreToolUse hook that rewrites a command so only the last 100 lines come back.</p>
+    <h3>Measured: the same question, filtered and not</h3>
+    <p>Lab 3 asks a question that needs the whole data set: how many tickets are open, and which host has the most. The filtered build can answer with one call to <code>count --by host</code>. The verbose build is the same code switched by an environment variable: no <code>count</code>, no limit, and every record returned as pretty-printed JSON with its notes field. Two runs per arm.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Run</th><th class="num">Requests</th><th class="num">Tool results (chars)</th><th class="num">Total prompt</th><th class="num">Cost</th><th>Correct</th></tr>
+      <tr><td>Filtered MCP, 2 runs</td><td class="num">3, 3</td><td class="num">62</td><td class="num">67,444 and 67,088</td><td class="num">$0.00109, $0.00102</td><td>2 of 2</td></tr>
+      <tr><td>Filtered CLI, 2 runs</td><td class="num">3, 3</td><td class="num">510 and 514</td><td class="num">66,198 and 66,204</td><td class="num">$0.00090, $0.00090</td><td>2 of 2</td></tr>
+      <tr><td>Verbose MCP, 2 runs</td><td class="num">3, 2</td><td class="num">27,558 and 42,491</td><td class="num">77,488 and 60,698</td><td class="num">$0.00417, $0.00520</td><td>2 of 2</td></tr>
+      <tr><td>Verbose CLI, 2 runs</td><td class="num">4, 6</td><td class="num">28,040 and 28,121</td><td class="num">110,527 and 185,666</td><td class="num">$0.00483, $0.00433</td><td>2 of 2</td></tr>
+    </table></div>
+    <p>The verbose result cost about four to five times as much per task, on either front end. The per-request prompt sizes show the mechanism: filtered runs stay between 21,800 and 22,800 tokens, while a verbose MCP run jumped from 21,852 to 38,846 on the request after the result arrived, and a verbose CLI run went 21,795, 22,022, 33,139, 35,826, 36,272, 36,612. The 27,558-character result in the CLI run added about 11,100 tokens (22,022 to 33,139) and the 42,491-character result in the MCP run, which asked for every ticket with no filter, about 17,000: roughly 2.5 characters per token for pretty-printed JSON. Haiku still counted 78 open tickets correctly from the raw records, so correctness held while cost multiplied. A larger list or a less careful model would not be so forgiving.</p>
+    <p>The CLI arm shows a second effect. With only <code>search</code> and a permission rule of <code>node tk.mjs *</code>, the model tried to post-process the JSON with a pipe into <code>node -e</code>, and Claude Code refused: "This Bash command contains multiple operations. The following part requires approval". Each retry was another request, and that is why the verbose CLI runs took four and six requests against three. A missing <code>count</code> subcommand turned into extra turns.</p>
+    <h3>Design a result for a model</h3>
+    <ul>
+      <li>Return the answer shape, not the table: a <code>count</code> with <code>--by</code>, a <code>search</code> with filters and a <code>limit</code>.</li>
+      <li>One line per record with the fields a decision needs, and a separate <code>get</code> for the whole record.</li>
+      <li>Say what was left out: <code>(2 more: add filters or raise the limit)</code> tells the model how to continue.</li>
+      <li>Make errors teach: <code>"severity" must be one of: low, medium, high</code> lets the model fix the next call without a lookup.</li>
+      <li>Set a default limit in the program, so the safe call is the short one.</li>
+    </ul>
+    <aside class="rule">Filter at the source. A limit, a count and one line per record move the bill more than the choice between MCP and CLI does.</aside>
+  </div>
+
+  <div class="lesson" id="m24-l4" data-title="Auth, secrets, permissions and the audit trail" data-minutes="20">
+    <h3>Where the credential lives</h3>
+    <p>An MCP server gets its credentials from its own configuration, outside the conversation. The server entry has an <code>env</code> block for a stdio server and <code>headers</code> (or a <code>headersHelper</code> that generates them) for an HTTP server. A project-scoped <code>.mcp.json</code> can reference shell variables with <code>${VAR}</code> or <code>${VAR:-default}</code> in <code>command</code>, <code>args</code>, <code>env</code>, <code>url</code> and <code>headers</code>, so the file can be committed while the value stays on each machine. A server that uses OAuth is signed in from an interactive session with <code>/mcp</code> or <code>claude mcp login &lt;name&gt;</code>; a <code>claude -p</code> run has no panel to run that flow, so the sign-in must already exist.</p>
+    <p>A CLI gets whatever the shell around it provides: environment variables, a config file, or a login the tool stored itself. The agent's shell commands run in that environment, so a secret exported there is readable by any command the agent writes. <code>CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1</code> strips credentials from the environment of Bash commands, hooks and stdio MCP servers, recognising them by variable name or value shape. It leaves <code>GITHUB_TOKEN</code> and the proxy variables in place so that GitHub tooling keeps working, and it leaves a secret whose name and value do not look like a credential. The docs call it one layer, to be used with narrow permission rules.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Question</th><th>MCP server</th><th>CLI tool</th></tr>
+      <tr><td>Where the secret is set</td><td>Server entry: <code>env</code>, <code>headers</code>, <code>headersHelper</code>, or OAuth through <code>/mcp</code></td><td>Shell environment, a file the tool reads, or the tool's own login</td></tr>
+      <tr><td>Can the model read it?</td><td>Not through the protocol; the model sees tool results only</td><td>Yes if it is in the shell environment and a command can print it</td></tr>
+      <tr><td>Rotation</td><td>Edit the config, reconnect the server</td><td>Change the shell or the tool's store; no reconnect</td></tr>
+      <tr><td>Unattended runs</td><td>OAuth cannot start in <code>-p</code>; use a token in <code>headers</code> or a pre-authorised session</td><td>Same as any script: environment variable from the CI secret store</td></tr>
+    </table></div>
+    <h3>Permission rules</h3>
+    <p>MCP tools are matched by name only: <code>mcp__tickets</code> or <code>mcp__tickets__*</code> for the whole server, <code>mcp__tickets__ticket_count</code> for one tool. An <code>mcp__</code> rule with parentheses is skipped when a settings file loads, so you cannot allow a tool for some arguments and not others. The docs give one route for matching an MCP parameter: a deny rule passed with <code>--disallowedTools</code>. Allow rules accept a tool-name glob only after a literal <code>mcp__&lt;server&gt;__</code> prefix.</p>
+    <p>Bash rules match the command text Claude writes, with <code>*</code> as a wildcard: <code>Bash(node tk.mjs count *)</code>. Claude Code splits a compound command at <code>&amp;&amp;</code>, <code>||</code>, <code>;</code>, <code>|</code>, <code>|&amp;</code>, <code>&amp;</code> and newlines, and every part must be allowed, so a rule for one program does not approve it chained to another. A rule matches the command in the form it was written, not the same program invoked another way. This gives a CLI finer control over arguments than an MCP tool has (<code>count *</code> allowed, <code>search *</code> not), and it gives the model more ways to wander: it can pipe, redirect or script around the program, and each of those parts needs its own approval. Lab 5 shows both.</p>
+    <h3>What each leaves behind</h3>
+    <p>The session transcript records every tool call. An MCP call is stored as a <code>tool_use</code> block whose name is <code>mcp__tickets__ticket_count</code> and whose input is a JSON object you can query by field. A CLI call is stored as a <code>tool_use</code> block named <code>Bash</code> whose input is one command string, and an audit has to parse that string. For OpenTelemetry export, <code>OTEL_LOG_TOOL_DETAILS=1</code> adds tool input arguments and MCP server names to the telemetry; it is off by default and ignored in project settings. The Telemetry module covers the export itself.</p>
+    <aside class="rule">Use MCP when you need to grant or deny one named operation and report on it by field. Use a CLI when you need to constrain by argument pattern, and accept that the audit reads command strings.</aside>
+    <aside class="trap">A broad Bash rule such as <code>Bash(node *)</code> approves every Node script in the project, including ones the agent has just written. Name the program and the subcommand.</aside>
+  </div>
+
+  <div class="lesson" id="m24-l5" data-title="Portability and maintenance" data-minutes="15">
+    <h3>Where each one works</h3>
+    <p>A CLI is useful to three audiences with no extra work: the agent, a person at a shell, and a script or scheduled job. An MCP server is useful to any MCP client, including clients that have no shell tool, and it can be shared through a project's <code>.mcp.json</code> or shipped inside a plugin. The protocol itself is client-neutral: the MCP module covers the transports and the lifecycle.</p>
+    <p>Claude Code runs in several places (see Where Claude Code runs). A cloud session runs in a cloud environment, which the docs describe as the saved configuration for network access, environment variables and setup scripts. Whatever the agent needs there must be reachable from that environment: a CLI has to exist in the container, and a remote MCP server has to be reachable over the network the environment allows. The same page notes that a session waiting for an MCP connector approval or a sign-in counts as inactive and can expire.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Surface</th><th>MCP server</th><th>CLI tool</th></tr>
+      <tr><td>Claude Code at a terminal</td><td>Works: configure in a scope, approve project servers</td><td>Works if the program is on the PATH and a Bash rule allows it</td></tr>
+      <tr><td>Headless <code>claude -p</code> and CI</td><td>Works with <code>--mcp-config</code>; OAuth servers need a prior sign-in</td><td>Works; a program that needs no login has no setup at all</td></tr>
+      <tr><td>Cloud session</td><td>Server must be reachable and approved in that environment</td><td>Program must be installed by the environment's setup</td></tr>
+      <tr><td>Another MCP client</td><td>Works unchanged</td><td>Not applicable: the client needs a shell tool</td></tr>
+      <tr><td>A person at a shell</td><td>Not directly; needs a client or a test harness</td><td>Works unchanged</td></tr>
+    </table></div>
+    <h3>Maintenance</h3>
+    <p>The two interfaces age differently. An MCP tool's schema is a published contract: the client validates against it, a server can change its tool list while connected and send <code>list_changed</code>, and the protocol itself has dated revisions that clients and servers negotiate (the MCP module lists the current one). The hand-written server in this module speaks the older <code>2025-11-25</code> revision and worked unchanged under Claude Code 2.1.322, which is the point of negotiation. A CLI's contract is its flags and its output format, which nothing validates. Rename a flag and every prompt, skill and CLAUDE.md line that spells it out is wrong, and the failure shows up as a usage error the model then has to recover from.</p>
+    <p>Both need an owner for the same things: the core logic, its tests, its credentials and its version. The MCP path adds a process lifecycle (start, reconnect, timeouts) and a schema to keep in step with the code. The CLI path adds the instructions that teach the model to call it.</p>
+    <aside class="rule">Version the interface you cannot validate. For a CLI that means one usage text, kept next to the code, that the agent reads on demand, instead of copies of the syntax scattered across prompts.</aside>
+  </div>
+
+  <div class="lesson" id="m24-l6" data-title="A decision table" data-minutes="10">
+    <h3>Weighing the factors</h3>
+    <p>Token cost came out as a modest factor in the measurements above, so the decision rests on the other columns. The table gives a default for each situation; the diagram turns it into a sequence of questions.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Situation</th><th>Lean toward</th><th>Because</th></tr>
+      <tr><td>A mature CLI already exists (<code>git</code>, a cloud vendor's tool)</td><td>CLI</td><td>No server to write or run; the model already knows common ones; the cost docs list such tools as lighter than MCP</td></tr>
+      <tr><td>Non-shell clients or a cloud or chat surface must use it</td><td>MCP</td><td>It is the only form every client can call</td></tr>
+      <tr><td>You need to allow one operation and deny its siblings by name</td><td>MCP</td><td><code>mcp__server__tool</code> rules and per-field transcript records</td></tr>
+      <tr><td>You need to allow by argument pattern</td><td>CLI</td><td>Bash patterns match the command text; MCP rules cannot take parentheses</td></tr>
+      <tr><td>The service needs OAuth and token refresh</td><td>MCP</td><td>Claude Code runs the sign-in and stores the credential outside the model's reach</td></tr>
+      <tr><td>The job runs in cron or CI with no interactive sign-in</td><td>CLI</td><td>Environment variables and exit codes are what those systems already use</td></tr>
+      <tr><td>Many tools, rarely used, from many servers</td><td>MCP with tool search</td><td>Deferred definitions cost little until one is needed</td></tr>
+      <tr><td>Output can be huge and you control the program</td><td>Either, filtered at the source</td><td>The tool result, not the front end, decides the size</td></tr>
+    </table></div>
+    <figure class="diagram">
+<pre class="mermaid">flowchart TD
+  a["New capability for the agent"] --> b{"Must non-shell clients use it?"}
+  b -- yes --> m["Ship an MCP server"]:::alt
+  b -- no --> c{"Does a good CLI exist?"}
+  c -- yes --> d["Use the CLI"]:::good
+  c -- no --> e{"OAuth or per-tool rules needed?"}
+  e -- yes --> m
+  e -- no --> f["Write a small CLI over a core"]:::good
+  d --> g["Add a thin MCP wrapper if a client needs one"]:::ghost
+  f --> g
+</pre>
+      <figcaption>Start from who must be able to call it, then from what already exists. Either branch can grow the other front end later because the logic sits in a shared core.</figcaption>
+    </figure>
+    <aside class="trap">Choosing MCP "to save tokens" or CLI "to save tokens" before measuring. With tool search on, a three-tool server added about 110 tokens to a request of about 21,700. Measure your own server before arguing about it.</aside>
+  </div>
+  <div class="labs">
+    <article class="lab" id="m24-lab1" data-title="Build one capability, two front ends" data-minutes="20">
+      <p class="goal">You write a shared ticket-query core, a CLI and an MCP server over it, drive both by hand, and end up holding two interfaces that return identical answers.</p>
+      <ol class="steps">
+        <li><p>Make the lab folder and write the data generator. It draws 120 synthetic tickets from a fixed seed, so every reader gets the same file.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m24 | Out-Null
+Set-Location {{LAB}}/m24
+
+Set-Content -Encoding utf8 -Path make-data.mjs -Value @'
+// make-data.mjs: writes tickets.json, 120 synthetic tickets from a fixed seed, so every reader gets the same file.
+import { writeFileSync } from 'node:fs';
+let seed = 24;
+const rnd = (n) =&gt; (seed = (seed * 48271) % 2147483647) % n;
+const pick = (list) =&gt; list[rnd(list.length)];
+const hosts = ['web-01', 'web-02', 'db-01', 'db-02', 'cache-01', 'mail-01'];
+const issues = ['disk usage above threshold', 'backup job failed', 'certificate near expiry', 'service restart loop', 'replication lag', 'login failures spike'];
+const two = (n) =&gt; String(n).padStart(2, '0');
+const tickets = [];
+for (let i = 0; i &lt; 120; i++) {
+  const host = pick(hosts), issue = pick(issues);
+  tickets.push({
+    id: 1001 + i, host, severity: pick(['low', 'low', 'medium', 'medium', 'high']), status: pick(['open', 'open', 'closed']),
+    opened: `2026-${two(9 + rnd(2))}-${two(1 + rnd(28))}`, title: `${issue} on ${host}`,
+    notes: `Reported by monitoring. ${issue} on ${host}, first seen during the nightly window. Owner rotation ${1 + rnd(4)}. Runbook section ${1 + rnd(9)}.${1 + rnd(9)}. No customer impact recorded so far.`
+  });
+}
+writeFileSync(new URL('./tickets.json', import.meta.url), JSON.stringify(tickets));
+console.log(tickets.length + ' tickets written');
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output. <code>make-data.mjs</code> exists.</p></li>
+        <li><p>Write the core. Both front ends call <code>run()</code> and nothing else. It filters, counts, limits to 20 rows by default, says how many rows it left out, and rejects a bad filter value with a message that lists the valid ones.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path store.mjs -Value @'
+// store.mjs: the capability itself. Both front ends call run() and nothing else.
+import { readFileSync } from 'node:fs';
+const all = () =&gt; JSON.parse(readFileSync(new URL('./tickets.json', import.meta.url), 'utf8'));
+const KEYS = ['host', 'severity', 'status'];
+const ENUM = { severity: ['low', 'medium', 'high'], status: ['open', 'closed'], by: KEYS };
+const match = (f) =&gt; (t) =&gt; KEYS.every((k) =&gt; !f[k] || t[k] === f[k]);
+
+export const VERBOSE = process.env.TK_VERBOSE === '1';   // lab 4: whole records as JSON, no limit, no count
+
+function search(f) {                                      // oldest first
+  const rows = all().filter(match(f)).sort((a, b) =&gt; a.opened.localeCompare(b.opened) || a.id - b.id);
+  if (VERBOSE) return JSON.stringify(rows, null, 2);
+  const shown = rows.slice(0, Number(f.limit) || 20);
+  const more = rows.length - shown.length;
+  return (shown.map((t) =&gt; `${t.id} ${t.host} ${t.severity} ${t.status} ${t.opened} ${t.title}`).join('\n') || 'no tickets match')
+    + (more &gt; 0 ? `\n(${more} more: add filters or raise the limit)` : '');
+}
+function count(f) {
+  const rows = all().filter(match(f));
+  if (!f.by) return String(rows.length);
+  const groups = {};
+  for (const t of rows) groups[t[f.by]] = (groups[t[f.by]] || 0) + 1;
+  return Object.entries(groups).sort((a, b) =&gt; b[1] - a[1]).map(([value, n]) =&gt; `${value} ${n}`).join('\n');
+}
+function get(f) {
+  const t = all().find((x) =&gt; x.id === Number(f.id));
+  if (!t) throw new Error(`no ticket with id ${f.id}`);
+  return JSON.stringify(t, null, 2);
+}
+
+export const commands = VERBOSE ? { search, get } : { search, count, get };
+export function run(name, f = {}) {                       // returns text, or throws an Error fit to show the caller
+  if (!commands[name]) throw new Error(`unknown command "${name}"; commands: ${Object.keys(commands).join(', ')}`);
+  for (const [k, v] of Object.entries(f)) {
+    if (![...KEYS, 'limit', 'by', 'id'].includes(k)) throw new Error(`unknown option "${k}"`);
+    if (ENUM[k] &amp;&amp; !ENUM[k].includes(v)) throw new Error(`"${k}" must be one of: ${ENUM[k].join(', ')}`);
+  }
+  return commands[name](f);
+}
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output. <code>store.mjs</code> is about 2.1 KB.</p></li>
+        <li><p>Write the CLI front end. Its usage text is all the documentation the agent gets. Errors go to stderr with exit code 2.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path tk.mjs -Value @'
+// tk.mjs: the CLI front end. The usage text is all the documentation an agent gets, and it is read only when asked for.
+import { run, VERBOSE } from './store.mjs';
+const HELP = VERBOSE ? `tk: read-only queries over the ticket file
+  node tk.mjs search [--host H] [--severity low|medium|high] [--status open|closed]
+      the matching tickets as JSON
+  node tk.mjs get ID
+      one ticket as JSON`
+  : `tk: read-only queries over the ticket file
+  node tk.mjs search [--host H] [--severity low|medium|high] [--status open|closed] [--limit N]
+      one line per ticket, oldest first: id host severity status opened title (default limit 20)
+  node tk.mjs count [--host H] [--severity S] [--status S] [--by host|severity|status]
+      one number, or one "value count" line per group with --by
+  node tk.mjs get ID
+      every field of one ticket as JSON`;
+
+const [command, ...rest] = process.argv.slice(2);
+if (!command || command === '--help' || command === 'help') { console.log(HELP); process.exit(0); }
+const f = {};
+for (let i = 0; i &lt; rest.length; i++) {
+  if (rest[i].startsWith('--')) f[rest[i].slice(2)] = rest[++i]; else f.id = rest[i];
+}
+try { console.log(run(command, f)); }
+catch (e) { console.error('tk: ' + e.message + '\n' + HELP); process.exit(2); }   // errors to stderr, non-zero exit
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Write the MCP front end. It is a stdio server: one JSON-RPC message per line in and out, three tools with schemas, and a tool error returned as a result with <code>isError: true</code>. A notification (a message with no <code>id</code>) is never answered.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path tk-mcp.mjs -Value @'
+// tk-mcp.mjs: the MCP front end. stdio transport: one JSON-RPC message per line in, one per line out.
+import { createInterface } from 'node:readline';
+import { run, VERBOSE } from './store.mjs';
+
+const str = (description, values) =&gt; ({ type: 'string', description, ...(values ? { enum: values } : {}) });
+const id = { id: { type: 'integer', description: 'Ticket id, for example 1001' } };
+const filters = { host: str('Host name, for example db-01'), severity: str('Severity', ['low', 'medium', 'high']), status: str('Status', ['open', 'closed']) };
+const tool = (name, description, properties, required = []) =&gt; ({ name: 'ticket_' + name, description,
+  inputSchema: { type: 'object', additionalProperties: false, properties, required }, annotations: { readOnlyHint: true } });
+
+const tools = VERBOSE ? [
+  tool('search', 'Return the tickets that match the filters as JSON.', filters),
+  tool('get', 'Return one ticket as JSON.', id, ['id'])
+] : [
+  tool('search', 'List matching tickets, oldest first, one line each: id host severity status opened title.',
+    { ...filters, limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Maximum rows (default 20)' } }),
+  tool('count', 'Count matching tickets. With "by", return one "value count" line per group.',
+    { ...filters, by: str('Group the count by this field', ['host', 'severity', 'status']) }),
+  tool('get', 'Return every field of one ticket as JSON.', id, ['id'])
+];
+
+const methods = {
+  'initialize': () =&gt; ({ protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'tickets', version: '1.0.0' },
+    instructions: 'Read-only queries over the ticket file: search, count and get tickets by host, severity and status.' }),
+  'ping': () =&gt; ({}),
+  'tools/list': () =&gt; ({ tools }),
+  'tools/call': (p) =&gt; {
+    try { return { content: [{ type: 'text', text: run(p.name.replace('ticket_', ''), p.arguments) }] }; }
+    catch (e) { return { content: [{ type: 'text', text: e.message }], isError: true }; }   // a tool error is a result, not a protocol error
+  }
+};
+
+createInterface({ input: process.stdin }).on('line', (line) =&gt; {
+  if (!line.trim()) return;
+  const msg = JSON.parse(line);
+  if (msg.id === undefined) return;                       // a notification is never answered
+  const fn = methods[msg.method];
+  const body = fn ? { result: fn(msg.params || {}) } : { error: { code: -32601, message: 'Method not found: ' + msg.method } };
+  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, ...body }) + '\n');
+});
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Generate the data and call the CLI four ways, including a bad value.</p>
+          <pre><code>node make-data.mjs
+'--- CLI'
+node tk.mjs count --host db-01 --severity high --status open
+node tk.mjs search --host db-01 --severity high --status open --limit 2
+node tk.mjs count --status open --by host
+cmd /c "node tk.mjs search --severity urgent 2&gt; err.txt"
+'exit code: ' + $LASTEXITCODE
+'stderr: ' + (Get-Content err.txt | Select-Object -First 1)</code></pre>
+          <p class="expect"><b>Expected:</b> <code>120 tickets written</code>; <code>4</code> for the count; two ticket lines for db-01 followed by <code>(2 more: add filters or raise the limit)</code>; six host lines starting <code>web-02 18</code> and ending <code>db-02 10</code>; then <code>exit code: 2</code> and <code>stderr: tk: "severity" must be one of: low, medium, high</code>.</p></li>
+        <li><p>Drive the MCP server by hand: initialise, list tools, call one tool, then call it with a bad value. Four replies come back, because the notification gets none.</p>
+          <pre><code>'--- MCP'
+$requests = @(
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"hand","version":"0"}}}',
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}',
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}',
+  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ticket_count","arguments":{"host":"db-01","severity":"high","status":"open"}}}',
+  '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"ticket_search","arguments":{"severity":"urgent"}}}'
+)
+$replies = $requests | node tk-mcp.mjs
+'replies: ' + $replies.Count
+($replies[2] | ConvertFrom-Json).result.content[0].text
+$replies[3]</code></pre>
+          <p class="expect"><b>Expected:</b> <code>replies: 4</code>, then <code>4</code> (the count, the same answer as the CLI), then the last reply: a normal JSON-RPC result whose content is <code>"severity" must be one of: low, medium, high</code> with <code>"isError":true</code>. The same message arrived as stderr and an exit code in step 5.</p></li>
+        <li><p>Compare what the model would have to read to learn each interface, and the size of each front end.</p>
+          <pre><code>'--- size of each interface description'
+$defs = ($replies[1] | ConvertFrom-Json).result.tools | ConvertTo-Json -Depth 8 -Compress
+'MCP tools/list, 3 tools: ' + $defs.Length + ' characters'
+'CLI --help:              ' + ((node tk.mjs --help) -join "`n").Length + ' characters'
+'store.mjs ' + (Get-Item store.mjs).Length + ' bytes, tk.mjs ' + (Get-Item tk.mjs).Length + ' bytes, tk-mcp.mjs ' + (Get-Item tk-mcp.mjs).Length + ' bytes'</code></pre>
+          <p class="expect"><b>Expected:</b> <code>MCP tools/list, 3 tools: 1442 characters</code>, <code>CLI --help: 447 characters</code>, and file sizes of 2135, 1305 and 2535 bytes for <code>store.mjs</code>, <code>tk.mjs</code> and <code>tk-mcp.mjs</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Which front end is larger, and why? <b>The MCP one, about 2.5 KB against 1.3 KB.</b> It carries schemas with enums and descriptions plus the JSON-RPC handling; the CLI's interface is one usage string.</p>
+        <p>How did the same validation error reach the model in each case? <b>As stderr text with exit code 2 from the CLI, and as an ordinary result with <code>isError: true</code> from the MCP server.</b> Neither is a protocol failure.</p>
+        <p>Why did the MCP server send four replies to five messages? <b>The <code>notifications/initialized</code> message has no <code>id</code>, and a notification is never answered.</b></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m24-lab2" data-title="The same task both ways, three runs each" data-minutes="25">
+      <p class="goal">You run one prompt three times through the MCP server and three times through the CLI with the same model, and end up with a table of input, cache-write, cache-read and output tokens, requests, cost and correctness for each run.</p>
+      <p>Every <code>claude -p</code> line in this module uses <code>--setting-sources project</code> and <code>--strict-mcp-config</code>. They keep your personal settings, hooks and MCP servers out of the measurement, so the only tools in play are the ones named on the line. <code>--output-format stream-json --verbose</code> prints one JSON event per line, which the helper script reads. Lab 1 must be done first.</p>
+      <ol class="steps">
+        <li><p>Register the MCP server in a config file.</p>
+          <pre><code>Set-Location {{LAB}}/m24
+
+Set-Content -Encoding utf8 -Path mcp.json -Value @'
+{ "mcpServers": { "tickets": { "command": "node", "args": ["tk-mcp.mjs"] } } }
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Write the helper that turns a run file into a table row, a per-request prompt size and a list of calls, and load it.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path show.ps1 -Value @'
+# show.ps1: Get-Run turns one stream-json run file into one table row. Show-Calls lists what the run did.
+function Read-Run($file) { Get-Content $file | Where-Object { $_.StartsWith('{') } | ForEach-Object { $_ | ConvertFrom-Json } }
+function Get-Run($file, $want) {
+  $lines = Read-Run $file
+  $r = $lines | Where-Object { $_.type -eq 'result' } | Select-Object -First 1
+  $u = $r.usage
+  $asst = @($lines | Where-Object { $_.type -eq 'assistant' })
+  $calls = @($asst | ForEach-Object { $_.message.content } | Where-Object { $_.type -eq 'tool_use' })
+  $requests = @($asst | ForEach-Object { $_.message.id } | Select-Object -Unique).Count      # one message id per API request
+  [pscustomobject]@{
+    run = $file -replace '\.jsonl$', ''; requests = $requests; calls = $calls.Count
+    input = $u.input_tokens; cache_write = $u.cache_creation_input_tokens; cache_read = $u.cache_read_input_tokens; output = $u.output_tokens
+    prompt_total = $u.input_tokens + $u.cache_creation_input_tokens + $u.cache_read_input_tokens
+    cost = [math]::Round($r.total_cost_usd, 5); correct = [bool]($r.result -match [regex]::Escape($want))
+  }
+}
+function Show-Table($names, $want) { $names | ForEach-Object { Get-Run "$_.jsonl" $want } | Format-Table -AutoSize | Out-String -Width 220 }
+function Show-Requests($file) {   # the prompt size of each API request in a run: input + cache write + cache read
+  $seen = [ordered]@{}
+  foreach ($l in (Read-Run $file | Where-Object { $_.type -eq 'assistant' })) { $seen[$l.message.id] = $l.message.usage }
+  ($seen.Values | ForEach-Object { $_.input_tokens + $_.cache_creation_input_tokens + $_.cache_read_input_tokens }) -join ' '
+}
+function Show-Calls($file) {
+  foreach ($l in (Read-Run $file)) {
+    if ($l.type -eq 'assistant') { $l.message.content | Where-Object { $_.type -eq 'tool_use' } | ForEach-Object { 'tool_use    ' + $_.name + ' ' + ($_.input | ConvertTo-Json -Compress) } }
+    if ($l.type -eq 'user') { $l.message.content | Where-Object { $_.type -eq 'tool_result' } | ForEach-Object {
+      $t = if ($_.content -is [string]) { $_.content } else { ($_.content | ForEach-Object { if ($_.text) { $_.text } else { $_ | ConvertTo-Json -Compress } }) -join ' ' }
+      'tool_result ' + $t.Length + ' chars: ' + $t.Substring(0, [math]::Min(110, $t.Length)).Replace("`n", ' / ') } }
+    if ($l.type -eq 'result') { 'result      ' + ([string]$l.result).Replace("`n", ' / '); 'denied      ' + (($l.permission_denials | ForEach-Object { $_.tool_name + ' ' + ($_.tool_input | ConvertTo-Json -Compress) }) -join '; ') }
+  }
+}
+'@
+Get-Content show.ps1 -Raw | Invoke-Expression</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Set the task and the hint, then do one uncounted warm-up run of each arm so the counted runs share a cache state. The hint is the CLI arm's equivalent of the server's own <code>instructions</code>: it says a program exists and where its usage is.</p>
+          <pre><code>$task = 'How many open high-severity tickets does db-01 have, and what is the id of the oldest one? End with a line in the form COUNT=&lt;n&gt; OLDEST=&lt;id&gt;.'
+$hint = 'Ticket data is queried with a CLI in this folder. Its usage: node tk.mjs --help'
+
+# warm-up: one run of each arm that is not counted, so the three counted runs of each arm start from the same cache state
+claude -p $task --model haiku --setting-sources project --strict-mcp-config --mcp-config mcp.json --allowedTools "mcp__tickets" --output-format stream-json --verbose --max-turns 8 | Out-File -Encoding utf8 warm-mcp.jsonl
+claude -p $task --model haiku --setting-sources project --strict-mcp-config --append-system-prompt $hint --allowedTools "Bash(node tk.mjs *)" "PowerShell(node tk.mjs *)" --output-format stream-json --verbose --max-turns 8 | Out-File -Encoding utf8 warm-cli.jsonl</code></pre>
+          <p class="expect"><b>Expected:</b> no output; two files, <code>warm-mcp.jsonl</code> and <code>warm-cli.jsonl</code>.</p></li>
+        <li><p>Run each arm three times.</p>
+          <pre><code>foreach ($i in 1..3) {
+  claude -p $task --model haiku --setting-sources project --strict-mcp-config --mcp-config mcp.json --allowedTools "mcp__tickets" --output-format stream-json --verbose --max-turns 8 | Out-File -Encoding utf8 "mcp-$i.jsonl"
+  claude -p $task --model haiku --setting-sources project --strict-mcp-config --append-system-prompt $hint --allowedTools "Bash(node tk.mjs *)" "PowerShell(node tk.mjs *)" --output-format stream-json --verbose --max-turns 8 | Out-File -Encoding utf8 "cli-$i.jsonl"
+}
+</code></pre>
+          <p class="expect"><b>Expected:</b> no output; six <code>.jsonl</code> files. This takes a few minutes.</p></li>
+        <li><p>Print the table, the prompt size of each request and the calls of one run per arm.</p>
+          <pre><code>Show-Table ('mcp-1', 'mcp-2', 'mcp-3', 'cli-1', 'cli-2', 'cli-3') 'COUNT=4 OLDEST=1039'
+foreach ($n in 'mcp-1', 'mcp-2', 'mcp-3', 'cli-1', 'cli-2', 'cli-3') { $n + ' prompt tokens per request: ' + (Show-Requests "$n.jsonl") }
+'--- mcp-2'
+Show-Calls mcp-2.jsonl
+'--- cli-2'
+Show-Calls cli-2.jsonl</code></pre>
+          <p class="expect"><b>Expected:</b> six rows, all <code>correct True</code>, three requests each. MCP rows: <code>prompt_total</code> 67,654, output about 610, cost about $0.001 ($0.00122 for the run that paid a cache write). CLI rows: <code>prompt_total</code> 66,339 to 66,385, output 462 to 527, cost $0.00089 to $0.00102. Per-request prompt sizes for MCP are <code>21878 22668 23108</code> in every run, for the CLI <code>21807 22112 22420</code> (run 1: <code>22467</code>). The MCP calls are <code>ToolSearch</code>, <code>mcp__tickets__ticket_count</code> with <code>{"host":"db-01","severity":"high","status":"open"}</code>, then <code>mcp__tickets__ticket_search</code>. The CLI calls are two <code>Bash</code> commands: <code>--help</code>, then count and search chained with <code>&amp;&amp;</code>. Both end with <code>COUNT=4 OLDEST=1039</code>. Your counts of requests can differ: other passes of this lab gave MCP runs of two to four requests.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>What is the cheapest column to compare between the arms, and why? <b><code>prompt_total</code> and <code>requests</code>.</b> Cost depends on which run paid the cache write, so a single cost figure says less than the token split.</p>
+        <p>Where did the MCP arm pay for its schemas? <b>On the second request, which grew by about 790 tokens after <code>ToolSearch</code> loaded three definitions; the CLI's second request grew by about 300 for its usage text.</b></p>
+        <p>What fraction of each run's tokens were cache reads? <b>Almost all: 67,648 of 67,654 in a warm MCP run.</b> The fixed 22k prefix dominates both arms.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m24-lab3" data-title="Filtered or verbose: the size of the tool result" data-minutes="20">
+      <p class="goal">You ask a question that needs the whole data set against a filtered build and a verbose build of both front ends, and end up with the tool-result size, request growth and cost of each.</p>
+      <p>The verbose build is the same code. <code>TK_VERBOSE=1</code> removes <code>count</code> and the limit and returns whole records as JSON. For the MCP arm the variable goes in the server entry's <code>env</code> block; for the CLI arm it is set in the shell that the agent's commands inherit. Labs 1 and 2 must be done first.</p>
+      <ol class="steps">
+        <li><p>Load the helper and add a config whose server entry sets <code>TK_VERBOSE</code>.</p>
+          <pre><code>Set-Location {{LAB}}/m24
+Get-Content show.ps1 -Raw | Invoke-Expression
+
+Set-Content -Encoding utf8 -Path mcp-verbose.json -Value @'
+{ "mcpServers": { "tickets": { "command": "node", "args": ["tk-mcp.mjs"], "env": { "TK_VERBOSE": "1" } } } }
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Add a function that sums the size of every tool result in a run.</p>
+          <pre><code>function Result-Chars($file) {   # the total size of every tool result in the run
+  $n = 0
+  foreach ($l in (Read-Run $file | Where-Object { $_.type -eq 'user' })) {
+    foreach ($c in ($l.message.content | Where-Object { $_.type -eq 'tool_result' })) {
+      $t = if ($c.content -is [string]) { $c.content } else { ($c.content | ForEach-Object { $_.text }) -join '' }
+      $n += $t.Length
+    }
+  }
+  $n
+}</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Set the task, then run each arm twice filtered and twice verbose. The expected answer is 78 open tickets, web-02 first with 18.</p>
+          <pre><code>$task = 'How many tickets are open, and which host has the most open tickets? End with a line in the form COUNT=&lt;n&gt; HOST=&lt;host&gt;.'
+$hint = 'Ticket data is queried with a CLI in this folder. Its usage: node tk.mjs --help'
+$want = 'COUNT=78 HOST=web-02'
+
+foreach ($i in 1..2) {
+  claude -p $task --model haiku --setting-sources project --strict-mcp-config --mcp-config mcp.json --allowedTools "mcp__tickets" --output-format stream-json --verbose --max-turns 8 | Out-File -Encoding utf8 "f-mcp-$i.jsonl"
+  claude -p $task --model haiku --setting-sources project --strict-mcp-config --append-system-prompt $hint --allowedTools "Bash(node tk.mjs *)" "PowerShell(node tk.mjs *)" --output-format stream-json --verbose --max-turns 8 | Out-File -Encoding utf8 "f-cli-$i.jsonl"
+}
+$env:TK_VERBOSE = '1'     # the CLI arm: the same variable, set in the shell the agent's commands inherit
+foreach ($i in 1..2) {
+  claude -p $task --model haiku --setting-sources project --strict-mcp-config --mcp-config mcp-verbose.json --allowedTools "mcp__tickets" --output-format stream-json --verbose --max-turns 8 | Out-File -Encoding utf8 "v-mcp-$i.jsonl"
+  claude -p $task --model haiku --setting-sources project --strict-mcp-config --append-system-prompt $hint --allowedTools "Bash(node tk.mjs *)" "PowerShell(node tk.mjs *)" --output-format stream-json --verbose --max-turns 8 | Out-File -Encoding utf8 "v-cli-$i.jsonl"
+}
+Remove-Item Env:TK_VERBOSE</code></pre>
+          <p class="expect"><b>Expected:</b> no output; eight <code>.jsonl</code> files.</p></li>
+        <li><p>Print the table, the prompt size of three runs, and the calls of the two runs that show the most.</p>
+          <pre><code>$names = 'f-mcp-1', 'f-mcp-2', 'f-cli-1', 'f-cli-2', 'v-mcp-1', 'v-mcp-2', 'v-cli-1', 'v-cli-2'
+$names | ForEach-Object { $row = Get-Run "$_.jsonl" $want; $row | Add-Member result_chars (Result-Chars "$_.jsonl") -PassThru } | Format-Table run, requests, input, cache_write, cache_read, output, prompt_total, result_chars, cost, correct -AutoSize | Out-String -Width 220
+foreach ($n in 'f-mcp-2', 'v-mcp-2', 'v-cli-2') { $n + ' prompt tokens per request: ' + (Show-Requests "$n.jsonl") }
+'--- v-mcp-1'
+Show-Calls v-mcp-1.jsonl
+'--- v-cli-1'
+Show-Calls v-cli-1.jsonl</code></pre>
+          <p class="expect"><b>Expected:</b> eight rows, all <code>correct True</code>. Filtered rows: three requests, <code>result_chars</code> 62 (MCP) or about 510 (CLI), <code>prompt_total</code> about 66,200 to 67,400, cost about $0.001. Verbose rows: <code>result_chars</code> about 27,600 to 42,500, <code>prompt_total</code> from 60,698 to 185,666, cost $0.0042 to $0.0052, and the CLI runs take four to six requests. The per-request lists look like <code>21866 22476 22746</code> for filtered and, for a verbose run, a jump of 11,000 to 17,000 tokens on the request after the result (for example <code>21795 22022 33139 35826 36272 36612</code>). In the CLI runs you see <code>Bash</code> calls that pipe the output into <code>node -e</code> answered by <code>This Bash command contains multiple operations. The following part requires approval</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Did the verbose arms get the answer wrong? <b>No, all eight runs were correct.</b> The cost is in tokens and requests, not in accuracy, at this size.</p>
+        <p>How many characters per token did the verbose JSON come to? <b>About 2.5</b>, from the request-size jump divided into the result size.</p>
+        <p>Why did the verbose CLI runs take more requests than the verbose MCP runs? <b>With no <code>count</code>, the model tried to tally with pipes and <code>node -e</code>, which the <code>node tk.mjs *</code> rule did not cover, and each refusal was another request.</b></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m24-lab4" data-title="The fixed overhead of unused tools" data-minutes="20">
+      <p class="goal">You attach servers with 3, 10 and 40 unused tools to a one-word request, with tool search on and off, and end up with the prompt size of each configuration and a context report that names where the tokens go.</p>
+      <ol class="steps">
+        <li><p>Write a server with N tools nobody will call, and the configs that attach it. <code>alwaysLoad</code> is the server-entry field that exempts a server from deferral.</p>
+          <pre><code>Set-Location {{LAB}}/m24
+
+Set-Content -Encoding utf8 -Path pad-mcp.mjs -Value @'
+// pad-mcp.mjs: an MCP server with N tools nobody will call. Usage: node pad-mcp.mjs 40
+import { createInterface } from 'node:readline';
+const n = Number(process.argv[2] || 10);
+const tools = Array.from({ length: n }, (_, i) =&gt; ({
+  name: 'asset_op_' + String(i + 1).padStart(2, '0'),
+  description: `Operation ${i + 1} on the asset register: look up, filter and summarise asset records by owner, site and lifecycle state. Read-only.`,
+  inputSchema: { type: 'object', additionalProperties: false, required: ['asset'], properties: {
+    asset: { type: 'string', description: 'Asset tag, for example A-10234' },
+    site: { type: 'string', description: 'Site code, for example east' },
+    state: { type: 'string', enum: ['ordered', 'in-use', 'retired'], description: 'Lifecycle state' },
+    limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Maximum rows to return' } } }
+}));
+const methods = {
+  'initialize': () =&gt; ({ protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'assets', version: '1.0.0' } }),
+  'ping': () =&gt; ({}),
+  'tools/list': () =&gt; ({ tools }),
+  'tools/call': () =&gt; ({ content: [{ type: 'text', text: 'not implemented' }], isError: true })
+};
+createInterface({ input: process.stdin }).on('line', (line) =&gt; {
+  if (!line.trim()) return;
+  const msg = JSON.parse(line);
+  if (msg.id === undefined) return;
+  const fn = methods[msg.method];
+  const body = fn ? { result: fn() } : { error: { code: -32601, message: 'Method not found: ' + msg.method } };
+  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, ...body }) + '\n');
+});
+'@
+Set-Content -Encoding utf8 -Path mcp-pad10.json -Value '{ "mcpServers": { "assets": { "command": "node", "args": ["pad-mcp.mjs", "10"] } } }'
+Set-Content -Encoding utf8 -Path mcp-pad40.json -Value '{ "mcpServers": { "assets": { "command": "node", "args": ["pad-mcp.mjs", "40"] } } }'
+Set-Content -Encoding utf8 -Path mcp-always.json -Value '{ "mcpServers": { "tickets": { "command": "node", "args": ["tk-mcp.mjs"], "alwaysLoad": true } } }'</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Measure the size of the padding server's tool list.</p>
+          <pre><code>$list = '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | node pad-mcp.mjs 40
+'40 pad tools, characters of JSON: ' + (($list | ConvertFrom-Json).result.tools | ConvertTo-Json -Depth 8 -Compress).Length</code></pre>
+          <p class="expect"><b>Expected:</b> <code>40 pad tools, characters of JSON: 23712</code>.</p></li>
+        <li><p>Send one prompt in each of five configurations, first with tool search at its default and then with <code>ENABLE_TOOL_SEARCH=false</code>.</p>
+          <pre><code>'--- one request, no tool use: the prompt size by configuration'
+$configs = [ordered]@{ 'no MCP server' = @(); 'tickets, 3 tools' = @('--mcp-config', 'mcp.json'); 'assets, 10 tools' = @('--mcp-config', 'mcp-pad10.json'); 'assets, 40 tools' = @('--mcp-config', 'mcp-pad40.json'); 'tickets, alwaysLoad' = @('--mcp-config', 'mcp-always.json') }
+$sizes = foreach ($mode in 'default', 'false') {
+  if ($mode -eq 'false') { $env:ENABLE_TOOL_SEARCH = 'false' }
+  foreach ($name in $configs.Keys) {
+    $cfg = $configs[$name]
+    $r = claude -p "Reply with the single word ok." --model haiku --setting-sources project --strict-mcp-config @cfg --output-format json --max-turns 1 | ConvertFrom-Json
+    $u = $r.usage
+    [pscustomobject]@{ tool_search = $mode; config = $name; prompt = $u.input_tokens + $u.cache_creation_input_tokens + $u.cache_read_input_tokens }
+  }
+  Remove-Item Env:ENABLE_TOOL_SEARCH -ErrorAction SilentlyContinue
+}
+$sizes | Format-Table -AutoSize | Out-String -Width 200</code></pre>
+          <p class="expect"><b>Expected:</b> a table of prompt sizes. Default: 21725 (no server), 21834 (3 tools), 21861 (10), 22281 (40), 22363 (tickets with <code>alwaysLoad</code>). Search off: 37356, 37998, 39886, 47476, 37998. Allow a few tokens of drift between versions and runs.</p></li>
+        <li><p>Ask for the context report headlessly in both modes and print only the category lines.</p>
+          <pre><code>'--- /context headless, 40 pad tools'
+foreach ($mode in 'default', 'false') {
+  if ($mode -eq 'false') { $env:ENABLE_TOOL_SEARCH = 'false' }
+  $c = claude -p "/context" --model haiku --setting-sources project --strict-mcp-config --mcp-config mcp-pad40.json --output-format json | ConvertFrom-Json
+  "tool search: $mode"
+  ($c.result -split "`n") | Where-Object { $_ -match '^\*\*Tokens' -or $_ -match '^\| (System|MCP tools|Skills)' }
+  Remove-Item Env:ENABLE_TOOL_SEARCH -ErrorAction SilentlyContinue
+}</code></pre>
+          <p class="expect"><b>Expected:</b> with tool search on: <code>**Tokens:** 17.2k / 1m (2%)</code>, System prompt 3.4k, System tools 11.6k, MCP tools (deferred) 9.9k, System tools (deferred) 13.8k, Skills 2.2k. With it off: <code>**Tokens:** 43.2k / 1m (4%)</code>, System tools 27.7k, MCP tools 9.9k, Skills 2.2k.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>What did turning tool search off add with no MCP server attached? <b>About 15,600 tokens (21,725 to 37,356)</b>, because the built-in tools that are normally deferred load too.</p>
+        <p>What is the per-tool cost of the padding server, and where is it paid? <b>About 247 tokens per tool, only when tool search is off or the server is <code>alwaysLoad</code>.</b> With tool search on, 40 tools added 556 tokens of names.</p>
+        <p>Why does <code>alwaysLoad</code> on the tickets server add 638 tokens when tool search is on? <b>Its three full definitions load upfront instead of three names.</b></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m24-lab5" data-title="Permissions and the audit trail" data-minutes="20">
+      <p class="goal">You allow one MCP tool and one CLI subcommand, give the agent a task that needs more, and end up with the denials each path produced and the tool-call records each left in the transcript.</p>
+      <p>Labs 1 and 2 must be done first: this lab reads the run files from lab 2.</p>
+      <ol class="steps">
+        <li><p>Load the helper and run each arm with an allow rule that covers only the count. The CLI rule also allows the exact help command so the model can read the usage.</p>
+          <pre><code>Set-Location {{LAB}}/m24
+Get-Content show.ps1 -Raw | Invoke-Expression
+
+$task = 'How many open high-severity tickets does db-01 have, and what is the id of the oldest one? End with a line in the form COUNT=&lt;n&gt; OLDEST=&lt;id&gt;.'
+$hint = 'Ticket data is queried with a CLI in this folder. Its usage: node tk.mjs --help'
+
+# MCP: allow exactly one tool of the server. CLI: allow exactly the count command and the help text.
+claude -p $task --model haiku --setting-sources project --strict-mcp-config --mcp-config mcp.json --allowedTools "mcp__tickets__ticket_count" --output-format stream-json --verbose --max-turns 8 | Out-File -Encoding utf8 perm-mcp.jsonl
+claude -p $task --model haiku --setting-sources project --strict-mcp-config --append-system-prompt $hint --allowedTools "Bash(node tk.mjs count *)" "Bash(node tk.mjs --help)" "PowerShell(node tk.mjs count *)" "PowerShell(node tk.mjs --help)" --output-format stream-json --verbose --max-turns 8 | Out-File -Encoding utf8 perm-cli.jsonl</code></pre>
+          <p class="expect"><b>Expected:</b> no output; <code>perm-mcp.jsonl</code> and <code>perm-cli.jsonl</code>.</p></li>
+        <li><p>Print the calls and the denial summary of each run.</p>
+          <pre><code>foreach ($n in 'perm-mcp', 'perm-cli') {
+  '--- ' + $n
+  Show-Calls "$n.jsonl" | ForEach-Object { if ($_.Length -gt 300) { $_.Substring(0, 300) } else { $_ } }
+}
+
+foreach ($n in 'perm-mcp', 'perm-cli') { $r = Read-Run "$n.jsonl" | Where-Object { $_.type -eq 'result' }; $n + ': ' + $r.subtype + ', turns ' + $r.num_turns + ', denials ' + @($r.permission_denials).Count }</code></pre>
+          <p class="expect"><b>Expected:</b> the MCP run searches for tools, calls <code>ticket_count</code> (result <code>4</code>) and then <code>ticket_search</code>, whose result is <code>Claude requested permissions to use mcp__tickets__ticket_search, but you haven't granted it yet.</code>, and ends by reporting the count and no oldest id (<code>perm-mcp: success, turns 4, denials 1</code>). The CLI run reads <code>--help</code>, runs the chained count and search and is told <code>This Bash command contains multiple operations. The following part requires approval: node tk.mjs search ...</code>, then runs the count alone (result <code>4</code>), is refused on each search it tries, in Bash and in PowerShell, and ends the same way (<code>perm-cli: success, turns 7, denials 4</code>). An earlier pass of this lab ended with two MCP denials and an extra CLI attempt: the exact counts vary, the pattern does not.</p></li>
+        <li><p>Print the <code>tool_use</code> records from the two allowed runs of lab 2, which are what an audit would read.</p>
+          <pre><code>'--- what each run left in its transcript: the tool_use blocks, as the audit trail'
+foreach ($n in 'mcp-2', 'cli-2') {
+  $n
+  Read-Run "$n.jsonl" | Where-Object { $_.type -eq 'assistant' } | ForEach-Object { $_.message.content } | Where-Object { $_.type -eq 'tool_use' } |
+    ForEach-Object { '  name=' + $_.name + '  input=' + ($_.input | ConvertTo-Json -Compress) }
+}</code></pre>
+          <p class="expect"><b>Expected:</b> for the MCP run, <code>name=ToolSearch</code> then <code>name=mcp__tickets__ticket_count input={"host":"db-01","severity":"high","status":"open"}</code> and <code>name=mcp__tickets__ticket_search input={..."limit":200}</code>. For the CLI run, two <code>name=Bash</code> records whose <code>input</code> is a <code>command</code> string beginning <code>cd "C:/..." &amp;&amp; node tk.mjs</code>, and a <code>description</code> the model wrote.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Which path let you allow the count and refuse the search by tool name, and which by command pattern? <b>MCP by name (<code>mcp__tickets__ticket_count</code>), CLI by pattern (<code>Bash(node tk.mjs count *)</code>).</b></p>
+        <p>Why did the CLI run take more turns than the MCP run? <b>Each denied variation was another request, and the model could change the shell (Bash, PowerShell) and chain commands, which the MCP tool call does not allow.</b></p>
+        <p>Which transcript is easier to query for "every call that filtered on host db-01"? <b>The MCP one: the host is a field in <code>input</code>. The CLI record needs the command string parsed.</b></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m24-lab6" data-title="Measure your own pair" data-minutes="30">
+      <p class="goal">You pick a capability you already reach through a CLI or an MCP server, build or find the other form, run lab 2's comparison on it, and end up with a six-row table and a written choice.</p>
+      <ol class="steps">
+        <li><p>Choose a read-only capability with a real CLI, for example a query tool for a system you operate. Write the MCP wrapper over the same logic, following <code>tk-mcp.mjs</code> (a core module, three or fewer tools, filters and a limit in each). Write its config file, <code>yourserver.json</code>, in the lab folder.</p>
+          <p class="expect"><b>Expected:</b> hand-driving the server as in lab 1 gives the same answer as the CLI.</p></li>
+        <li><p>Copy lab 2's runs and change four things: the task text, <code>$want</code> (the exact end line you expect), the config file, and the CLI allow rule.</p>
+          <pre><code>Set-Location {{LAB}}/m24
+Get-Content show.ps1 -Raw | Invoke-Expression
+$task = 'YOUR QUESTION. End with a line in the form ANSWER=&lt;x&gt;.'
+$hint = 'YOUR CLI is in this folder. Its usage: yourcli --help'
+$want = 'ANSWER=EXPECTED'
+foreach ($i in 0..3) {
+  $n = if ($i -eq 0) { 'warm' } else { $i }
+  claude -p $task --model haiku --setting-sources project --strict-mcp-config --mcp-config yourserver.json --allowedTools "mcp__yourserver" --output-format stream-json --verbose --max-turns 8 | Out-File -Encoding utf8 "own-mcp-$n.jsonl"
+  claude -p $task --model haiku --setting-sources project --strict-mcp-config --append-system-prompt $hint --allowedTools "Bash(yourcli *)" --output-format stream-json --verbose --max-turns 8 | Out-File -Encoding utf8 "own-cli-$n.jsonl"
+}
+Show-Table ('own-mcp-1', 'own-mcp-2', 'own-mcp-3', 'own-cli-1', 'own-cli-2', 'own-cli-3') $want
+foreach ($n in 'own-mcp-1', 'own-cli-1') { $n + ' prompt tokens per request: ' + (Show-Requests "$n.jsonl") }
+Show-Calls own-mcp-1.jsonl
+Show-Calls own-cli-1.jsonl</code></pre>
+          <p class="expect"><b>Expected:</b> a six-row table. Your numbers differ from lab 2. Check <code>correct</code> first: a column of <code>False</code> means the end line or the allow rule is wrong, not that one path is worse.</p></li>
+        <li><p>Rerun with a verbose variant of your tool (no limit, whole records) and read how the request size and cost move. Then fill in the decision table for your case: who must call it, what auth it needs, which operations need separate rules, and what the audit has to show.</p>
+          <p class="expect"><b>Expected:</b> a written choice of one front end (or a shared core with both), with the measured request count and prompt size next to the reason.</p></li>
+      </ol>
+      <details class="check"><summary>Done-test</summary>
+        <p>You are done when the table shows three correct runs per arm, you can say which column moved most between the arms (requests, tool-result size, or fixed overhead), and your written choice names a factor other than tokens. If tokens decided it, check the result size first: it is usually the largest lever.</p>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Settings, flags and fields used in this module</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Item</th><th>What it does</th></tr>
+      <tr><td><code>--mcp-config FILE</code> with <code>--strict-mcp-config</code></td><td>Load MCP servers from the file and ignore every other configured server</td></tr>
+      <tr><td><code>--allowedTools "mcp__tickets"</code></td><td>Allow every tool of the <code>tickets</code> server without a prompt; <code>mcp__tickets__ticket_count</code> allows one tool</td></tr>
+      <tr><td><code>--allowedTools "Bash(node tk.mjs count *)"</code></td><td>Allow Bash commands that match the pattern, per subcommand of a compound command</td></tr>
+      <tr><td><code>--append-system-prompt TEXT</code></td><td>Add text to the system prompt; the labs use it to tell the model a CLI exists</td></tr>
+      <tr><td><code>--output-format stream-json --verbose</code></td><td>One JSON event per line: assistant messages with <code>tool_use</code> blocks, user messages with <code>tool_result</code> blocks, and a final <code>result</code> with <code>usage</code>, <code>total_cost_usd</code> and <code>permission_denials</code></td></tr>
+      <tr><td><code>ENABLE_TOOL_SEARCH</code></td><td>Unset or <code>true</code>: MCP tools deferred. <code>false</code>: all loaded upfront. <code>auto</code> or <code>auto:N</code>: load upfront while definitions stay under 10% (or N%) of the context window</td></tr>
+      <tr><td><code>"alwaysLoad": true</code> in a server entry</td><td>Load that server's tools upfront whatever the tool search setting</td></tr>
+      <tr><td><code>MAX_MCP_OUTPUT_TOKENS</code></td><td>MCP output limit, 25,000 tokens by default; a warning shows above 10,000 tokens; a text result over 50,000 characters is saved to a file</td></tr>
+      <tr><td><code>BASH_MAX_OUTPUT_LENGTH</code></td><td>Characters of Bash output read back into the result; default 30,000, maximum 150,000</td></tr>
+      <tr><td><code>CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1</code></td><td>Strip credentials from the environment of Bash commands, hooks and stdio MCP servers</td></tr>
+      <tr><td><code>OTEL_LOG_TOOL_DETAILS=1</code></td><td>Include tool input arguments and MCP server names in telemetry (off by default)</td></tr>
+      <tr><td><code>/context</code>, also <code>claude -p "/context"</code></td><td>Prints context use by category, with MCP tools and system tools shown as deferred or loaded</td></tr>
+    </table></div>
+    <h3>Permission rule shapes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Rule</th><th>Matches</th></tr>
+      <tr><td><code>mcp__tickets</code> or <code>mcp__tickets__*</code></td><td>Every tool of the server</td></tr>
+      <tr><td><code>mcp__tickets__ticket_count</code></td><td>That one tool, whatever its arguments</td></tr>
+      <tr><td><code>mcp__tickets__ticket_count(host:db-01)</code></td><td>Nothing: an <code>mcp__</code> rule with parentheses is skipped</td></tr>
+      <tr><td><code>Bash(node tk.mjs count *)</code></td><td>Commands that start with <code>node tk.mjs count</code>; each part of a compound command is checked on its own</td></tr>
+      <tr><td><code>Bash(node tk.mjs --help)</code></td><td>Exactly that command</td></tr>
+    </table></div>
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>The model calls a deferred MCP tool with empty or guessed arguments and gets an error</td><td>The tool's schema was not loaded when it called; tool search loads schemas on demand</td><td>Put the argument names in the tool description and server instructions, or set <code>alwaysLoad</code> for the few tools used every turn</td></tr>
+      <tr><td>A task takes four or five requests where two would do</td><td>Search step, retry after a rejected call, or a usage lookup for a CLI</td><td>Tell the model the syntax up front (CLAUDE.md, skill, server instructions) and make errors name the valid values</td></tr>
+      <tr><td>Every request after a lookup is 10,000 or more tokens larger</td><td>A large tool result stays in the history</td><td>Filter, count and limit in the tool; return one line per record and a "more" hint</td></tr>
+      <tr><td>A CLI task burns turns on denied pipes, redirects and <code>node -e</code></td><td>The Bash rule names one program; the model reached for other commands to post-process</td><td>Give the CLI the filtering it needs (a <code>count</code> subcommand), or allow the extra commands deliberately</td></tr>
+      <tr><td>Prompt grows by 15,000 or more with tool search off</td><td>Built-in deferred tools load upfront too, not only MCP tools</td><td>Leave <code>ENABLE_TOOL_SEARCH</code> unset unless a gateway or a model requires otherwise</td></tr>
+      <tr><td>Server tools missing in a <code>-p</code> run</td><td>Server still connecting, failed to start, or needs OAuth that was never completed</td><td>Read <code>mcp_servers</code> in the <code>system/init</code> event of a stream-json run (and <code>mcp_server_errors</code> for a skipped <code>--mcp-config</code> entry); sign in from an interactive session first</td></tr>
+    </table></div>
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+      <li>Claude Code docs, "Connect Claude Code to tools via MCP": <a href="https://code.claude.com/docs/en/mcp" target="_blank" rel="noopener">code.claude.com/docs/en/mcp</a></li>
+      <li>Claude Code docs, "Manage costs effectively": <a href="https://code.claude.com/docs/en/costs" target="_blank" rel="noopener">code.claude.com/docs/en/costs</a></li>
+      <li>Claude Code docs, "Configure permissions": <a href="https://code.claude.com/docs/en/permissions" target="_blank" rel="noopener">code.claude.com/docs/en/permissions</a></li>
+      <li>Claude Code docs, "Environment variables": <a href="https://code.claude.com/docs/en/env-vars" target="_blank" rel="noopener">code.claude.com/docs/en/env-vars</a></li>
+      <li>Claude Code docs, "CLI reference": <a href="https://code.claude.com/docs/en/cli-reference" target="_blank" rel="noopener">code.claude.com/docs/en/cli-reference</a></li>
+      <li>Claude Code docs, "Run Claude Code programmatically": <a href="https://code.claude.com/docs/en/headless" target="_blank" rel="noopener">code.claude.com/docs/en/headless</a></li>
+      <li>Claude Code docs, "Claude Code on the web": <a href="https://code.claude.com/docs/en/claude-code-on-the-web" target="_blank" rel="noopener">code.claude.com/docs/en/claude-code-on-the-web</a></li>
+      <li>Claude API docs, "Tool search tool": <a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool" target="_blank" rel="noopener">platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool</a></li>
+      <li>MCP specification 2026-07-28, "Tools": <a href="https://modelcontextprotocol.io/specification/2026-07-28/server/tools" target="_blank" rel="noopener">modelcontextprotocol.io/specification/2026-07-28/server/tools</a></li>
+      <li>Measured: every Expected line in the labs comes from a run on Claude Code 2.1.322 with Haiku 5.5 on 11 November 2026. Token counts are exact for that run and vary a little between runs; cost is at API list price.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "A colleague wants to replace a three-tool MCP server with a CLI to shrink the prompt, and cites the cost docs. With tool search on you measure the prompt of one request: 21,725 tokens with no server attached and 21,834 with it. What do you conclude?", "o": ["Tool search must be misconfigured, because an MCP server should cost thousands of tokens", "The server adds about 110 tokens, roughly half a percent, so the saving is real but small: decide on surfaces, auth and auditing, and check requests per task and tool-result size first", "The CLI costs nothing, so switch now", "The comparison is invalid because the first request of a session is cached"], "a": 1, "why": "The docs say deferred MCP tools add only names to the prompt, and the measurement agrees: about 110 tokens on a prompt of about 21,700. The direction of the cost docs' advice holds, but at this size it is not the lever. Requests per task and the size of tool results moved cost far more in the same labs."},
+    {"q": "Your search tool returns every matching ticket as pretty-printed JSON, about 28,000 characters for a typical question. The agent answers correctly, but a task costs four to five times what a filtered one does. Which change goes first?", "o": ["Raise MAX_MCP_OUTPUT_TOKENS so nothing is ever truncated", "Move the tool to a CLI so the Bash output limit applies", "Tell the model in CLAUDE.md to keep its answers short", "Give the program a count with grouping, a default limit, and one-line rows with a note of how many were left out"], "a": 3, "why": "The result stays in the history and enlarges every later request, whichever front end returned it. In the lab the verbose result raised the prompt by about 11,000 tokens per later request. The backstops (25,000 tokens for MCP, 30,000 characters for Bash) sit above a 28,000-character result, so they would not have helped. Filtering at the source is the fix."},
+    {"q": "An MCP server exposes ticket_count and ticket_search. You want the agent to run counts but never searches, and you want to report on calls by field later. Which setup fits?", "o": ["Allow mcp__tickets__ticket_count only; the transcript records each call as a tool name plus an input object", "Allow mcp__tickets__ticket_count(severity:high) so that only high-severity counts run", "Allow mcp__tickets__* and tell the model in CLAUDE.md not to search", "Allow Bash(node *) and rely on the program's own checks"], "a": 0, "why": "MCP permission rules match by name. An mcp__ rule with parentheses is skipped when settings load, so argument-level allow rules are not available. Allowing the single tool leaves search to prompt or deny, and the transcript stores the typed input of each call, which is easy to query. A CLAUDE.md sentence is not enforcement, and Bash(node *) approves every Node script."},
+    {"q": "With ENABLE_TOOL_SEARCH=false and no MCP server attached, the prompt of one request grows from 21.7k to 37.4k tokens. A teammate concludes that MCP is expensive. What is the better reading?", "o": ["Every MCP server costs about 15,600 tokens", "Tool search only matters for CLI tools", "The measurement is noise from cache state", "The increase is Claude Code's own built-in tools loading upfront; MCP tools add on top in proportion to their count and schema size, so leave tool search on unless something forces otherwise"], "a": 3, "why": "The context report with tool search on shows 11.6k of system tools plus 13.8k deferred, and 27.7k of system tools with it off. No MCP server was attached, so the 15,600 tokens are built-in tools. The padding server's 40 tools added a further 10,120 tokens, about 247 each."},
+    {"q": "A read-only capability must work in Claude Code at a terminal and in a chat client that has no shell, and the service behind it needs OAuth sign-in. What do you build?", "o": ["A CLI only, because it has the lowest prompt cost", "A shared core with an MCP server as the front end for both clients, and a thin CLI over the same core if people or scripts need a shell", "An MCP server whose logic lives inside the server file", "Two independent implementations so each can be tuned"], "a": 1, "why": "A client without a shell can only use MCP, and Claude Code runs the OAuth sign-in for an MCP server and keeps the credential outside the model's reach. Keeping the logic in a core means filtering, defaults and error text stay identical across front ends, and a CLI can be added without a second implementation."}
+  ]</script>
+</section>

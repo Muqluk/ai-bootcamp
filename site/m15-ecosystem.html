@@ -1,0 +1,685 @@
+<section class="module" id="m15" data-title="The wider ecosystem" data-sub="Multiplexers, community skills and how to vet them" data-level="practitioner" data-prereq="m3" data-minutes="210">
+  <div class="overview">
+    <p class="lede">Most of what people run around Claude Code was not written by Anthropic: terminal multiplexers that keep a dozen agent sessions alive, skill collections published from somebody's own working directory, plugin marketplaces, MCP servers, and lists that point at all of them. Each one is a dependency that ends up holding some of your privileges. This module maps what exists, shows how to read a third-party item before it touches your machine, and how to adopt it at a fixed commit so that it only changes when you say so.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Sort a third-party item into its kind (multiplexer, skill collection, plugin, MCP server, installer, list) and say what that kind can do on your machine once adopted.</li>
+      <li>Tell Anthropic's own repositories and marketplaces from community work by name, and explain why a listing in an official marketplace is not a review of the code.</li>
+      <li>Compare tmux and herdr on platform, agent awareness, scripting interface and maturity, and script a pane from the documented commands.</li>
+      <li>Vet a skill repository at a pinned commit with git and PowerShell: file inventory, scripts, frontmatter fields, injected commands, hooks, licence, maintenance signals.</li>
+      <li>Vendor one reviewed skill into a project, record its provenance, and prove from the init line of a headless run that it loaded.</li>
+      <li>Review the diff between your pinned commit and a newer one before updating, and decide when writing your own short skill beats taking the dependency.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key). The labs were run on 2.1.322.</li>
+      <li>Windows PowerShell 5.1 or PowerShell 7, and git. Nothing else is installed by the labs: no multiplexer, no package, no plugin.</li>
+      <li>Network access to <code>github.com</code> for one clone of a public repository (about 180 files).</li>
+      <li>About $0.02 of Haiku usage at API list price for the six headless runs, or the same share of a subscription's 5-hour window.</li>
+    </ul>
+    <div class="recap"><h3>If you skipped the prerequisites</h3><p>From Skills: a skill is a folder that holds a <code>SKILL.md</code> file (YAML frontmatter, then a Markdown body) and, optionally, supporting files and scripts. It loads in layers. The <code>description</code> from the frontmatter sits in the context of every session so the model can decide when the skill applies; the body is loaded only when the skill is invoked, by you typing <code>/name</code> or by the model; supporting files are read when the body points at them; scripts are run through a tool, never loaded as text. Skills live in <code>~/.claude/skills/&lt;name&gt;/</code> (personal, all your projects), <code>.claude/skills/&lt;name&gt;/</code> (project, committed with the repository), a managed location (enterprise) or a plugin's <code>skills/</code> folder, where they are named <code>/plugin-name:skill-name</code>. On a name clash enterprise beats personal beats project. Frontmatter can do more than describe: <code>allowed-tools</code> pre-approves tools for the invoking turn, <code>hooks</code> registers hooks, and <code>disable-model-invocation: true</code> makes the skill run only when you type its name. The first line of <code>claude -p … --output-format stream-json --verbose</code> is an init event whose <code>skills</code> array is the scriptable proof of what loaded, and project skills only load when <code>--setting-sources</code> includes <code>project</code>.</p></div>
+  </div>
+
+  <div class="lesson" id="m15-l1" data-title="The map: what exists and what each kind can do" data-minutes="15">
+    <h3>Six kinds of third-party thing</h3>
+    <p>The useful question about any item you find is not whether it is popular. It is what it becomes on your machine once you adopt it: text in the model's context, a process, an entry in a settings file, or only a link. The table sorts the ecosystem by that.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Kind</th><th>Examples in this module</th><th>What lands on your machine</th><th>What it can do once adopted</th></tr>
+      <tr><td>Terminal multiplexer or session manager</td><td>tmux, herdr</td><td>A binary and a background server that owns your terminals</td><td>Reads every pane and types into every pane. Anything that can reach its control socket can do the same.</td></tr>
+      <tr><td>Skill collection</td><td><code>mattpocock/skills</code>, <code>anthropics/skills</code></td><td>Folders of Markdown, sometimes scripts</td><td>Enters the context as instructions that steer the tools the model already has. Frontmatter can pre-approve tools and register hooks; the body can inject shell command output.</td></tr>
+      <tr><td>Plugin and its marketplace</td><td><code>claude-plugins-official</code>, an author's own marketplace</td><td>A cached copy under the plugin store, enabled in settings</td><td>Everything a skill can, plus hooks, monitors, MCP and LSP servers and a <code>bin/</code> folder on the shell tool's <code>PATH</code>. The docs put it in one sentence: a plugin you install can execute arbitrary code on your machine with your user privileges.</td></tr>
+      <tr><td>MCP server</td><td>Any server from a registry or a vendor</td><td>A local process Claude Code starts, or a remote URL</td><td>Adds tools the model can call, and returns text the model reads.</td></tr>
+      <tr><td>Installer CLI</td><td>The open skills CLI (<code>npx skills</code>)</td><td>An npm package that runs with your privileges, then copies or links skill files</td><td>Fetches from the network, writes into agent folders, keeps a lock file, sends anonymous usage telemetry unless you turn it off.</td></tr>
+      <tr><td>List or directory</td><td>An "awesome" list, the skills.sh directory, the Claude Marketplace web catalogue</td><td>Nothing</td><td>Nothing by itself. It is a set of pointers; whatever you follow a pointer to belongs to one of the rows above.</td></tr>
+    </table></div>
+<figure class="diagram">
+<pre class="mermaid">flowchart LR
+  l["List or directory"]:::ghost -. "points at" .-> s["Skill collection"]
+  l -. "points at" .-> p["Plugin"]
+  l -. "points at" .-> m["MCP server"]
+  s --> s2["Instructions in context"]:::info
+  p --> s2
+  p --> p2["Hooks, servers, bin"]:::hot
+  m --> m2["Process or remote tools"]:::hot
+  x["Multiplexer"] --> x2["Control of every pane"]:::hot
+  i["Installer CLI"] --> i2["Code run at install"]:::hot
+  i -. "writes" .-> s
+</pre>
+  <figcaption>A list only points. Everything it points at ends up as instructions in the context, as code that runs with your privileges, or as both.</figcaption>
+</figure>
+    <h3>First-party and third-party</h3>
+    <p>Anthropic publishes its own material next to the community's, and the names are easy to confuse. These are the first-party sources the Claude Code docs name.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Repository</th><th>Marketplace name</th><th>What is in it</th><th>How you get it</th></tr>
+      <tr><td><code>anthropics/claude-plugins-official</code></td><td><code>claude-plugins-official</code></td><td>Plugins Anthropic maintains, plus plugins from partners and other authors</td><td>Claude Code adds it the first time you start an interactive terminal session, unless a managed policy or <code>CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL</code> blocks it</td></tr>
+      <tr><td><code>anthropics/claude-plugins-community</code></td><td><code>claude-community</code></td><td>Third-party plugins their authors submitted to Anthropic</td><td><code>/plugin marketplace add anthropics/claude-plugins-community</code></td></tr>
+      <tr><td><code>anthropics/skills</code></td><td><code>anthropic-agent-skills</code></td><td>Anthropic's own example skills and the document skills (docx, pdf, pptx, xlsx)</td><td><code>/plugin marketplace add anthropics/skills</code></td></tr>
+    </table></div>
+    <p>Claude Code sorts every marketplace into one of three tiers by its name: official (a reserved list that includes <code>claude-plugins-official</code> and <code>anthropic-agent-skills</code>), community (<code>claude-community</code>, <code>claude-plugins-community</code>, <code>healthcare</code>) and third-party (everything else, including a marketplace your own organisation runs). It accepts the official and community names only for marketplaces sourced from <code>github.com/anthropics/</code> repositories, so nobody else can present a catalogue under an Anthropic name.</p>
+    <aside class="trap">An official marketplace name tells you who publishes the catalogue, not who wrote each plugin or whether anyone audited it. The official repository has an <code>/external_plugins</code> folder for partner and community work, and the trust warning Claude Code shows is the same for every marketplace: "Anthropic does not control what MCP servers, files, or other software are included in plugins and cannot verify that they will work as intended or that they won't change." A community author's skill collection installed with <code>…@claude-plugins-official</code> is still that author's code.</aside>
+    <h3>What this module does with the map</h3>
+    <p>Two kinds get a full treatment here because nothing else in the course covers them: multiplexers (next lesson) and community skill collections (the lesson after). Plugins and marketplaces have their own module, "Plugins and marketplaces", which covers the manifest, marketplace sources and the managed settings that restrict them. MCP servers are covered in "MCP: anatomy of the protocol". The threat model behind all of it (what an attacker gains from text in your context or code in your session) is in "Security". This module gives you the procedure that applies to every row of the table: read it at a fixed commit, adopt the least you need, record where it came from, and review the difference before you update.</p>
+    <aside class="rule">Before adopting anything, write down which row of the table it is. If the answer is "a skill collection that is also a plugin with an installer", vet it as the most capable of the three.</aside>
+  </div>
+
+  <div class="lesson" id="m15-l2" data-title="Terminal multiplexers: tmux and herdr" data-minutes="20">
+    <h3>The problem they solve</h3>
+    <p>An interactive Claude Code session is a terminal program. Close the window or drop the SSH connection and the session's process dies with it. One session is easy to keep an eye on; eight are not, and eight windows give a script nothing to hold on to. A terminal multiplexer puts a server between you and the terminals. The server owns the terminal processes, you attach a client to look at them and detach without stopping them, and a command-line interface lets a script create a pane, type into it and read what is on its screen.</p>
+<figure class="diagram">
+<pre class="mermaid">sequenceDiagram
+  participant S as Script or agent
+  participant M as Multiplexer server
+  participant P as Pane running claude
+  participant Y as You
+  S->>M: create detached session
+  M->>P: start shell in a pane
+  S->>M: send keys
+  M->>P: keystrokes arrive
+  S->>M: capture or read pane
+  M-->>S: screen text
+  Y->>M: attach
+  M-->>Y: live view of the pane
+  Y->>M: detach
+  Note over M,P: The pane keeps running
+</pre>
+  <figcaption>The server owns the pane. A script and a person are both clients: either can type into it or read it, and neither stops it by leaving.</figcaption>
+</figure>
+    <h3>tmux</h3>
+    <p>tmux describes itself as a terminal multiplexer that lets a number of terminals be created, accessed and controlled from a single screen, and be detached and later reattached. Its model has four nouns. The <b>server</b> is one background process that holds all state and exits when nothing is left running. A <b>pane</b> holds one terminal and the program in it. A <b>window</b> groups panes that are visible together. A <b>session</b> groups windows, and a <b>client</b> attaches a session to the terminal you are sitting at. Client and server talk over a socket file in <code>/tmp</code>.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Task</th><th>Command</th><th>Notes from the tmux manual and wiki</th></tr>
+      <tr><td>Start a named session</td><td><code>tmux new -s agents</code></td><td><code>new</code> is the alias of <code>new-session</code>; add <code>-d</code> to create it without attaching, <code>-c</code> for the start directory</td></tr>
+      <tr><td>Detach</td><td><code>C-b d</code></td><td>The prefix key, then <code>d</code>; prints <code>[detached (from session agents)]</code></td></tr>
+      <tr><td>List and reattach</td><td><code>tmux ls</code>, <code>tmux attach -t agents</code></td><td><code>new -A -s agents</code> attaches if the session exists and creates it if not</td></tr>
+      <tr><td>Test for a session in a script</td><td><code>tmux has-session -t agents</code></td><td>Exits 0 if it exists, 1 if not</td></tr>
+      <tr><td>Type into a pane</td><td><code>tmux send-keys -t agents "claude" Enter</code></td><td>Each argument is a key name such as <code>Enter</code> or <code>C-a</code>; anything not recognised as a key is sent as characters; <code>-l</code> forces literal text</td></tr>
+      <tr><td>Read a pane</td><td><code>tmux capture-pane -p -t agents</code></td><td><code>-p</code> writes the pane contents to stdout; <code>-S</code> and <code>-E</code> choose the start and end line</td></tr>
+      <tr><td>Stop</td><td><code>tmux kill-session -t agents</code>, <code>tmux kill-server</code></td><td>The second destroys every session</td></tr>
+    </table></div>
+    <p>tmux knows nothing about agents. To a script, an agent pane is a grid of characters: you find out whether Claude is working, finished or waiting for an approval by capturing the pane and matching text. That is workable and it is brittle, because the text you match is another program's user interface.</p>
+    <h3>What Claude Code itself does with tmux</h3>
+    <p>Claude Code uses tmux in two documented places. Agent teams can show each teammate in its own pane: the <code>teammateMode</code> setting (or the <code>--teammate-mode</code> flag, which the docs call experimental and which is absent from <code>claude --help</code>) takes <code>in-process</code> (the default), <code>auto</code>, <code>tmux</code> or <code>iterm2</code>. Split-pane mode needs tmux or iTerm2, and the docs state that it is not supported in VS Code's integrated terminal, Windows Terminal or Ghostty, and that tmux "has known limitations on certain operating systems and traditionally works best on macOS". The second place is <code>claude --worktree &lt;name&gt; --tmux</code>, which creates a tmux session for a worktree. Teams are covered in "Agent SDK and agent teams".</p>
+    <h3>herdr</h3>
+    <p>herdr calls itself a terminal workspace manager for AI coding agents. Its README (version 0.9.5) makes the same core promise as tmux, that a background server keeps terminals running when you close the client or lose an SSH connection, and adds what tmux leaves to you. It detects coding agents inside panes and marks each one <code>working</code>, <code>blocked</code>, <code>done</code>, <code>idle</code> or <code>unknown</code>. Its CLI and local socket API (a Unix domain socket, or a named pipe on Windows) have agent-level verbs. Its nouns are session, workspace (one per project), tab, pane and agent.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Task</th><th>Command (from <code>herdr … --help</code>, 0.9.5)</th><th>Notes from the help text</th></tr>
+      <tr><td>Split a pane without taking focus</td><td><code>herdr pane split --direction right --no-focus --cwd &lt;path&gt;</code></td><td>Directions are <code>right</code> and <code>down</code>; <code>--env KEY=VALUE</code> sets a variable for the launched process</td></tr>
+      <tr><td>Run a command in a pane</td><td><code>herdr pane run &lt;PANE_ID&gt; &lt;COMMAND&gt;…</code></td><td>Sends the text and Enter in one call; <code>pane send-text</code> and <code>pane send-keys</code> are the lower-level forms</td></tr>
+      <tr><td>Read a pane</td><td><code>herdr pane read &lt;PANE_ID&gt; --lines &lt;N&gt;</code></td><td><code>--source</code> is <code>visible</code>, <code>recent</code> (default), <code>recent-unwrapped</code> or <code>detection</code></td></tr>
+      <tr><td>Wait for output</td><td><code>herdr pane wait-output &lt;PANE_ID&gt; --match &lt;TEXT&gt; --timeout &lt;MS&gt;</code></td><td><code>--regex</code> takes a Rust regular expression; without <code>--timeout</code> it waits indefinitely</td></tr>
+      <tr><td>Start an agent in a pane</td><td><code>herdr agent start &lt;NAME&gt; --kind claude --pane &lt;ID&gt;</code></td><td>The pane must be at its shell prompt; success means the agent was detected and is ready for input</td></tr>
+      <tr><td>Prompt an agent and wait</td><td><code>herdr agent prompt &lt;TARGET&gt; &lt;TEXT&gt; --wait</code></td><td>Rejected with <code>agent_blocked</code> if the agent is already blocked</td></tr>
+      <tr><td>Wait for a state</td><td><code>herdr agent wait &lt;TARGET&gt; --until idle --timeout &lt;MS&gt;</code></td><td>Without <code>--until</code> it matches <code>idle</code>, <code>done</code> or <code>blocked</code></td></tr>
+    </table></div>
+    <p>The agent states are not magic. herdr's documentation says that for Claude Code the state comes from screen detection: rules in a detection manifest read the live bottom of the pane and decide what it means. The same page carries the warning that matters for automation: an unusual prompt may show as <code>idle</code> instead of <code>blocked</code>, and "automation that trusts a mistaken idle state can type into an approval dialog". It is the tmux brittleness again, maintained by someone else on your behalf.</p>
+    <h3>The two side by side</h3>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>tmux</th><th>herdr</th></tr>
+      <tr><td>Version read for this module</td><td>3.8 (release of 9 September 2026)</td><td>0.9.5 (release of 14 October 2026)</td></tr>
+      <tr><td>Platforms</td><td>OpenBSD, FreeBSD, NetBSD, Linux, macOS and Solaris per its README. Windows is not on the list, so on a Windows machine tmux exists only inside a Linux environment such as WSL.</td><td>Linux, macOS and native Windows (through ConPTY). Its Windows page lists most capabilities as supported, plugins as preview and a few items (live working directory after <code>cd</code>, some input-method handling) as partial.</td></tr>
+      <tr><td>Agent awareness</td><td>None. A pane is a terminal.</td><td>Detects agents, tracks five states, lists agents across workspaces, restores supported agent sessions after a server restart through per-agent integrations.</td></tr>
+      <tr><td>Scripting interface</td><td>The <code>tmux</code> command itself: <code>send-keys</code>, <code>capture-pane</code>, <code>has-session</code>, formats, and a control mode for programs.</td><td><code>herdr pane</code>, <code>herdr agent</code>, <code>herdr workspace</code> and <code>herdr tab</code> wrappers over a newline-delimited JSON socket API with event subscriptions; <code>herdr api schema --json</code> prints the protocol schema.</td></tr>
+      <tr><td>Maturity</td><td>The manual carries a 2007 copyright. Releases come about every six months and only the latest is supported. Its wiki lists packages for the common Linux distributions and macOS.</td><td>The repository was created in March 2026 and the version is below 1.0. Stable and preview update channels.</td></tr>
+      <tr><td>Used by Claude Code itself</td><td>Yes: split-pane display for agent teams and <code>--worktree --tmux</code>.</td><td>No. The integration goes the other way: herdr detects Claude Code.</td></tr>
+      <tr><td>Licence</td><td>ISC for the README; each source file carries its own notice</td><td>Apache 2.0</td></tr>
+    </table></div>
+    <h3>What adopting one costs you</h3>
+    <p>A multiplexer is the most privileged row of the map. Its server holds every terminal you run inside it, and its socket is a control channel: whoever can talk to it can read your panes and type into them, including into an agent that runs with broad permissions. herdr's Windows page spells out one case. A server started from an elevated terminal refuses ordinary clients by default, and switching on <code>allow_unelevated_clients</code> "allows ordinary local processes belonging to that account to control administrator panes".</p>
+    <p>Look at the install route with the same eye. herdr's README offers a script piped to a shell (<code>curl … | sh</code>, or <code>irm … | iex</code> in PowerShell) next to package managers and release binaries; the piped form runs whatever the server returns that day, so download the script and read it, or take the binary. Then look at what the tool changes outside itself. <code>herdr integration install claude</code> is documented as writing a hook script into your Claude configuration directory and adding hook entries to its <code>settings.json</code>. That is a reasonable thing for it to do, and it is exactly the kind of change you want to know about before it happens, not after.</p>
+    <aside class="rule">If the work is a batch of non-interactive runs, you do not need a multiplexer: start <code>claude -p</code> processes from a script and collect their JSON (Lab 4 does this). A multiplexer earns its place when sessions are interactive, long-lived, and need a person or another agent to look in and steer.</aside>
+    <aside class="trap">Driving an interactive agent by typing into its pane bypasses nothing and guarantees nothing. The text arrives as if you had typed it, at whatever moment the script fires, whether the agent is at its prompt, in the middle of a tool call or showing a permission dialog. Read the pane or wait for a state first, and treat a state as a hint.</aside>
+  </div>
+
+  <div class="lesson" id="m15-l3" data-title="Community skill collections" data-minutes="15">
+    <h3>What a collection is</h3>
+    <p>A skill collection is a git repository of skill folders that somebody published, usually straight from their own setup. There is no registry in the package-manager sense, no signing, and no build: you are taking Markdown files, and sometimes scripts, from a branch that moves. Three collections and one installer show the range. Every figure below comes from the repository at the commit given in the Sources block.</p>
+    <div class="tablewrap"><table>
+      <tr><th></th><th><code>mattpocock/skills</code></th><th><code>anthropics/skills</code></th></tr>
+      <tr><td>Publisher</td><td>One engineer; the description reads "Straight from my .agents directory"</td><td>Anthropic; "Anthropic's implementation of skills for Claude"</td></tr>
+      <tr><td>Contents</td><td class="num">38 skills in four groups: engineering, productivity, misc and in-progress</td><td class="num">20 <code>SKILL.md</code> files: creative, technical and enterprise examples, the four document skills, a template, and the Agent Skills specification</td></tr>
+      <tr><td>File mix</td><td>119 Markdown files out of 177. Five shell scripts, two small JavaScript files.</td><td>138 Markdown files out of 446, with 72 Python scripts, XML schemas and fonts. Skills here drive real tooling.</td></tr>
+      <tr><td>Stated purpose</td><td>Small, composable skills "to do real engineering", meant to be changed: "Hack around with them. Make them your own."</td><td>"Provided for demonstration and educational purposes only"; test thoroughly before relying on them</td></tr>
+      <tr><td>Licence</td><td>MIT</td><td>Apache 2.0 per its README, with terms in a <code>LICENSE.txt</code> inside each skill folder</td></tr>
+      <tr><td>Install route in its README</td><td>For Claude Code: <code>claude plugin install mattpocock-skills@claude-plugins-official</code> ("Updates itself by default"). For editable files: <code>npx skills@latest add mattpocock/skills</code>. Then run <code>/setup-matt-pocock-skills</code> once per repository.</td><td><code>/plugin marketplace add anthropics/skills</code>, then <code>/plugin install document-skills@anthropic-agent-skills</code> or <code>example-skills@anthropic-agent-skills</code></td></tr>
+    </table></div>
+    <h3>Reading one collection closely</h3>
+    <p>The Pocock repository is a good first read because it is small and nearly all prose. Its skills split on who may invoke them. At the commit vetted in Lab 1, 23 of the 38 carry <code>disable-model-invocation: true</code>: you type those by name and they orchestrate. The rest are model-invoked and hold the reusable discipline. The split shows in the smallest file in the repository:</p>
+    <pre data-file="skills/productivity/grill-me/SKILL.md"><code>---
+name: grill-me
+description: A relentless interview to sharpen a plan or design.
+disable-model-invocation: true
+---
+
+Call the Skill tool with "grilling".</code></pre>
+    <p>That is the whole skill: 157 bytes that hand over to a model-invoked skill, <code>grilling</code>, whose 2 KB body describes how to interview you in rounds. Nothing in either file runs code.</p>
+    <p>Three other things in the same repository show why you read before you install.</p>
+    <ul>
+      <li><b>The plugin is a subset.</b> <code>.claude-plugin/plugin.json</code> lists 27 skills. The misc and in-progress groups are not in it, so "the plugin" and "the repository" are different sets of files.</li>
+      <li><b>A skill can install enforcement.</b> <code>git-guardrails-claude-code</code> (in misc) tells the agent to copy a bundled shell script into <code>.claude/hooks/</code> or <code>~/.claude/hooks/</code> and to add a PreToolUse hook to a settings file. The script is 507 bytes of bash that needs <code>jq</code>, and the hook it adds matches the <code>Bash</code> tool only. On a Windows machine where shell commands go through the PowerShell tool, that guard would be installed and never fire (the Hooks module explains the matcher).</li>
+      <li><b>A skill can tell the agent to install packages.</b> <code>setup-pre-commit</code> contains <code>npx husky init</code>. The skill does not run it; the model does, through your shell tool, under your permission rules.</li>
+    </ul>
+    <p>None of this is hidden or hostile. It is what "instructions plus optional scripts" looks like in practice: the file you install is harmless text, and its effect is whatever the text persuades an agent with your tools to do.</p>
+    <h3>Installers and directories</h3>
+    <p>The <code>npx skills</code> command that both READMEs mention is the open skills CLI from the <code>vercel-labs/skills</code> repository (version 1.8.1, MIT, needs Node.js 22.20 or later). Its README describes <code>npx skills add &lt;owner/repo&gt;</code> with <code>--skill</code> to pick one, <code>-a claude-code</code> to pick the agent and <code>-g</code> for a global install instead of the current project. It installs by symlink from each agent's folder to one canonical copy, or by copy with <code>--copy</code>. It records each project skill in <code>skills-lock.json</code> with a <code>computedHash</code>, a SHA-256 over the installed files, which <code>npx skills check</code> and <code>npx skills update</code> compare against. It also "collects anonymous usage data" unless <code>DISABLE_TELEMETRY=1</code> or <code>DO_NOT_TRACK=1</code> is set. The lock file is a real control. The installer is also one more program that runs with your privileges and fetches from the network, and <code>@latest</code> means a different program each release. This module describes it and does not run it.</p>
+    <p>Directories and lists are where you will meet most collections. The skills.sh site is the directory the skills CLI points to. The Claude Marketplace web catalogue lists plugins from Anthropic's marketplaces, shows install counts and marks some plugins "Anthropic verified". The <code>awesome-claude-code</code> list is a single long README with sections such as Agent Orchestration, Skills, Status Lines, Security and Observability; it states that it has no affiliation with Anthropic, and the list itself is under a Creative Commons licence that forbids derivatives. An entry on any of these is a pointer. Install counts and stars measure how many people followed the pointer.</p>
+    <h3>One format, several agents</h3>
+    <p>Collections travel between agent products because the folder format is an open specification, Agent Skills. The Claude Code docs list the six frontmatter fields the specification allows: <code>name</code>, <code>description</code>, <code>license</code>, <code>compatibility</code>, <code>metadata</code> and <code>allowed-tools</code>. Claude Code accepts those and adds its own (<code>hooks</code>, <code>context</code>, <code>model</code>, <code>paths</code> and the rest). Two consequences for a reader of other people's skills. A field Claude Code does not recognise is ignored without an error, so a skill written for another agent loads here with part of its frontmatter silently inert. And files meant for other products ride along: every skill folder in the Pocock repository has an <code>agents/openai.yaml</code> that Claude Code never reads.</p>
+    <aside class="rule">Judge a collection by reading three of its skills end to end, including the largest and one that mentions a setup step. Ten minutes of reading tells you more than any count on a directory page.</aside>
+  </div>
+
+  <div class="lesson" id="m15-l4" data-title="Vetting: reading before installing is the control" data-minutes="20">
+    <h3>Why review is the control</h3>
+    <p>There is no gate between a third-party skill and your session other than you. A skill's description enters the context of every session, its body enters when it is invoked, and from then on it is instructions with the same standing as your own. A plugin goes further and can run code that Claude Code's permission rules and sandbox do not cover, because those govern the tool calls Claude makes, not the hooks, monitors and servers a plugin runs by itself. So the review happens before the files reach a folder Claude Code loads from, on a copy you treat as data.</p>
+    <h3>The checklist</h3>
+    <p>Each row is tied to what the Claude Code docs say the component can do. Lab 1 runs every row against a real repository.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Check</th><th>What to look for</th><th>Why it matters</th></tr>
+      <tr><td>1. Inventory</td><td>Count files by extension and total size. Anything that is not Markdown gets opened.</td><td>A skill is "instructions plus optional scripts". The optional part is where code lives.</td></tr>
+      <tr><td>2. Frontmatter: <code>allowed-tools</code></td><td>Any value, especially <code>Bash(*)</code>-style grants</td><td>It pre-approves the listed tools for the turn that invokes the skill. Workspace trust does not gate it: the docs say it applies "even in a <code>-p</code> run in a folder you've never trusted".</td></tr>
+      <tr><td>3. Frontmatter: <code>hooks</code></td><td>Any hook, and the command it runs</td><td>Registered when the skill is invoked and kept for the rest of the session.</td></tr>
+      <tr><td>4. Frontmatter: the rest</td><td><code>context: fork</code>, <code>agent</code>, <code>model</code>, <code>effort</code>, <code>shell</code>; a description that claims every task</td><td>These spend tokens or change where the body runs. A greedy description makes the model load the skill when you did not ask for it.</td></tr>
+      <tr><td>5. Injected commands</td><td><code>!`command`</code> at the start of a line or after a space, and fenced blocks opened with <code>```!</code></td><td>They run before the skill content is sent to Claude and never prompt while the skill renders. They are checked against your permission rules; a command no rule allows aborts the invocation outside auto mode, unless <code>allowed-tools</code> pre-approves it.</td></tr>
+      <tr><td>6. What the prose asks for</td><td>Package installs, edits to settings files, writes under <code>~/.claude</code>, URLs to fetch, credentials to read</td><td>Skills "influence what Claude does with the tools it already has". The text is the payload.</td></tr>
+      <tr><td>7. Scripts</td><td>What each one executes, what it downloads, what it writes; templates that the agent is told to fill in and run</td><td>Scripts are run through your shell tool with your privileges.</td></tr>
+      <tr><td>8. A manifest in a skill folder</td><td><code>.claude-plugin/plugin.json</code> inside a skill's own folder</td><td>Claude Code can then load the folder as a plugin named <code>&lt;name&gt;@skills-dir</code> with its own agents, hooks and MCP servers. In a project this waits for the workspace trust dialog; under your own <code>~/.claude/skills/</code> neither the trust check nor the component limits apply.</td></tr>
+      <tr><td>9. Plugin components</td><td><code>hooks/hooks.json</code>, <code>.mcp.json</code>, every file in <code>bin/</code>, monitors, mods</td><td>Command hooks and monitors run "with your full user permissions", outside the sandbox. <code>bin/</code> is added to the shell tool's <code>PATH</code>.</td></tr>
+      <tr><td>10. Install and update route</td><td>Piped installers, <code>npx … @latest</code>, a plugin with auto-update on</td><td>The files you reviewed "can change on disk". Next lesson.</td></tr>
+      <tr><td>11. Licence</td><td>A licence file; terms that allow your use; notices you must keep with a copy</td><td>No licence means no permission to copy.</td></tr>
+      <tr><td>12. Maintenance signals</td><td>Age, commit count, number of authors, date of the last commit, how issues are handled</td><td>They predict whether updates will keep coming and how much each will change. They say nothing about safety.</td></tr>
+    </table></div>
+    <h3>The first-party inventory command</h3>
+    <p>For a repository that is a plugin, Claude Code will do the component count for you without installing or starting a session. Clone the repository, then point <code>plugin details</code> at the folder:</p>
+    <pre><code>claude --plugin-dir mp-skills plugin details mattpocock-skills</code></pre>
+    <pre data-cap="output"><code>mattpocock-skills 1.3.1
+  Source: mattpocock-skills@inline
+
+Component inventory
+  Skills (27)  ask-matt, code-review, codebase-design, diagnosing-bugs, …
+  Agents (0)
+  Hooks (0)
+  MCP servers (0)
+  LSP servers (0)
+
+Projected token cost
+  Always-on:   ~1,169 tok   added to every session</code></pre>
+    <p>Zero hooks, zero servers: this plugin is instructions only, and its standing cost is about 1,200 tokens of descriptions in every session. On an API key that is a small fraction of a cent per request once it is cached; on a subscription it is a small, permanent share of the window (the Skills module has the arithmetic). The inventory shows that a hook exists but not what it runs, so for any plugin where those lines are not zero, open <code>hooks/hooks.json</code>, <code>.mcp.json</code> and <code>bin/</code> yourself. Inside a session, the <code>/plugin</code> details pane shows the same list under "Will install".</p>
+    <h3>A worked verdict</h3>
+    <p>Run against <code>mattpocock/skills</code> at the commit pinned in Lab 1, the checklist produced this:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Check</th><th>Finding</th></tr>
+      <tr><td>Inventory</td><td class="num">177 files, 728 KB; 119 Markdown, 38 YAML, 5 shell, 2 JavaScript, 5 JSON</td></tr>
+      <tr><td>Frontmatter</td><td>Only <code>name</code>, <code>description</code>, <code>disable-model-invocation</code> (23 skills), <code>argument-hint</code> (4) and <code>metadata</code> (1). No <code>allowed-tools</code>, no <code>hooks</code>.</td></tr>
+      <tr><td>Injected commands</td><td>None</td></tr>
+      <tr><td>Scripts</td><td>Three under <code>scripts/</code> are repository tooling and are never loaded. Two are templates a skill tells the agent to copy and adapt. One is the hook script that <code>git-guardrails-claude-code</code> installs on request.</td></tr>
+      <tr><td>Prose that changes your setup</td><td><code>git-guardrails-claude-code</code> edits a settings file; <code>setup-pre-commit</code> installs packages. Both are outside the plugin's 27.</td></tr>
+      <tr><td>Plugin components</td><td>Skills only</td></tr>
+      <tr><td>Licence, maintenance</td><td>MIT. 527 commits by 7 authors over eight months, the last one that week.</td></tr>
+      <tr><td>Verdict</td><td>Safe to adopt as text. The open risk is the update channel: a repository that changes several times a week, installed as a plugin that "updates itself by default".</td></tr>
+    </table></div>
+    <aside class="trap">A clean review describes one commit. It says nothing about the next one, and an auto-updating install replaces what you read with whatever the branch holds next week. A review without a pin has a shelf life of one push.</aside>
+    <aside class="rule">Review on a clone, in a folder Claude Code does not load from, and never run a script or an installer from it during the review. The threat model for what hostile text and code can do is in "Security"; the managed settings that limit which marketplaces and plugins a team can add are in "Plugins and marketplaces".</aside>
+  </div>
+
+  <div class="lesson" id="m15-l5" data-title="Pinning, vendoring and updating" data-minutes="15">
+    <h3>Three ways to hold a dependency</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Way</th><th>How</th><th>What changes it</th><th>Fits</th></tr>
+      <tr><td>Follow upstream</td><td>Install a plugin from a marketplace that has auto-update on</td><td>Any push by the author</td><td>Publishers you would run unreviewed code from anyway</td></tr>
+      <tr><td>Reference, pinned</td><td>A marketplace entry whose source names a commit, or a marketplace added at a tag</td><td>Whoever edits the pin</td><td>Teams, many repositories, plugins with code</td></tr>
+      <tr><td>Vendor a copy</td><td>Copy the reviewed skill folder into the project's <code>.claude/skills/</code> and commit it</td><td>Only your own commit</td><td>A handful of skills; anything you expect to edit</td></tr>
+    </table></div>
+    <h3>What Claude Code offers for pinning</h3>
+    <p>The marketplace reference gives git-based plugin sources (<code>github</code>, <code>url</code>, <code>git-subdir</code>) two fields. <code>ref</code> is a branch or tag and defaults to the repository's default branch. <code>sha</code> is a full 40-character lowercase commit SHA, and when both are set Claude Code checks out <code>sha</code>. An <code>archive</code> source takes a <code>sha256</code> digest, and Claude Code refuses the install when the download does not match. A marketplace itself can be added at a branch or tag with <code>owner/repo#ref</code>.</p>
+    <pre data-file=".claude-plugin/marketplace.json (one entry)"><code>{
+  "name": "formatter",
+  "source": {
+    "source": "github",
+    "repo": "acme/formatter",
+    "ref": "v2.0.0",
+    "sha": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+  }
+}</code></pre>
+    <p>A tag is a name and can be moved; a SHA cannot. Anthropic's community marketplace works this way: where its catalogue pins a plugin to a commit SHA, "which it does for nearly every entry", Claude Code refuses to install a different commit.</p>
+    <p>Updates follow from how Claude Code computes a plugin's version: the <code>version</code> in the plugin's manifest first, then the one in the marketplace entry, and otherwise the commit SHA shortened to 12 characters. Auto-update refreshes each marketplace that has it on, recomputes versions and replaces the cached copy when one changed. It is on by default for Anthropic's official marketplaces and off for every other marketplace unless you set <code>autoUpdate</code> on the marketplace's entry or flip the toggle under <code>/plugin</code>. In an interactive session it runs after your first message, after a random delay of up to ten minutes, and tells you with <code>Plugin updated: &lt;name&gt; · Run /reload-plugins to apply</code>. The details, and the environment variables that switch it off, are in "Plugins and marketplaces".</p>
+    <aside class="trap">A community collection distributed through <code>claude-plugins-official</code> inherits that marketplace's default: auto-update on. Reviewing the author's repository and then installing from the official marketplace gives you a reviewed first version and unreviewed later ones.</aside>
+    <h3>Vendoring by hand</h3>
+    <p>For a few skills, a copy in the project is the simplest pin there is. The procedure is five steps, and Labs 1 to 3 walk through it.</p>
+    <ol>
+      <li>Clone without checking out a branch, then check out one commit by SHA.</li>
+      <li>Review that commit with the checklist.</li>
+      <li>Copy only the skill folder you reviewed into <code>.claude/skills/</code>. Keep the licence file with it.</li>
+      <li>Record provenance in a register file in the project: source URL, path, commit, a content identifier, licence, who reviewed it and when.</li>
+      <li>Commit. From now on the skill changes only through your own history.</li>
+    </ol>
+    <p>Git already gives you a content identifier. Every file in a commit has a blob ID, and <code>git hash-object</code> computes the same ID for a file on disk, so one comparison proves that your vendored file is byte-for-byte the file you reviewed:</p>
+    <pre><code>git -C mp-skills rev-parse "6fd9479:skills/productivity/grilling/SKILL.md"
+git hash-object --no-filters proj\.claude\skills\grilling\SKILL.md</code></pre>
+    <pre data-cap="output"><code>8ca78c6d8f901aab0c5a1f896034b70e666ff2a3
+8ca78c6d8f901aab0c5a1f896034b70e666ff2a3</code></pre>
+    <p>The skills CLI's <code>skills-lock.json</code> does the same job with a SHA-256 over the whole skill folder. Either works; what matters is that the identifier is written down next to the commit it came from.</p>
+<figure class="diagram">
+<pre class="mermaid">stateDiagram-v2
+  [*] --> Candidate
+  Candidate --> Reviewed: read at one commit
+  Reviewed --> Rejected: findings cost too much
+  Reviewed --> Pinned: copy, record the SHA
+  Pinned --> UpdateSeen: upstream moves
+  UpdateSeen --> Pinned: diff read, taken
+  UpdateSeen --> Held: diff read, skipped
+  Held --> UpdateSeen: upstream moves again
+  Pinned --> Forked: you edit the copy
+  Rejected --> [*]
+</pre>
+  <figcaption>An adopted skill only leaves the pinned state through a diff you read; once you edit the copy it is your skill and upstream becomes a source of ideas.</figcaption>
+</figure>
+    <h3>Reviewing an update</h3>
+    <p>An update review is cheaper than the first review because you only read what changed. Ask git for the difference between the commit in your register and the candidate, limited to the path you vendored:</p>
+    <pre><code>git -C mp-skills fetch origin
+git -C mp-skills log --format="%h %cs %s" "$pin..$new" -- skills/productivity/grilling
+git -C mp-skills diff "$pin..$new" -- skills/productivity/grilling</code></pre>
+    <p>In Lab 3 the repository moved by 50 files between the two commits, and the vendored skill by three added lines and one removed, in two commits. That ratio is typical and it is the argument for a path-limited diff. Read frontmatter changes first (a new <code>allowed-tools</code> or <code>hooks</code> line changes what the skill may do), then new files, then new commands in the prose. Take the update by copying the file at the new commit, check the blob ID again, and change the register line. If you decline, write that down too, with the reason.</p>
+    <aside class="rule">Pin to a 40-character SHA, record it where the next engineer will look, and treat "update" as a code review of one diff.</aside>
+  </div>
+
+  <div class="lesson" id="m15-l6" data-title="When not to adopt" data-minutes="10">
+    <h3>What a dependency costs after day one</h3>
+    <p>A skill you did not write keeps charging you after the install.</p>
+    <ul>
+      <li><b>Review on every update.</b> The diff is small, and it recurs for as long as you track upstream. The repository in the labs had 26 more commits between the two pins, under four weeks apart.</li>
+      <li><b>Context.</b> Every installed skill's description is in every session. The 27-skill plugin from the last lesson adds about 1,200 tokens whether or not you use more than two of them.</li>
+      <li><b>Fit.</b> Community skills encode their author's workflow. The Pocock engineering skills expect a one-time setup skill to record your issue tracker, triage labels and documentation layout, because the others depend on those choices. If your workflow differs, you carry the mismatch in every invocation.</li>
+      <li><b>Platform assumptions.</b> A hook script written in bash with <code>jq</code>, matched on the <code>Bash</code> tool, is not a guard on a machine where commands go through PowerShell.</li>
+      <li><b>Names.</b> A personal skill beats a project skill of the same name. Two collections that both ship a <code>code-review</code> or a <code>tdd</code> will collide, and one of them will lose without an error.</li>
+    </ul>
+    <h3>The 30-line alternative</h3>
+    <p>Many good community skills are short. The <code>grilling</code> skill adopted in the labs is 2 KB of prose: interview in rounds, number the questions, give a recommended answer, look facts up instead of asking. Once you have read it, you know the technique, and a version in your own words, with your own terms and nothing you do not use, is an hour's work that you never have to re-review. The author's README says as much: "Hack around with them. Make them your own." Reading other people's skills to learn what works and then writing your own is a legitimate way to use a collection, as long as you respect the licence when you copy text.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Situation</th><th>Do this</th></tr>
+      <tr><td>Short prose skill, you would change the wording anyway</td><td>Write your own, crediting the idea if you borrowed the structure</td></tr>
+      <tr><td>Prose skill you want as it is, from an author who iterates</td><td>Vendor at a SHA; review diffs when you choose to update</td></tr>
+      <tr><td>Skill you want but must adapt</td><td>Vendor, edit, and mark the register line "forked from" with the SHA; stop tracking upstream automatically</td></tr>
+      <tr><td>Skill with real tooling behind it (scripts, schemas, binaries) that you could not reproduce</td><td>Adopt pinned, and review the scripts as code</td></tr>
+      <tr><td>Whole collection, most of which you will not use</td><td>Take the two or three skills you use; skip the plugin</td></tr>
+      <tr><td>Anything with hooks, MCP servers or an installer from a publisher you know nothing about</td><td>Do not adopt until it has had the full review, or do without it</td></tr>
+    </table></div>
+    <aside class="rule">Adopt what you could not cheaply write and can afford to keep reviewing. Rewrite what is short. Leave the rest on the list where you found it.</aside>
+    <aside class="trap">Installing a collection "to try it" at user scope puts every one of its skills into every project you open, including the repositories where you run unattended jobs. Try things at project scope in a scratch folder, as the labs do.</aside>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m15-lab1" data-title="Vet a community skill repository at a pinned commit" data-minutes="25">
+      <p class="goal">You clone a public skill collection at one commit, inventory it with PowerShell and git without running anything from it, and end with a short findings file.</p>
+      <ol class="steps">
+        <li><p>Clone without checking out the branch tip, then check out one commit by its SHA. Run every step of this lab in the same PowerShell window; later steps reuse <code>$root</code> and <code>$files</code>. Treat the clone as data: do not run any script in it and do not run its installer.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m15 | Out-Null
+Set-Location {{LAB}}/m15
+git clone --no-checkout -c core.autocrlf=false https://github.com/mattpocock/skills.git mp-skills
+git -C mp-skills -c advice.detachedHead=false checkout --detach 6fd947921b935b7e1e69293a200400f0fdd5c15f
+git -C mp-skills log -1 --format="%H %cs %s"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>6fd947921b935b7e1e69293a200400f0fdd5c15f 2026-10-06 Updates</code>. <code>core.autocrlf=false</code> keeps the files byte-identical to the repository's, which Lab 2 relies on.</p></li>
+        <li><p>Inventory the files by type and total size.</p>
+          <pre><code>$root = (Resolve-Path mp-skills).Path
+$files = Get-ChildItem $root -Recurse -File -Force | Where-Object { $_.FullName -notlike "$root\.git\*" }
+$files | Group-Object Extension | Sort-Object Count -Descending | Format-Table Count, Name -AutoSize
+"{0} files, {1:N0} bytes" -f $files.Count, ($files | Measure-Object Length -Sum).Sum</code></pre>
+          <p class="expect"><b>Expected:</b> 119 <code>.md</code>, 38 <code>.yaml</code>, 6 <code>.yml</code>, 5 <code>.json</code>, 5 <code>.sh</code>, 1 <code>.cjs</code>, 1 <code>.mjs</code>, and <code>177 files, 728,018 bytes</code>.</p></li>
+        <li><p>List everything that is code or configuration, and any folder name that has a meaning to Claude Code.</p>
+          <pre><code>$exec = '.sh', '.ps1', '.cmd', '.bat', '.js', '.cjs', '.mjs', '.ts', '.py'
+$conf = 'hooks.json', '.mcp.json', 'plugin.json', 'marketplace.json', 'package.json', 'settings.json'
+$files | Where-Object { $_.Extension -in $exec -or $_.Name -in $conf } |
+  ForEach-Object { '{0,7}  {1}' -f $_.Length, $_.FullName.Substring($root.Length + 1) }
+Get-ChildItem $root -Recurse -Directory -Force |
+  Where-Object { $_.Name -in 'hooks', 'bin', 'monitors', '.claude-plugin', '.claude' -and $_.FullName -notlike "$root\.git\*" } |
+  ForEach-Object { $_.FullName.Substring($root.Length + 1) }</code></pre>
+          <p class="expect"><b>Expected:</b> ten files: <code>package.json</code>, the two files in <code>.claude-plugin</code>, three under <code>scripts\</code>, <code>diagnosing-bugs\scripts\hitl-loop.template.sh</code>, <code>wizard\template.sh</code> (8,567 bytes), a <code>dependency-cruiser.config.cjs</code> and <code>git-guardrails-claude-code\scripts\block-dangerous-git.sh</code> (507 bytes). One folder: <code>.claude-plugin</code>. No <code>hooks</code>, <code>bin</code> or <code>monitors</code> folder and no <code>.mcp.json</code>. Open each of the ten in an editor and read it.</p></li>
+        <li><p>Tabulate the frontmatter fields used across every <code>SKILL.md</code>.</p>
+          <pre><code>$skills = $files | Where-Object Name -eq 'SKILL.md'
+$fm = foreach ($f in $skills) {
+  $lines = @(Get-Content $f.FullName)
+  if ($lines[0] -ne '---') { continue }
+  $end = [Array]::IndexOf($lines, '---', 1)
+  foreach ($l in $lines[1..($end - 1)]) {
+    if ($l -match '^([A-Za-z_-]+):') { [pscustomobject]@{ Skill = $f.Directory.Name; Field = $Matches[1] } }
+  }
+}
+"{0} SKILL.md files" -f $skills.Count
+$fm | Group-Object Field | Sort-Object Count -Descending | Format-Table Count, Name -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> <code>38 SKILL.md files</code>; fields <code>description</code> 38, <code>name</code> 38, <code>disable-model-invocation</code> 23, <code>argument-hint</code> 4, <code>metadata</code> 1. No <code>allowed-tools</code>, <code>hooks</code>, <code>context</code>, <code>model</code> or <code>shell</code>.</p></li>
+        <li><p>Search for injected shell commands, for install and download commands, and for skills that talk about settings files or hooks.</p>
+          <pre><code>@($files | Where-Object Extension -eq '.md' | Select-String -Pattern '(^|\s)!`', '^```!').Count
+$files | Where-Object { $_.Extension -in '.md', '.sh', '.mjs', '.cjs' } |
+  Select-String -Pattern 'curl |wget |Invoke-WebRequest|npx |npm install|pip install' |
+  Group-Object { $_.Path.Substring($root.Length + 1) } | Sort-Object Count -Descending |
+  Format-Table Count, Name -AutoSize
+$skills | Select-String -Pattern 'settings\.json|PreToolUse|~/\.claude' |
+  Group-Object { $_.Path.Substring($root.Length + 1) } | Format-Table Count, Name -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> <code>0</code> injected commands. The files with the most install or download hits are the README, an install note under <code>.agents</code> and <code>skills\misc\setup-pre-commit\SKILL.md</code> (3 hits each; the skill's are <code>npx husky init</code> and <code>npx lint-staged</code>), with <code>skills\engineering\diagnosing-bugs\SKILL.md</code> further down (1). One skill mentions settings and hooks: <code>skills\misc\git-guardrails-claude-code\SKILL.md</code> (9 hits). Read those three.</p></li>
+        <li><p>Let Claude Code inventory the repository as a plugin. This reads the files and starts no session, so it works even when you are not signed in.</p>
+          <pre><code>claude --plugin-dir mp-skills plugin details mattpocock-skills</code></pre>
+          <p class="expect"><b>Expected:</b> <code>mattpocock-skills 1.3.1</code>, <code>Skills (27)</code>, <code>Agents (0)</code>, <code>Hooks (0)</code>, <code>MCP servers (0)</code>, <code>LSP servers (0)</code>, and <code>Always-on: ~1,169 tok added to every session</code>, followed by a per-skill table of always-on and on-invoke token estimates.</p></li>
+        <li><p>Read the licence and the maintenance signals.</p>
+          <pre><code>Get-Content mp-skills\LICENSE -TotalCount 3
+'commits: ' + (git -C mp-skills rev-list --count HEAD)
+'authors: ' + @(git -C mp-skills log --format='%an' | Sort-Object -Unique).Count
+'first:   ' + (git -C mp-skills log --reverse --format='%cs' | Select-Object -First 1)
+'last:    ' + (git -C mp-skills log -1 --format='%cs')</code></pre>
+          <p class="expect"><b>Expected:</b> <code>MIT License</code> and a 2026 copyright line; <code>commits: 527</code>, <code>authors: 7</code>, <code>first: 2026-02-03</code>, <code>last: 2026-10-06</code>.</p></li>
+        <li><p>Write the findings down. Change the wording to what you concluded from your own reading.</p>
+          <pre><code>@'
+# Vetting findings: mattpocock/skills
+
+- Source: https://github.com/mattpocock/skills
+- Commit reviewed: 6fd947921b935b7e1e69293a200400f0fdd5c15f (2026-10-06)
+- Licence: MIT
+- Contents: Markdown skills, shell templates and one hook script that skills copy on request, a plugin manifest, repo tooling.
+- Hooks, MCP servers, bin/: none declared by the plugin.
+- Injected shell commands in SKILL.md: none found.
+- allowed-tools grants: none.
+- Scripts: not run by loading; three are templates or a hook that a skill tells the agent to copy and run.
+- Decision: adopt single skills by copy at this commit. Do not install the plugin with auto-update.
+'@ | Set-Content -Encoding utf8 findings.md
+(Get-Item findings.md).Length</code></pre>
+          <p class="expect"><b>Expected:</b> a file of about 650 bytes in <code>{{LAB}}/m15</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>The repository has 38 skills and the plugin inventory lists 27. Where are the other 11?</b> In <code>skills\misc</code> and <code>skills\in-progress</code>, which <code>plugin.json</code> does not list. The plugin and the repository are different sets of files, and the skill that installs a hook is in the part the plugin leaves out.</p>
+        <p><b>Step 5 found zero injected commands and step 4 found no <code>allowed-tools</code>. Does that make every skill inert?</b> No. It means loading a skill runs nothing and pre-approves nothing. <code>setup-pre-commit</code> still tells the agent to run <code>npx</code>; whether that happens is decided by your permission rules at the moment the model asks.</p>
+        <p><b>Which step would have caught a skill folder that turns itself into a plugin?</b> Step 3: a <code>.claude-plugin</code> folder inside a skill's own folder would appear in the directory list. Here the only one is at the repository root.</p>
+        <p><b>What did you not check?</b> Any commit other than <code>6fd9479</code>. The findings file names the commit for that reason.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m15-lab2" data-title="Adopt one reviewed skill at project scope" data-minutes="20">
+      <p class="goal">You vendor a single skill from the clone into a project folder, record where it came from, and prove with a headless run that Claude Code lists it and that it runs.</p>
+      <ol class="steps">
+        <li><p>Make sure the clone is still at the reviewed commit and look at the folder you are about to copy.</p>
+          <pre><code>Set-Location {{LAB}}/m15
+$pin = '6fd947921b935b7e1e69293a200400f0fdd5c15f'
+$src = 'skills/productivity/grilling'
+git -C mp-skills rev-parse HEAD
+Get-ChildItem mp-skills\skills\productivity\grilling -Recurse -File | Select-Object Length, Name</code></pre>
+          <p class="expect"><b>Expected:</b> the pinned SHA, then <code>SKILL.md</code> (1,987 bytes) and <code>openai.yaml</code> (113 bytes, in an <code>agents</code> subfolder, metadata for a different agent product).</p></li>
+        <li><p>Copy only what Claude Code uses, plus the licence, into a project-scope skills folder.</p>
+          <pre><code>New-Item -ItemType Directory -Force proj\.claude\skills\grilling | Out-Null
+Copy-Item mp-skills\skills\productivity\grilling\SKILL.md proj\.claude\skills\grilling\SKILL.md
+Copy-Item mp-skills\LICENSE proj\.claude\skills\grilling\LICENSE
+Get-ChildItem proj\.claude\skills\grilling | Select-Object Length, Name</code></pre>
+          <p class="expect"><b>Expected:</b> two files: <code>LICENSE</code> (1,068 bytes) and <code>SKILL.md</code> (1,987 bytes).</p></li>
+        <li><p>Prove the vendored file is the reviewed file by comparing git blob IDs.</p>
+          <pre><code>$want = git -C mp-skills rev-parse "${pin}:$src/SKILL.md"
+$have = git hash-object --no-filters proj\.claude\skills\grilling\SKILL.md
+"upstream blob $want"
+"vendored blob $have"
+"match: $($want -eq $have)"</code></pre>
+          <p class="expect"><b>Expected:</b> both lines show <code>8ca78c6d8f901aab0c5a1f896034b70e666ff2a3</code> and <code>match: True</code>.</p></li>
+        <li><p>Record provenance in a register at the project root.</p>
+          <pre><code>@"
+# Third-party skills in this project
+
+| Skill | Source | Path | Commit | SKILL.md blob | Licence | Reviewed |
+|---|---|---|---|---|---|---|
+| grilling | https://github.com/mattpocock/skills | $src | $pin | $have | MIT | $(Get-Date -Format yyyy-MM-dd), findings.md |
+"@ | Set-Content -Encoding utf8 proj\THIRD_PARTY_SKILLS.md
+Get-Content proj\THIRD_PARTY_SKILLS.md | Select-Object -Last 1</code></pre>
+          <p class="expect"><b>Expected:</b> one table row holding the skill name, the source URL, the path, the 40-character commit, the blob ID, <code>MIT</code> and today's date.</p></li>
+        <li><p>Start a headless session in the project and read the init line. <code>--setting-sources project</code> loads the project's own <code>.claude</code> folder and nothing from your user settings; <code>--strict-mcp-config</code> keeps your MCP servers out. Together they make the run show only what this folder contributes.</p>
+          <pre><code>Set-Location proj
+$lines = @(claude -p "Reply with the single word ok." --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format stream-json --verbose)
+$init = $lines[0] | ConvertFrom-Json
+"type/subtype: $($init.type)/$($init.subtype)"
+"skills listed: $($init.skills.Count)"
+"grilling listed: $($init.skills -contains 'grilling')"
+"grilling in slash_commands: $($init.slash_commands -contains 'grilling')"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>type/subtype: system/init</code>, <code>grilling listed: True</code>, <code>grilling in slash_commands: True</code>. The count was 18 on Claude Code 2.1.322: the vendored skill plus the bundled ones for that version.</p></li>
+        <li><p>Invoke the skill by name. <code>--tools Read</code> limits the built-in tools to one, so the skill's instruction to send a subagent after facts cannot spend anything.</p>
+          <pre><code>$r = claude -p "/grilling Plan: move the nightly backup of web-01 from 02:00 to 04:00." --model haiku --setting-sources project --strict-mcp-config --tools Read --max-turns 2 --output-format json | ConvertFrom-Json
+"is_error: $($r.is_error)  turns: $($r.num_turns)  cost: $($r.total_cost_usd)"
+"has Q1: $($r.result -match 'Q1')"
+$r.result.Substring(0, [Math]::Min(420, $r.result.Length))</code></pre>
+          <p class="expect"><b>Expected:</b> <code>is_error: False</code>, 2 turns, about $0.002 at list price, <code>has Q1: True</code>. The text opens a "Round 1" and numbers its questions <b>Q1</b>, <b>Q2</b> and so on, each with a recommended answer, which is the format the skill body prescribes. In the verified run the model also remarked that it had no subagent tool, so it asked for the facts instead.</p></li>
+        <li><p>Control: run the same line in a folder that does not have the skill.</p>
+          <pre><code>Set-Location ..
+New-Item -ItemType Directory -Force empty | Out-Null
+Set-Location empty
+$c = claude -p "/grilling Plan: move the nightly backup of web-01 from 02:00 to 04:00." --model haiku --setting-sources project --strict-mcp-config --tools Read --max-turns 2 --output-format json | ConvertFrom-Json
+"is_error: $($c.is_error)  turns: $($c.num_turns)"
+$c.result.Substring(0, [Math]::Min(200, $c.result.Length))
+Set-Location ..</code></pre>
+          <p class="expect"><b>Expected:</b> <code>is_error: False</code> and 1 turn. There is no error for an unknown skill name: in the verified run the model wrote that <code>/grilling</code> "isn't installed in this session" and answered the text as an ordinary request. The wording varies; the missing round format is the difference.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Which step is the proof that the skill loaded, and which only suggests it?</b> Step 5 is the proof: the <code>skills</code> array comes from Claude Code, not from the model. Step 6 is model output and could in principle be imitated; step 7 shows that a missing skill does not raise an error, so never use "the command did not fail" as evidence.</p>
+        <p><b>Why copy <code>SKILL.md</code> and not the whole folder?</b> The only other file is metadata for another product. Vendoring the minimum keeps the register and later diffs to one file.</p>
+        <p><b>What does the blob comparison protect against?</b> An edit between review and adoption, by you, by an editor that rewrites line endings, or by a checkout that moved. It does not say the content is good, only that it is the content you read.</p>
+        <p><b>Nothing outside <code>{{LAB}}/m15</code> changed. How do you know?</b> The skill is at project scope inside <code>proj</code>, no plugin or marketplace command ran, and the headless runs loaded project settings only.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m15-lab3" data-title="Review an update before taking it" data-minutes="15">
+      <p class="goal">You read the difference between your pinned commit and a newer one for the one path you vendored, take the update, and bring the vendored copy and the register in line.</p>
+      <ol class="steps">
+        <li><p>Fetch, then list the commits that touched the vendored path between the pin and the candidate.</p>
+          <pre><code>Set-Location {{LAB}}/m15
+$pin = '6fd947921b935b7e1e69293a200400f0fdd5c15f'
+$new = '4ae2317ddb22b046e26455e4f9c9b3aaaf62212d'
+$src = 'skills/productivity/grilling'
+git -C mp-skills fetch origin
+git -C mp-skills log --format="%h %cs %s" "$pin..$new" -- $src</code></pre>
+          <p class="expect"><b>Expected:</b> two commits: <code>7739eae 2026-10-29 Start subagents with a fresh context window, not a fork (#1341)</code> and <code>95249b0 2026-10-07 grilling: word questions so yes accepts the recommendation (#706) (#1193)</code>.</p></li>
+        <li><p>Compare the size of the change in your path with the size of the change in the whole repository.</p>
+          <pre><code>git -C mp-skills diff --stat "$pin..$new" -- $src
+git -C mp-skills diff --shortstat "$pin..$new"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>skills/productivity/grilling/SKILL.md | 4 +++-</code> (3 insertions, 1 deletion) against <code>50 files changed, 911 insertions(+), 138 deletions(-)</code> for the repository.</p></li>
+        <li><p>Read the diff.</p>
+          <pre><code>git -C mp-skills diff "$pin..$new" -- "$src/SKILL.md"</code></pre>
+          <p class="expect"><b>Expected:</b> one hunk. An added sentence, <code>Word each question so "yes" accepts your recommended answer.</code>, and one long paragraph replaced by a copy that differs in a few words: "dispatch a sub-agent" became "dispatch a sub-agent with a fresh context window". The header line reads <code>index 8ca78c6..d2f09a1</code>, the old and new blob IDs.</p></li>
+        <li><p>Scan the diff mechanically for the changes that alter what the skill may do: frontmatter lines, injected commands, install and download commands, added or removed files.</p>
+          <pre><code>$risky = git -C mp-skills diff "$pin..$new" -- $src | Select-String -Pattern '^[+-](name|description|when_to_use|allowed-tools|disallowed-tools|hooks|context|agent|model|shell|disable-model-invocation|user-invocable):', '^\+.*(^|\s)!`', '^\+```!', '^\+.*(curl |wget |npx |npm install|Invoke-WebRequest)'
+"risky lines: $(@($risky).Count)"
+git -C mp-skills diff --name-status "$pin..$new" -- $src</code></pre>
+          <p class="expect"><b>Expected:</b> <code>risky lines: 0</code> and a single <code>M skills/productivity/grilling/SKILL.md</code> (modified; nothing added or deleted). The decision here is to take the update: two wording changes, no new capability.</p></li>
+        <li><p>Take it: check out the new commit in the clone, copy the file, and verify the blob ID.</p>
+          <pre><code>git -C mp-skills -c advice.detachedHead=false checkout --detach $new
+Copy-Item mp-skills\skills\productivity\grilling\SKILL.md proj\.claude\skills\grilling\SKILL.md -Force
+$want = git -C mp-skills rev-parse "${new}:$src/SKILL.md"
+$have = git hash-object --no-filters proj\.claude\skills\grilling\SKILL.md
+"match: $($want -eq $have)  $have"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>match: True  d2f09a18e6a6c65c55f1271ba08dfeaf06f0bed3</code>.</p></li>
+        <li><p>Update the register line with the new commit, the new blob ID and a note that the diff was read.</p>
+          <pre><code>$reg = Get-Content proj\THIRD_PARTY_SKILLS.md | ForEach-Object {
+  if ($_ -like '| grilling |*') { "| grilling | https://github.com/mattpocock/skills | $src | $new | $have | MIT | $(Get-Date -Format yyyy-MM-dd), diff from $($pin.Substring(0,7)) read |" } else { $_ }
+}
+$reg | Set-Content -Encoding utf8 proj\THIRD_PARTY_SKILLS.md
+Get-Content proj\THIRD_PARTY_SKILLS.md | Select-Object -Last 1
+@(Select-String -Path proj\.claude\skills\grilling\SKILL.md -Pattern 'fresh context window').Count</code></pre>
+          <p class="expect"><b>Expected:</b> the row now carries <code>4ae2317d…</code> and <code>d2f09a18…</code>, and the count is <code>1</code>: the vendored file contains the new wording.</p></li>
+        <li><p>Confirm the skill still loads.</p>
+          <pre><code>Set-Location proj
+$lines = @(claude -p "Reply with the single word ok." --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format stream-json --verbose)
+"grilling listed: $((($lines[0] | ConvertFrom-Json).skills) -contains 'grilling')"
+Set-Location ..</code></pre>
+          <p class="expect"><b>Expected:</b> <code>grilling listed: True</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>How much did you have to read to take this update, and how much would an auto-updating plugin have changed without you reading anything?</b> Four changed lines in one file, against 50 files and about 1,050 changed lines across the repository, one of them a shell template.</p>
+        <p><b>The step 4 pattern found nothing. What kind of change would it miss?</b> A sentence of plain prose that tells the agent to do something new, for example to post results to a URL. The pattern catches structure; step 3, reading, catches meaning. Do both.</p>
+        <p><b>If you had declined the update, what would you record?</b> A note against the register line: the candidate commit, the date and the reason. Otherwise the next person repeats the review.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m15-lab4" data-title="Run two sessions from one script, then map it to a multiplexer" data-minutes="20">
+      <p class="goal">You start two headless sessions in two folders as background jobs and collect their results into one file, then walk through what tmux and herdr would add, from their documentation.</p>
+      <ol class="steps">
+        <li><p>Create two project folders with different synthetic notes.</p>
+          <pre><code>Set-Location {{LAB}}/m15
+New-Item -ItemType Directory -Force fleet\a, fleet\b | Out-Null
+'Change 4411: restart the cache service on web-01 after the patch window.' | Set-Content -Encoding utf8 fleet\a\notes.txt
+'Change 4412: extend the data volume on db-02 by 50 GB.' | Set-Content -Encoding utf8 fleet\b\notes.txt</code></pre>
+          <p class="expect"><b>Expected:</b> <code>fleet\a\notes.txt</code> and <code>fleet\b\notes.txt</code>.</p></li>
+        <li><p>Start one headless session per folder as a PowerShell background job. Each job is its own process with its own working directory and its own session.</p>
+          <pre><code>$sw = [Diagnostics.Stopwatch]::StartNew()
+$jobs = foreach ($d in 'a', 'b') {
+  Start-Job -Name "agent-$d" -ArgumentList (Join-Path $PWD "fleet\$d") -ScriptBlock {
+    param($dir)
+    Set-Location $dir
+    claude -p "Read notes.txt and reply with only the hostname it mentions." --model haiku --setting-sources project --strict-mcp-config --allowedTools Read --max-turns 3 --output-format json
+  }
+}
+"started: $(@($jobs).Count) jobs"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>started: 2 jobs</code>, immediately.</p></li>
+        <li><p>Wait for both, then collect one row per session.</p>
+          <pre><code>$jobs | Wait-Job -Timeout 180 | Out-Null
+$wall = $sw.Elapsed.TotalSeconds
+$rows = foreach ($j in $jobs) {
+  $r = (Receive-Job $j | Out-String) | ConvertFrom-Json
+  [pscustomobject]@{ Job = $j.Name; State = $j.State; Result = $r.result; Turns = $r.num_turns
+    Seconds = [Math]::Round($r.duration_ms / 1000, 1); Cost = [Math]::Round($r.total_cost_usd, 4); Session = $r.session_id.Substring(0, 8) }
+}
+$rows | Format-Table -AutoSize
+$jobs | Remove-Job -Force</code></pre>
+          <p class="expect"><b>Expected:</b> two rows, both <code>Completed</code>: <code>agent-a</code> with result <code>web-01</code> and <code>agent-b</code> with <code>db-02</code>, 2 turns each, about 2 to 3 seconds each, and two different session IDs. Cost at list price was about $0.002 each on a first run and $0.0005 each on a repeat a few minutes later, when the prompt cache was warm.</p></li>
+        <li><p>Compare wall-clock time with the sum of the session durations, and save the results.</p>
+          <pre><code>"wall clock: {0:N1} s; sum of session durations: {1:N1} s" -f $wall, ($rows | Measure-Object Seconds -Sum).Sum
+$rows | ConvertTo-Json | Set-Content -Encoding utf8 fleet\results.json
+"results.json rows: $((Get-Content fleet\results.json -Raw | ConvertFrom-Json).Count)"
+"jobs left: $(@(Get-Job).Count)"</code></pre>
+          <p class="expect"><b>Expected:</b> a wall clock below the sum (4.6 s against 5.3 s in one verified run and 3.3 s against 4.0 s in another, including job start-up), <code>results.json rows: 2</code> and <code>jobs left: 0</code>. On an API key the two runs are billed per token; on a subscription both draw on the same 5-hour window at the same time.</p></li>
+        <li><p>Now the multiplexer version, for sessions you want to watch and steer. This step is from the tmux manual and wiki and was not run for this module (tmux has no native Windows build). On Linux, macOS or WSL:</p>
+          <pre><code>tmux new-session -d -s agents -c {{LAB}}/m15/fleet/a
+tmux send-keys -t agents "claude" Enter
+tmux capture-pane -p -t agents
+tmux attach -t agents
+tmux kill-session -t agents</code></pre>
+          <p class="expect"><b>Expected (from the documentation, not machine-verified):</b> <code>new-session -d</code> returns at once with the session running in the background; <code>capture-pane -p</code> prints the pane's screen, which shows Claude Code's start-up screen once it has drawn; <code>attach</code> puts you in the live session and <code>C-b d</code> detaches, printing <code>[detached (from session agents)]</code>; <code>kill-session</code> ends it.</p></li>
+        <li><p>The herdr version. Only the two read-only commands below were run for this module; the pane commands in the comment are from its help text and need a running herdr session.</p>
+          <pre><code>herdr --version
+herdr pane --help
+# Inside a herdr session, per the help text:
+#   herdr pane split --direction right --no-focus --cwd &lt;path&gt;
+#   herdr pane run &lt;PANE_ID&gt; claude
+#   herdr agent wait &lt;TARGET&gt; --until idle --timeout 60000
+#   herdr pane read &lt;PANE_ID&gt; --lines 40</code></pre>
+          <p class="expect"><b>Expected:</b> <code>herdr 0.9.5</code> on the machine used here, and a command list that includes <code>split</code>, <code>run</code>, <code>read</code>, <code>send-text</code>, <code>send-keys</code> and <code>wait-output</code>. The four commented commands are not machine-verified. If herdr is not installed, skip this step; do not install it for the lab.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>What did the two background jobs give you that a multiplexer would also give you, and what did they not?</b> Parallel sessions, separate working directories and collected results: yes. A live view, the ability to answer a permission prompt, to redirect a session halfway, or to reattach after closing the window: no. Headless runs end when they finish; a multiplexer is for sessions that stay open.</p>
+        <p><b>In the tmux version, how would the script know that Claude had finished a task?</b> Only by capturing the pane and matching text. In the herdr version <code>agent wait --until idle</code> does that matching for you, with the caveat from its own documentation that screen detection can read an unfamiliar prompt as idle.</p>
+        <p><b>Which of the three approaches needed nothing installed?</b> The background jobs.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m15-lab5" data-title="Vet and adopt, or reject, one item you actually want" data-minutes="35">
+      <p class="goal">You pick one third-party skill, plugin or tool you have been meaning to use, run the full procedure on it, and end with a recorded decision.</p>
+      <ol class="steps">
+        <li><p>Choose the item and write down its kind from the table in the first lesson. If it is more than one kind (a skill collection that is also a plugin, a tool with an installer), list each.</p>
+          <p class="expect"><b>Expected:</b> one line in a new file, <code>{{LAB}}/m15/own/decision.md</code>: name, source URL, kind or kinds.</p></li>
+        <li><p>Clone it at one commit into <code>{{LAB}}/m15/own/</code>, as in Lab 1 step 1, and record the SHA. For a tool distributed as a binary, record the version and download the release notes instead; for an installer script, download the script to a file and read it, without running it.</p>
+          <p class="expect"><b>Expected:</b> a 40-character SHA or an exact version in <code>decision.md</code>.</p></li>
+        <li><p>Run Lab 1 steps 2 to 7 against it. If it is a plugin, add <code>claude --plugin-dir &lt;folder&gt; plugin details &lt;name&gt;</code> and open every file behind a non-zero Hooks, MCP servers or LSP servers line, and everything in <code>bin/</code>.</p>
+          <p class="expect"><b>Expected:</b> the twelve checklist rows from the vetting lesson, each with a finding, in <code>decision.md</code>.</p></li>
+        <li><p>Decide: adopt as is, adopt a part, fork, write your own, or reject. Use the table in the last lesson. Write the decision and the reason in two sentences.</p>
+          <p class="expect"><b>Expected:</b> a decision line. "Reject, because it needs a hook I cannot read" is a complete result.</p></li>
+        <li><p>If you adopt: do it at project scope in a scratch project first, as in Lab 2, with a register line. If you adopt a plugin, install it from a marketplace entry pinned to the SHA you reviewed, or with auto-update off, and note which. Remove it again when you are done unless you mean to keep it.</p>
+          <p class="expect"><b>Expected:</b> a register line with source, path, commit and content identifier, and an init line whose <code>skills</code> or <code>plugins</code> array shows the item.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Done-test.</b> You are done when <code>decision.md</code> answers five questions without you opening the repository again: what kind of thing is it, which commit or version did you read, what can it run on your machine, what did you decide, and what would make you look at it again.</p>
+        <p><b>Did you run anything from the item before the decision line was written?</b> If yes, redo the review in a fresh clone and treat the machine state as changed by the item.</p>
+        <p><b>Is the adopted copy pinned?</b> A register line with a SHA, or a marketplace entry with <code>sha</code>, is a pin. "I installed the latest" is not.</p>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Kinds of third-party item</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Kind</th><th>Becomes</th><th>Read before adopting</th></tr>
+      <tr><td>Multiplexer</td><td>A server that owns your terminals, with a control socket</td><td>Install script, what it writes into other tools' configuration, who may reach the socket</td></tr>
+      <tr><td>Skill collection</td><td>Instructions in context; scripts run on request</td><td>Frontmatter, injected commands, prose that changes your setup, scripts</td></tr>
+      <tr><td>Plugin</td><td>Skills plus code: hooks, monitors, servers, <code>bin/</code></td><td><code>plugin details</code>, <code>hooks/hooks.json</code>, <code>.mcp.json</code>, <code>bin/</code></td></tr>
+      <tr><td>MCP server</td><td>A local process or remote tools</td><td>The command or URL, and who publishes it</td></tr>
+      <tr><td>Installer CLI</td><td>Code run at install time</td><td>What it fetches, where it writes, telemetry, lock file</td></tr>
+      <tr><td>List or directory</td><td>Nothing</td><td>The thing it points at</td></tr>
+    </table></div>
+    <h3>Anthropic's own sources</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Repository</th><th>Marketplace name</th><th>Tier</th><th>Auto-update default</th></tr>
+      <tr><td><code>anthropics/claude-plugins-official</code></td><td><code>claude-plugins-official</code></td><td>Official</td><td>On</td></tr>
+      <tr><td><code>anthropics/skills</code></td><td><code>anthropic-agent-skills</code></td><td>Official</td><td>On (official marketplaces)</td></tr>
+      <tr><td><code>anthropics/claude-plugins-community</code></td><td><code>claude-community</code></td><td>Community; entries pinned by commit SHA</td><td>Off</td></tr>
+      <tr><td>Anything else</td><td>Its own <code>name</code></td><td>Third-party</td><td>Off</td></tr>
+    </table></div>
+    <h3>Multiplexer commands</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Task</th><th>tmux 3.8</th><th>herdr 0.9.5</th></tr>
+      <tr><td>Create in the background</td><td><code>tmux new-session -d -s NAME -c DIR</code></td><td><code>herdr pane split --no-focus --cwd DIR</code></td></tr>
+      <tr><td>Type</td><td><code>tmux send-keys -t NAME "text" Enter</code></td><td><code>herdr pane run PANE_ID COMMAND</code></td></tr>
+      <tr><td>Read</td><td><code>tmux capture-pane -p -t NAME</code></td><td><code>herdr pane read PANE_ID --lines N</code></td></tr>
+      <tr><td>Wait</td><td>Poll <code>capture-pane</code> and match text</td><td><code>herdr pane wait-output</code>, <code>herdr agent wait --until STATE</code></td></tr>
+      <tr><td>Attach and detach</td><td><code>tmux attach -t NAME</code>, <code>C-b d</code></td><td><code>herdr</code>, <code>ctrl+b q</code></td></tr>
+      <tr><td>Stop</td><td><code>tmux kill-session -t NAME</code>, <code>tmux kill-server</code></td><td><code>herdr pane close</code>, <code>herdr server stop</code></td></tr>
+      <tr><td>Claude Code settings that use it</td><td><code>teammateMode</code> (<code>in-process</code>, <code>auto</code>, <code>tmux</code>, <code>iterm2</code>), <code>--worktree NAME --tmux</code></td><td>None</td></tr>
+    </table></div>
+    <h3>Vetting commands</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Question</th><th>Command</th></tr>
+      <tr><td>Clone at one commit</td><td><code>git clone --no-checkout -c core.autocrlf=false URL DIR</code>, then <code>git -C DIR checkout --detach SHA</code></td></tr>
+      <tr><td>What file types</td><td><code>Get-ChildItem -Recurse -File | Group-Object Extension</code></td></tr>
+      <tr><td>Which frontmatter fields</td><td>Parse the lines between the two <code>---</code> markers of every <code>SKILL.md</code> and group by key</td></tr>
+      <tr><td>Injected commands</td><td><code>Select-String -Pattern '(^|\s)!`', '^```!'</code></td></tr>
+      <tr><td>Plugin components</td><td><code>claude --plugin-dir DIR plugin details NAME</code></td></tr>
+      <tr><td>Age and activity</td><td><code>git rev-list --count HEAD</code>, <code>git log -1 --format=%cs</code></td></tr>
+      <tr><td>Same file as upstream</td><td><code>git rev-parse "SHA:path"</code> equals <code>git hash-object --no-filters FILE</code></td></tr>
+      <tr><td>What changed since the pin</td><td><code>git diff "PIN..NEW" -- PATH</code>, <code>git diff --name-status "PIN..NEW" -- PATH</code></td></tr>
+      <tr><td>Did it load</td><td>First line of <code>claude -p … --output-format stream-json --verbose</code>: <code>skills</code>, <code>slash_commands</code>, <code>plugins</code></td></tr>
+    </table></div>
+    <h3>Pinning fields</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Where</th><th>Field</th><th>Effect</th></tr>
+      <tr><td>Marketplace entry, <code>github</code>, <code>url</code> or <code>git-subdir</code> source</td><td><code>ref</code></td><td>Branch or tag; defaults to the default branch</td></tr>
+      <tr><td>Same</td><td><code>sha</code></td><td>Full 40-character lowercase commit SHA; wins over <code>ref</code></td></tr>
+      <tr><td>Marketplace entry, <code>archive</code> source</td><td><code>sha256</code></td><td>Install refused when the download's digest differs</td></tr>
+      <tr><td><code>/plugin marketplace add</code></td><td><code>owner/repo#ref</code></td><td>Adds the marketplace at a branch or tag</td></tr>
+      <tr><td>Plugin manifest or marketplace entry</td><td><code>version</code></td><td>Keeps users on the cached copy until the string changes</td></tr>
+      <tr><td><code>extraKnownMarketplaces</code> entry</td><td><code>autoUpdate</code></td><td>Turns background updates on or off for that marketplace</td></tr>
+      <tr><td>Project register (your own file)</td><td>Source, path, commit, blob ID, licence, review date</td><td>The pin for a vendored skill</td></tr>
+    </table></div>
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>A skill behaves differently from the version you reviewed</td><td>Installed as a plugin from a marketplace with auto-update on</td><td>Vendor at a SHA, or pin the marketplace entry and turn <code>autoUpdate</code> off</td></tr>
+      <tr><td>A vendored skill is missing from the init line's <code>skills</code></td><td><code>--setting-sources</code> without <code>project</code>, or the folder is not <code>.claude/skills/&lt;name&gt;/SKILL.md</code></td><td>Fix the path; include <code>project</code></td></tr>
+      <tr><td><code>/name</code> for a missing skill gives an ordinary answer</td><td>Unknown skill names are not an error in a headless run</td><td>Check the init line, never the absence of an error</td></tr>
+      <tr><td>Blob IDs differ straight after copying</td><td>Line endings converted at checkout, or filters applied by <code>hash-object</code></td><td>Clone with <code>core.autocrlf=false</code>; use <code>--no-filters</code></td></tr>
+      <tr><td>An adopted guard hook never fires on Windows</td><td>It matches the <code>Bash</code> tool and commands go through PowerShell</td><td>Rewrite the hook for your shell and matcher (Hooks module)</td></tr>
+      <tr><td>Every skill appears twice</td><td>The same collection installed as a plugin and as copied files</td><td>Pick one route, as the collection's README says</td></tr>
+      <tr><td>A script typed into an approval dialog</td><td>Pane automation trusted a state or a screen match</td><td>Read the pane before sending; keep unattended sessions on narrow permissions</td></tr>
+      <tr><td>Agent-team split panes do not appear</td><td>No tmux or iTerm2, or a terminal the docs list as unsupported</td><td>Use the default <code>in-process</code> mode</td></tr>
+    </table></div>
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+        <li>Claude Code docs, "Plugin security and trust": <a href="https://code.claude.com/docs/en/plugins/security" target="_blank" rel="noopener">code.claude.com/docs/en/plugins/security</a></li>
+        <li>Claude Code docs, "Anthropic's marketplaces": <a href="https://code.claude.com/docs/en/plugins/anthropic-marketplaces" target="_blank" rel="noopener">code.claude.com/docs/en/plugins/anthropic-marketplaces</a></li>
+        <li>Claude Code docs, "Marketplace reference" (plugin sources, <code>ref</code> and <code>sha</code>): <a href="https://code.claude.com/docs/en/plugins/marketplace-reference" target="_blank" rel="noopener">code.claude.com/docs/en/plugins/marketplace-reference</a></li>
+        <li>Claude Code docs, "Plugin loading reference" (versions and auto-update): <a href="https://code.claude.com/docs/en/plugins/loading" target="_blank" rel="noopener">code.claude.com/docs/en/plugins/loading</a></li>
+        <li>Claude Code docs, "Extend Claude with skills": <a href="https://code.claude.com/docs/en/skills" target="_blank" rel="noopener">code.claude.com/docs/en/skills</a></li>
+        <li>Claude Code docs, "Orchestrate teams of Claude Code sessions" (display modes, tmux) and "CLI reference": <a href="https://code.claude.com/docs/en/agent-teams" target="_blank" rel="noopener">code.claude.com/docs/en/agent-teams</a>, <a href="https://code.claude.com/docs/en/cli-reference" target="_blank" rel="noopener">code.claude.com/docs/en/cli-reference</a></li>
+        <li>tmux README, manual page and wiki "Getting Started", at commit <code>7d4fc58</code> (release 3.8): <a href="https://github.com/tmux/tmux" target="_blank" rel="noopener">github.com/tmux/tmux</a></li>
+        <li>herdr README and documentation at tag v0.9.5, commit <code>2ecf19a</code>, plus <code>herdr --help</code> of 0.9.5: <a href="https://github.com/herdrdev/herdr" target="_blank" rel="noopener">github.com/herdrdev/herdr</a></li>
+        <li>mattpocock/skills at commits <code>6fd9479</code> and <code>4ae2317</code> (README, manifests, skill files): <a href="https://github.com/mattpocock/skills" target="_blank" rel="noopener">github.com/mattpocock/skills</a></li>
+        <li>anthropics/skills at commit <code>2c5958e</code>, and anthropics/claude-plugins-official README at <code>e37d307</code>: <a href="https://github.com/anthropics/skills" target="_blank" rel="noopener">github.com/anthropics/skills</a>, <a href="https://github.com/anthropics/claude-plugins-official" target="_blank" rel="noopener">github.com/anthropics/claude-plugins-official</a></li>
+        <li>vercel-labs/skills (the open skills CLI) at commit <code>e781cb4</code>, v1.8.1, and awesome-claude-code at <code>5eae674</code>: <a href="https://github.com/vercel-labs/skills" target="_blank" rel="noopener">github.com/vercel-labs/skills</a>, <a href="https://github.com/hesreallyhim/awesome-claude-code" target="_blank" rel="noopener">github.com/hesreallyhim/awesome-claude-code</a></li>
+        <li>Measured: every Expected line in Labs 1 to 4 that is not marked "not machine-verified" comes from a run on Claude Code 2.1.322 on 11 November 2026.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "A colleague wants the team to install a popular community skill collection with the one-line plugin command from its README, which says the plugin updates itself by default. You reviewed the repository yesterday and found only Markdown. What do you recommend?", "o": ["Install it as the README says; a Markdown-only repository cannot do harm", "Vendor the few skills the team will use at the reviewed commit, with a register line, and review diffs before each update", "Install it at user scope on one machine first and watch for a week", "Wait until the collection reaches a 1.0 release"], "a": 1, "why": "The review covers one commit. An auto-updating plugin replaces the reviewed files with whatever the branch holds later, and Markdown is instructions that steer an agent holding your tools. A vendored copy at a SHA changes only through your own commits, and a path-limited diff makes each update a small review."},
+    {"q": "You find a plugin in the claude-plugins-official marketplace that was written by an independent developer and declares one hook and one MCP server. How should the marketplace it sits in change your review?", "o": ["It should not: read hooks/hooks.json and .mcp.json before installing, as for any plugin", "No review is needed, because official marketplaces only hold Anthropic's own code", "Only the MCP server needs review; hooks from official marketplaces run inside the sandbox", "Review is pointless because plugins in that marketplace cannot be pinned"], "a": 0, "why": "The marketplace name says who publishes the catalogue. The official marketplace also lists partner and community plugins, and the trust warning states that Anthropic does not control what a plugin contains. Hooks and MCP servers run outside the sandbox with your privileges wherever the plugin came from, and auto-update is on by default for that marketplace."},
+    {"q": "You need to run the same read-only audit prompt against 12 repositories tonight and collect one JSON result per repository. Nobody will watch. A teammate proposes setting up a multiplexer with 12 panes. What is the better call?", "o": ["Use the multiplexer; headless runs cannot run in parallel", "Use the multiplexer so the sessions survive a closed terminal", "Start 12 headless runs from one script as background jobs and collect their JSON", "Use agent teams in split-pane mode"], "a": 2, "why": "The work is non-interactive and ends by itself, which is what claude -p with JSON output is for. A multiplexer adds a live view and steering, neither of which is needed, plus a tool to install and screen text to parse. Lab 4 showed two such jobs in parallel with nothing installed."},
+    {"q": "During vetting you find this in a skill's frontmatter: allowed-tools: Bash(*). The body is a sensible deployment checklist with no injected commands. What is the finding?", "o": ["None: allowed-tools only restricts the skill to the Bash tool", "None: the grant applies only after the workspace trust dialog is accepted", "Low: the grant lasts for the whole session, so it saves prompts", "High: invoking the skill pre-approves every shell command for that turn, including in a headless run in an untrusted folder"], "a": 3, "why": "allowed-tools grants, it does not restrict, and the docs state that workspace trust does not gate it, even in a -p run. During the invoking turn any shell command the model chooses runs without a prompt. Remove or narrow the field in your vendored copy and record the change as a fork."},
+    {"q": "Your pinned copy of a community skill is three months behind upstream. The path-limited diff shows 40 changed lines of prose, a new scripts/ folder with one shell script, and a new hooks entry in the frontmatter. What do you do?", "o": ["Take the update; the skill passed review three months ago", "Take the prose only if it helps, and do not take the script or the hook until you have read both as code and decided you want them", "Delete the skill, because a skill that gains a hook is malicious", "Switch to the plugin install so that updates stop needing review"], "a": 1, "why": "An update review reads what changed, and here the change adds capability: a hook registered when the skill is invoked and a script the agent can be told to run. Those get the same reading a first review gives code. Staying on the pin, taking part of the change as a fork, or taking all of it are each legitimate outcomes once you have read it; skipping the reading is not."}
+  ]</script>
+</section>

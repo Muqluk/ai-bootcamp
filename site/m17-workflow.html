@@ -1,0 +1,682 @@
+<section class="module" id="m17" data-title="Daily workflow" data-sub="Plan mode, rewind, worktrees, effort and git habits" data-level="foundation" data-prereq="" data-minutes="210">
+  <div class="overview">
+    <p class="lede">The first weeks with Claude Code go better with a small set of habits than with a large set of configuration. This module is the working loop: look before you change, plan when the change is worth planning, give the agent a check it can run, undo cheaply when it goes wrong, keep parallel work apart, spend reasoning effort on purpose, and let nothing reach a shared branch that you have not read.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Run a task through explore, plan, implement, verify and commit, and say which steps a given task can skip.</li>
+      <li>Enter plan mode three ways, read what it allows and refuses, and predict what a headless run in plan mode leaves on disk.</li>
+      <li>Say which changes the rewind menu can restore, which it cannot, and reach for git when it cannot.</li>
+      <li>Continue, resume, name and branch sessions, and choose between <code>/clear</code>, <code>/compact</code> and a fresh session.</li>
+      <li>Run two sessions against one repository in separate worktrees, merge their branches and clean up.</li>
+      <li>Set the effort level four ways, read its cost from a JSON result, and keep an agent's git rights down to what the task needs.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key). The labs were run on 2.1.322.</li>
+      <li>Git 2.x on the path, and Windows PowerShell 5.1 or PowerShell 7.</li>
+      <li>About $0.08 of usage at API list price for the four measured labs, most of it one plan-mode run that is upgraded to Sonnet, or the same share of a subscription's 5-hour window.</li>
+      <li>No prior module. This one stands alone. It names the modules that go deeper where it only skims.</li>
+    </ul>
+  </div>
+
+  <div class="lesson" id="m17-l1" data-title="The working loop" data-minutes="15">
+    <h3>The loop the agent runs</h3>
+    <p>The Claude Code docs describe one task as three phases that blend together: <b>gather context</b>, <b>take action</b>, <b>verify results</b>. A question about the codebase may need only the first. A bug fix cycles through all three several times. The model decides what each step needs from what the previous step returned, and you can interrupt at any point.</p>
+    <h3>The loop you run around it</h3>
+    <p>Around that inner loop sits yours. The five steps below are this course's framing, assembled from what the docs say about plan mode, verification, checkpoints and git. The docs do not prescribe a ritual; they say a plain first prompt in a fresh session usually does the right thing, and that setup pays off where your project has knowledge, rules or checks the agent cannot see from the code.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Step</th><th>What you do</th><th>What supports it</th><th>Skip it when</th></tr>
+      <tr><td>Explore</td><td>Ask how the thing works before asking for a change</td><td>Plain questions; plan mode keeps it read-only</td><td>You already know the file and the fix</td></tr>
+      <tr><td>Plan</td><td>Have the change proposed and read it before anything is written</td><td>Plan mode</td><td>You could describe the diff in one sentence</td></tr>
+      <tr><td>Implement</td><td>Approve the plan, watch the first minute</td><td>A permission mode that fits the risk; <code>Esc</code> to stop</td><td>Never</td></tr>
+      <tr><td>Verify</td><td>Make the agent run a check and show you the output</td><td>Tests, a build exit code, a linter, a diff against a fixture</td><td>Never; shrink the check instead</td></tr>
+      <tr><td>Commit</td><td>Read the diff, commit one small topic</td><td><code>/diff</code>, git, a narrow allowlist</td><td>The work is a throwaway experiment</td></tr>
+    </table></div>
+<figure class="diagram">
+<pre class="mermaid">flowchart LR
+  a["Explore"] --> b["Plan"]
+  b --> c["Implement"]
+  c --> d{"Check passes?"}
+  d -- no --> c
+  d -- yes --> e["Read the diff"]
+  e --> f["Commit"]:::good
+  c -. "off course twice" .-> g["Rewind or clear"]:::hot
+  g -.-> b
+</pre>
+  <figcaption>The inner cycle between implement and the check is the part the agent can run alone, provided the check exists; the dotted path is the exit when corrections stop working.</figcaption>
+</figure>
+    <h3>Four ways a session goes wrong</h3>
+    <p>The best-practices page reduces most disappointing sessions to four causes. Knowing which one you are looking at tells you which lever to pull.</p>
+    <div class="tablewrap"><table>
+      <tr><th>What you see</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>It built something other than what you meant, or rediscovers the same fact every session</td><td>It lacks information that is not in the repository</td><td>A specific prompt; a short <code>CLAUDE.md</code> holding only what the code cannot tell it</td></tr>
+      <tr><td>It said done and was not quite</td><td>It had no way to check its own work</td><td>Give it a check to run</td></tr>
+      <tr><td>It did something that must never happen here, or skipped a step that must always happen</td><td>A prompt cannot guarantee anything</td><td>A hook, a deny rule, a managed setting</td></tr>
+      <tr><td>Right result, too much time, tokens or prompting</td><td>A default does not fit the task</td><td>Change the permission mode, model or effort level</td></tr>
+    </table></div>
+    <h3>Verification you can run</h3>
+    <p>The agent stops when the work looks done. Without something that returns pass or fail, "looks done" is all it has, and you become the test suite. With a check, it closes the loop itself: change, run, read the failure, fix, run again. The docs call the command that runs your existing check the single most useful line in a <code>CLAUDE.md</code>.</p>
+    <div class="tablewrap"><table>
+      <tr><th>How strict</th><th>Form</th><th>Who decides it passed</th></tr>
+      <tr><td>In the prompt</td><td>"run the auth tests after, and keep going until they pass"</td><td>The model</td></tr>
+      <tr><td>As a goal</td><td><code>/goal all tests in tests/auth pass and lint is clean</code></td><td>A separate model, after every turn</td></tr>
+      <tr><td>As a Stop hook</td><td>A script that exits 2 while the check fails</td><td>Claude Code itself; the turn cannot end</td></tr>
+      <tr><td>By a fresh reviewer</td><td><code>/code-review</code> on the diff</td><td>A subagent that never saw the conversation</td></tr>
+    </table></div>
+    <p>Whichever form you use, ask for evidence: the command that was run and its output. "All tests pass" on its own tells you little, and reading the output is faster than rerunning the check. The Hooks module builds the Stop gate; this module only uses the prompt form.</p>
+    <aside class="rule">Before you ask for a change, decide what command will tell both of you it worked, and put that command in the prompt.</aside>
+    <h3>Say what the agent cannot see</h3>
+    <p>A specific prompt works for the same reason a check does: it supplies information the agent does not have. Name the file, describe the symptom, and say what fixed looks like.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Instead of</th><th>Write</th></tr>
+      <tr><td>"fix the login bug"</td><td>"users report login fails after the session times out. Look at token refresh in src/auth/, write a failing test that reproduces it, then fix it"</td></tr>
+      <tr><td>"add a report"</td><td>"follow the pattern in disk-report.ps1 and add a memory report with the same switches. No new modules. Run the Pester tests after"</td></tr>
+    </table></div>
+    <p>Phrases such as "think step by step" or "be thorough" are ordinary prompt text. How hard the model works is set by the effort level, covered in lesson 5.</p>
+    <h3>Steering</h3>
+    <ul>
+      <li><code>Esc</code> stops the agent mid-action and keeps everything up to that point.</li>
+      <li>Typing a correction and pressing <code>Enter</code> while it works queues the message; the agent reads it when its current tool calls finish, inside the same turn.</li>
+      <li><code>Esc</code> twice on an empty prompt, or <code>/rewind</code>, opens the rewind menu (lesson 3).</li>
+      <li><code>/clear</code> starts over with an empty context.</li>
+    </ul>
+    <aside class="trap">A third correction of the same mistake mostly adds to a conversation that already holds two failed attempts, which the model re-reads on every turn. The docs' advice: after two failed corrections, <code>/clear</code> and write one better prompt that folds in what you learned.</aside>
+  </div>
+
+  <div class="lesson" id="m17-l2" data-title="Plan mode" data-minutes="15">
+    <h3>What it permits and what it refuses</h3>
+    <p>Plan mode is one of the permission modes. It tells the agent to research and propose changes without making them: it reads files, runs shell commands to explore, and writes a plan, but does not edit your source. Edits stay blocked until you approve the plan.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Action</th><th>In plan mode</th></tr>
+      <tr><td>Read, search, list files</td><td>Runs without asking</td></tr>
+      <tr><td>Edit or write a source file</td><td>Blocked until a plan is approved</td></tr>
+      <tr><td>Shell command, auto mode available and <code>useAutoModeDuringPlan</code> on (the default)</td><td>The auto mode classifier reviews it; approved commands run, rejected ones are blocked</td></tr>
+      <tr><td>Shell command, auto mode not available or <code>useAutoModeDuringPlan</code> off</td><td>Commands outside the built-in read-only set prompt you</td></tr>
+      <tr><td>The plan itself</td><td>Written as a file under <code>~/.claude/plans</code>, or the folder named by the <code>plansDirectory</code> setting</td></tr>
+    </table></div>
+    <aside class="trap">One documented exception: in an interactive terminal session started with bypass permissions available, planning commands get neither the classifier nor a prompt. Plan mode is a working agreement backed by a permission check, and that launch flag removes the check. Do not combine them on a machine you care about.</aside>
+    <h3>Entering it</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Where</th><th>How</th></tr>
+      <tr><td>In a session</td><td><code>Shift+Tab</code> cycles the modes; the status bar reads <code>plan mode on</code> when you are there. From auto mode the first press goes to Manual, then accept edits, then plan</td></tr>
+      <tr><td>For one prompt</td><td><code>/plan fix the retry logic in sync.ps1</code></td></tr>
+      <tr><td>At launch</td><td><code>claude --permission-mode plan</code></td></tr>
+      <tr><td>For a whole project</td><td><code>"permissions": {"defaultMode": "plan"}</code> in <code>.claude/settings.json</code></td></tr>
+    </table></div>
+    <p><code>Shift+Tab</code> again leaves plan mode without approving anything.</p>
+    <h3>Approving a plan</h3>
+    <p>When the plan is ready the agent presents it and asks how to proceed.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Choice</th><th>Result</th></tr>
+      <tr><td>Yes, and use auto mode</td><td>Leaves plan mode, continues in auto mode. Reads "Yes, auto-accept edits" where auto mode is not available to the session</td></tr>
+      <tr><td>Yes, manually approve edits</td><td>Leaves plan mode, you approve each edit</td></tr>
+      <tr><td>No, keep planning</td><td>Stays in plan mode; you say what to change</td></tr>
+    </table></div>
+    <p>Approval is a mode switch: the session leaves plan mode and starts editing in the mode the option names. It also gives an unnamed session a title generated from the plan. <code>Ctrl+G</code> opens the proposed plan in your text editor so you can change it before the agent proceeds. With the setting <code>showClearContextOnPlanAccept</code> on, the menu gains a first option that approves the plan and clears the planning conversation, so implementation starts from the plan alone.</p>
+<figure class="diagram">
+<pre class="mermaid">stateDiagram-v2
+  state "Plan mode: read, explore, write the plan" as P
+  state "Plan presented for approval" as R
+  state "Auto mode: editing" as A
+  state "Manual mode: each edit approved" as M
+  [*] --> P: Shift+Tab, /plan or the launch flag
+  P --> R: plan is ready
+  R --> P: No, keep planning
+  R --> A: Yes, and use auto mode
+  R --> M: Yes, manually approve edits
+  P --> [*]: Shift+Tab leaves without approval
+</pre>
+  <figcaption>Edits are possible only in the two states on the far side of the approval; everything before it can read and explore but not write your source.</figcaption>
+</figure>
+    <h3>Plan mode without a person</h3>
+    <p>A <code>claude -p</code> run accepts <code>--permission-mode plan</code>, but there is nobody to approve anything. In the verified lab run the agent explored, wrote the plan file, and ended its turn with the plan as the result text, noting that the tool for requesting approval was not available in the session. No tracked file changed and nothing was denied. That makes headless plan mode a cheap way to get a reviewable proposal out of a script: read the plan, then start a second run to carry it out.</p>
+    <p>The same run showed a cost detail worth knowing. A session on Haiku is upgraded to Sonnet while it plans; the model configuration page says so, and the result's <code>modelUsage</code> listed only <code>claude-sonnet-5-5</code> although the run was started with <code>--model haiku</code>. The plan cost about $0.055 at list price against about $0.004 for the Haiku run that then implemented it. The pairing also exists as a model alias you can choose: <code>opusplan</code> uses Opus in plan mode and Sonnet for execution.</p>
+    <h3>When planning is wasted effort</h3>
+    <p>This part is engineering judgment, not a doc rule. A plan costs a round of exploration and a read by you. It earns that when the change touches several files, when you do not know the code, when there are two reasonable designs and you care which is chosen, or when a wrong start is expensive to unwind. It does not earn it for a typo, a rename, a one-line fix, or a question. The docs point the same way from the other side: because the rewind menu can roll code and conversation back, it is low-risk to try the bolder approach first and rewind if it does not work out.</p>
+    <aside class="rule">Plan when you would want to review the approach before the diff. If the diff is the approach, skip the plan and read the diff.</aside>
+  </div>
+
+  <div class="lesson" id="m17-l3" data-title="Checkpoints and rewind" data-minutes="15">
+    <h3>What a checkpoint is</h3>
+    <p>Claude Code snapshots a file before its file editing tools change it, and every prompt you send that starts a turn creates a checkpoint. Checkpoints are saved with the conversation, so they are still there after you resume a session. Snapshots are kept for the 100 most recent checkpoints in a session and are swept about 30 days after the session last saved one (the <code>cleanupPeriodDays</code> setting changes that). The feature is on by default; the setting <code>fileCheckpointingEnabled</code> turns it off.</p>
+    <h3>The rewind menu</h3>
+    <p>Run <code>/rewind</code>, or press <code>Esc</code> twice with an empty prompt. If the prompt holds text, the double <code>Esc</code> clears it instead. The menu lists the prompts you sent; pick one, then pick an action.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Action</th><th>Files on disk</th><th>Conversation</th></tr>
+      <tr><td>Restore code and conversation</td><td>Back to that point</td><td>Back to that point</td></tr>
+      <tr><td>Restore conversation</td><td>Kept as they are</td><td>Back to that point</td></tr>
+      <tr><td>Restore code</td><td>Back to that point</td><td>Kept</td></tr>
+      <tr><td>Summarize from here</td><td>Untouched</td><td>Everything after that point becomes a summary</td></tr>
+      <tr><td>Summarize up to here</td><td>Untouched</td><td>Everything before that point becomes a summary</td></tr>
+    </table></div>
+    <p>The two code options appear only when that checkpoint has tracked file changes to revert. After restoring the conversation, the prompt you selected is put back in the input box so you can edit and resend it. Each use has a typical case: restore both to abandon an approach, restore the conversation alone to keep good edits but drop a muddled discussion, restore code alone to keep the discussion and try the edit again.</p>
+    <h3>What is not tracked</h3>
+    <p>The docs list the limits plainly. Learn this table; it decides when rewind is enough.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Change</th><th>Restored by rewind</th></tr>
+      <tr><td>An edit made by the agent's file editing tools in your conversation</td><td>Yes</td></tr>
+      <tr><td>A file only a shell command changed or created</td><td>No. Use version control</td></tr>
+      <tr><td>A shell command's change to a file the agent had already edited with its file tools</td><td>Yes, that file is tracked from the first tool edit on</td></tr>
+      <tr><td>Edits made by a subagent to files your conversation had not edited</td><td>Usually no. Use version control</td></tr>
+      <tr><td>Your own edits outside Claude Code, or another session's edits</td><td>Normally no, unless they touch a file this session edited</td></tr>
+      <tr><td>Symlinked or hard-linked files</td><td>No. They are skipped with a "skipped N files" warning</td></tr>
+      <tr><td>Anything outside the file system: a database row, an API call, a deployment, a sent message, a pushed commit</td><td>No. Nothing local can</td></tr>
+    </table></div>
+<figure class="diagram">
+<pre class="mermaid">flowchart TD
+  q{"What made the change?"}
+  q --> a["Agent's file tool"]
+  q --> b["Shell command only"]
+  q --> c["Subagent"]
+  q --> d["Call to a remote system"]
+  a --> ra["Rewind menu restores it"]:::good
+  b --> rb["Git, if the file is tracked or you clean it"]:::info
+  c --> rb
+  d --> rd["No local undo exists"]:::bad
+  rd --> p["Control it before: permission rules"]:::hot
+</pre>
+  <figcaption>Three undo tiers: the rewind menu for tool edits, git for anything on disk, and prevention for everything that leaves the machine.</figcaption>
+</figure>
+    <aside class="trap">A message you typed while the agent was still working has no checkpoint of its own; the menu marks it "No code restore". To undo the edits made after it, select the prompt that started the turn, which reverts the whole turn's edits.</aside>
+    <h3>How this differs from git</h3>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>Checkpoints</th><th>Git</th></tr>
+      <tr><td>Created</td><td>Automatically, per prompt</td><td>When someone commits</td></tr>
+      <tr><td>Covers</td><td>Files the agent's file tools edited in this session</td><td>Every tracked file, whoever changed it</td></tr>
+      <tr><td>Also rewinds</td><td>The conversation</td><td>Nothing but files</td></tr>
+      <tr><td>Lifetime</td><td>100 checkpoints, about 30 days</td><td>Permanent, shared</td></tr>
+      <tr><td>Scope</td><td>One session on one machine</td><td>The team</td></tr>
+    </table></div>
+    <p>The docs' own summary: checkpoints are for quick, session-level recovery and work alongside git, not in place of it. The habit that makes both work is in lesson 6: start each task from a clean tree, so <code>git diff</code> shows exactly what the session did and git can undo whatever rewind cannot.</p>
+    <aside class="rule">Rewind for the last few minutes of tool edits. Git for everything on disk. A permission rule for everything that leaves the machine.</aside>
+  </div>
+
+  <div class="lesson" id="m17-l4" data-title="Sessions and worktrees" data-minutes="25">
+    <h3>Sessions are saved and tied to a folder</h3>
+    <p>A session is a saved conversation tied to a project directory. Claude Code writes it to a local transcript as you work, so you can leave and come back. Each new session starts with an empty context window; nothing carries over from the last one except what lives in files such as <code>CLAUDE.md</code>. The Context module covers what fills the window and what compaction keeps; the Session transcripts module covers the files on disk. This lesson is only about the moves.</p>
+    <div class="tablewrap"><table>
+      <tr><th>You want to</th><th>Do this</th></tr>
+      <tr><td>Pick up the most recent session in this folder</td><td><code>claude --continue</code></td></tr>
+      <tr><td>Choose from a list</td><td><code>claude --resume</code>, or <code>/resume</code> inside a session</td></tr>
+      <tr><td>Go straight to one</td><td><code>claude --resume &lt;name-or-id&gt;</code></td></tr>
+      <tr><td>Name a session at launch</td><td><code>claude -n disk-report</code></td></tr>
+      <tr><td>Name it later</td><td><code>/rename disk-report</code></td></tr>
+      <tr><td>Find the session that opened a pull request</td><td><code>claude --from-pr 123</code></td></tr>
+      <tr><td>Try another direction and keep the original</td><td><code>/branch try-streaming</code>, or <code>claude --continue --fork-session</code></td></tr>
+      <tr><td>Ask a side question without adding to the history</td><td><code>/btw</code></td></tr>
+    </table></div>
+    <p>Name anything that will span more than one sitting. A name you set, or the title Claude Code generates from your first prompt, works as a resume handle. Resuming reopens the same session id and appends to it; branching or forking copies the history into a new id and leaves the original unchanged.</p>
+    <p>A resumed session restores the conversation, the model and, when you resume from a terminal by name or id, the permission mode it was in (a session that ended in plan mode comes back in plan mode). It does not restore launch flags such as <code>--mcp-config</code>, <code>--settings</code> or <code>--add-dir</code>; pass those again.</p>
+    <aside class="trap">Sessions created with <code>claude -p</code> are left out of the session picker and out of <code>claude --continue</code>. Resume one by passing its session id to <code>claude --resume</code>, or use <code>claude -p --continue</code>, which does include them. And if you open the same session in two terminals without forking, both write into one transcript and the messages interleave.</aside>
+    <h3>Clear, compact, or start fresh</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Move</th><th>What it does</th><th>Use it when</th></tr>
+      <tr><td><code>/clear</code></td><td>Starts an empty context; the old session is saved and can be resumed. <code>/clear release-prep</code> names the one you are leaving</td><td>The next task is unrelated to this one</td></tr>
+      <tr><td><code>/compact keep the API changes and the test commands</code></td><td>Replaces history with a summary focused on what you name</td><td>Same task, long history, and the detail of early turns no longer matters</td></tr>
+      <tr><td>Summarize from the rewind menu</td><td>Compresses one part of the conversation</td><td>A noisy debugging stretch in the middle of otherwise useful history</td></tr>
+      <tr><td>Fresh session from a spec file</td><td>New context, the definition of done on disk</td><td>You worked out what to build in one session and want to build it in another</td></tr>
+    </table></div>
+    <p>Current models have large windows and Claude Code compacts on its own, so running out is rare. The reason to clear is cost and focus: every request sends the whole conversation, so a session that has collected three unrelated tasks re-reads all three on every turn of the fourth. That re-read is discounted while the prompt cache is warm and full price once it expires. The docs give the cache about an hour on a subscription and five minutes on an API key, cloud provider or usage credits, so on an API key a coffee break is enough to make the next turn of a long session a cold one. <code>/compact</code> is itself a large request because it reads the whole conversation to summarise it. The Tokens and Cutting cost modules do the arithmetic.</p>
+    <h3>Worktrees: two sessions, one repository</h3>
+    <p>Two sessions in the same folder edit the same files and will overwrite each other. A git worktree is a second working directory with its own files and its own branch that shares the repository's history. Give each session a worktree and the edits cannot collide.</p>
+    <pre><code>claude --worktree feature-auth
+claude -w bugfix-123</code></pre>
+    <div class="tablewrap"><table>
+      <tr><th>Fact</th><th>Value</th></tr>
+      <tr><td>Where the worktree is created</td><td><code>.claude/worktrees/&lt;name&gt;/</code> under the repository root</td></tr>
+      <tr><td>Branch</td><td>New, named <code>worktree-&lt;name&gt;</code></td></tr>
+      <tr><td>No name given</td><td>Claude Code generates one</td></tr>
+      <tr><td>Starting commit</td><td>The default branch on the remote (<code>worktree.baseRef</code> <code>"fresh"</code>, the default); with no remote it falls back to your local <code>HEAD</code>. Set <code>"head"</code> to branch from your current work</td></tr>
+      <tr><td>Needs</td><td>A git repository with at least one commit</td></tr>
+      <tr><td>Name already exists</td><td>That worktree is opened, not recreated</td></tr>
+    </table></div>
+<figure class="diagram">
+<pre class="mermaid">flowchart TD
+  g["Repository: one shared .git"]:::info
+  g --> m["Main checkout, branch main"]
+  g --> a["Worktree alpha"]
+  g --> b["Worktree beta"]
+  m --> sm["You, or session 1"]
+  a --> sa["Session 2 on worktree-alpha"]:::hot
+  b --> sb["Session 3 on worktree-beta"]:::hot
+  sa -.-> mg["Merge or PR into main"]:::good
+  sb -.-> mg
+</pre>
+  <figcaption>Each session owns a folder under <code>.claude/worktrees/</code> and a branch; the only shared thing is the history, and work comes back to main through a merge you choose to make.</figcaption>
+</figure>
+    <p>A worktree is a fresh checkout, so files git ignores (<code>.env</code>, installed dependencies) are not there. List the small ignored files you need in a <code>.worktreeinclude</code> file at the repository root, in <code>.gitignore</code> syntax, and Claude Code copies them into each worktree it creates. Add <code>.claude/worktrees/</code> to your <code>.gitignore</code> so the worktrees do not show up as untracked files in the main checkout.</p>
+    <p>While a session is in a worktree, Claude Code blocks file-tool edits that target the main checkout, shell commands whose working directory is the main checkout, and git commands redirected there. The docs are plain about the gap: the checks read paths and command text, not what a command writes, so a copy or a shell redirect into the main checkout is treated like any other shell command under your permission settings. For PowerShell commands only the working-directory check applies.</p>
+    <h3>Cleanup</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Situation on exit</th><th>What happens</th></tr>
+      <tr><td>Interactive, unnamed session, worktree clean</td><td>Worktree and branch removed automatically</td></tr>
+      <tr><td>Interactive, worktree has changes, untracked files or new commits</td><td>You are asked to keep or remove; keeping prints the <code>claude --worktree &lt;name&gt; --resume</code> command to return</td></tr>
+      <tr><td><code>claude -p --worktree</code></td><td>Nothing is cleaned up and the lock taken at creation stays. Remove it with <code>git worktree remove</code>; if git says it is locked, <code>git worktree unlock</code> first</td></tr>
+      <tr><td>You made it with <code>git worktree add</code></td><td>Yours to remove; the sweep never touches it</td></tr>
+    </table></div>
+    <p>Worktrees share more than history with the main checkout: git commands in a worktree write to the one shared <code>.git</code> directory, and project-scope plugins load in every worktree. The Orchestration module covers running many sessions at once; a worktree per session is the file-level half of that.</p>
+    <aside class="rule">One task, one session, one branch, one folder. If two of those are shared between two agents, expect a collision.</aside>
+  </div>
+
+  <div class="lesson" id="m17-l5" data-title="Effort and thinking" data-minutes="15">
+    <h3>What effort controls</h3>
+    <p>Effort is a setting sent with each request that tells the model how much work to put into the response. The API docs describe it as a behavioural signal, not a strict token budget, and it affects all output: the text, the tool calls (lower effort means fewer and terser calls) and the thinking. On current models reasoning is adaptive: the model decides at each step whether and how much to think, and the effort level moves that decision.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Level</th><th>The docs' guidance on when to use it</th></tr>
+      <tr><td><code>low</code></td><td>Quick exchanges where you review each result: brainstorming, a first sketch, a rename</td></tr>
+      <tr><td><code>medium</code></td><td>Day-to-day engineering work with a clear scope. The default on Fable 5.2, Opus 5.5, Sonnet 5.5 and Haiku 5.5</td></tr>
+      <tr><td><code>high</code></td><td>Work where verification matters or edge cases are likely, such as a bug in code you did not write</td></tr>
+      <tr><td><code>xhigh</code></td><td>Deeper reasoning at higher token spend</td></tr>
+      <tr><td><code>max</code></td><td>Hard problems you want worked through without you. Prone to overthinking on ordinary tasks; test before adopting it</td></tr>
+    </table></div>
+    <p>All five levels exist on the Fable models, Opus 5.5, Sonnet 5.5 and Haiku 5.5. Opus 4.6 and Sonnet 4.6 have no <code>xhigh</code>. If you set a level the model lacks, Claude Code uses the highest supported level at or below it. The scale is calibrated per model, so <code>medium</code> on one model is not the same amount of work as <code>medium</code> on another.</p>
+    <h3>Setting it</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Where</th><th>How</th><th>Lasts</th></tr>
+      <tr><td>In a session</td><td><code>/effort high</code>, or <code>/effort</code> for a slider; <code>/effort status</code> prints it; <code>/effort auto</code> clears your saved level</td><td>Saved as your default for that model when confirmed with <code>Enter</code> or typed as a level; <code>s</code> in the slider applies it to this session only. <code>max</code> is always session-only</td></tr>
+      <tr><td>In the model picker</td><td><code>/model</code>, left and right arrows</td><td>As above</td></tr>
+      <tr><td>At launch</td><td><code>claude --effort high</code></td><td>That session</td></tr>
+      <tr><td>Environment</td><td><code>CLAUDE_CODE_EFFORT_LEVEL=high</code></td><td>Every session started from that shell; outranks everything else</td></tr>
+      <tr><td>Settings file</td><td><code>"effortLevel": "high"</code> (<code>low</code> to <code>xhigh</code>; <code>max</code> is not accepted), or per model under <code>modelSettings</code></td><td>Until changed</td></tr>
+      <tr><td>Skill or subagent frontmatter</td><td><code>effort: low</code></td><td>While that skill or subagent runs</td></tr>
+    </table></div>
+    <p>When more than one source sets a level, Claude Code takes the first of: the environment variable, a level picked in the session, the <code>--effort</code> flag, your settings, the model's default. A new level picked mid-session starts with your next message; a turn already in progress may finish at the old one. For a single hard question in otherwise routine work, the docs suggest putting the word <code>ultrathink</code> in that prompt: Claude Code recognises it and asks for deeper reasoning on that turn without changing the setting. Other phrases ("think hard", "think more") are passed through as ordinary text.</p>
+    <aside class="trap">An exported <code>CLAUDE_CODE_EFFORT_LEVEL</code> silently beats <code>/effort</code> and <code>--effort</code>. If the level you pick does not seem to take, check your shell profile and CI variables before anything else.</aside>
+    <h3>Extended thinking</h3>
+    <p>Extended thinking is the reasoning the model emits before it responds. Claude Code collapses it by default; <code>Ctrl+O</code> opens the transcript viewer where it shows. On Opus 5.5, Sonnet 5.5, Haiku 5.5 and the Fable models thinking cannot be turned off: the session toggle (<code>Alt+T</code> on Windows and Linux, <code>Option+T</code> on macOS), the <code>alwaysThinkingEnabled</code> setting and <code>MAX_THINKING_TOKENS=0</code> have no effect there, and the effort level is the only control. Those switches still work on older models selected by full id.</p>
+    <h3>What it costs</h3>
+    <p>Thinking tokens are billed as <span class="tok out">output</span> tokens, and you are charged for all of them even when the text is collapsed, summarised or not returned at all. Output is the expensive side: five times the input price on every current model. So a higher effort level costs twice over, in more thinking per step and in more steps, since the agent checks more edge cases and makes more tool calls.</p>
+    <p>The effort lab measures this on one small reasoning question on Haiku 5.5: 341 output tokens at <code>low</code>, 424 at <code>medium</code>, 390 at <code>high</code> and 798 at <code>max</code>, with the same correct answer every time. Over 90 percent of those output tokens were thinking; the JSON result reports them as <code>usage.output_tokens_details.thinking_tokens</code>. Two readings follow. The levels are a tendency, not a ladder with fixed steps (<code>high</code> came in under <code>medium</code> in that run). And on a question the model already gets right, more effort buys only a longer wait.</p>
+    <p>On an API key that difference is money per token. On a subscription the same tokens draw down the 5-hour window and the weekly limits, and the dollar figure in a result is a list-price estimate, not a charge. Either way the docs' advice is the same: leave the default alone until a task costs more than it should or comes back wrong for lack of care, then move one level for that kind of task.</p>
+    <aside class="rule">Raise effort when being wrong is expensive and the mistakes are the easy-to-overlook kind. Lower it when you are steering every step anyway.</aside>
+  </div>
+
+  <div class="lesson" id="m17-l6" data-title="Git habits with an agent" data-minutes="15">
+    <h3>What Claude Code does with git by default</h3>
+    <p>These points come from the docs and from the commit lab; the habits after them are plain engineering sense and are labelled so.</p>
+    <ul>
+      <li>When a conversation starts, Claude Code gives the model a git status snapshot (current branch, main branch, <code>git status</code> output, recent commits) and built-in instructions for writing commits and pull requests. The setting <code>includeGitInstructions: false</code> leaves both out.</li>
+      <li>Commits the agent makes get a <code>Co-Authored-By</code> trailer naming the model, with a <code>noreply</code> address. The <code>attribution</code> setting changes or removes it (<code>attribution.commit</code>, <code>attribution.pr</code>, or <code>false</code> for none). Your own instruction about attribution in <code>CLAUDE.md</code> takes precedence unless the line is set in managed settings.</li>
+      <li>You can ask for a pull request directly ("create a pr for my changes"). When the agent creates it with <code>gh pr create</code>, the session is linked to the pull request and <code>claude --from-pr &lt;number&gt;</code> finds it again. The docs' own tip: review the generated pull request before submitting it.</li>
+      <li><code>/diff</code> shows the working tree's changes inside the session, including the agent's edits so far.</li>
+      <li>In auto mode the classifier blocks, by default, a force push, commands it presumes discard uncommitted work (<code>git reset --hard</code>, <code>git checkout -- .</code>, <code>git restore .</code>, <code>git clean -fd</code>, dropping a stash) and <code>git commit --amend</code> on a commit the session did not create. That is a model's judgment, applied after your own rules.</li>
+      <li>In a <code>claude -p</code> run with no permission mode set, anything that would need approval is denied unless an allow rule covers it. In the commit lab an allowlist of <code>git add</code> and <code>git commit</code> let the agent commit, and a request to push came back in the result's <code>permission_denials</code> without having run.</li>
+    </ul>
+    <h3>Habits (engineering sense)</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Habit</th><th>Why it pays with an agent</th></tr>
+      <tr><td>Start every task from a clean tree</td><td><code>git diff</code> then shows exactly what the session did, and git can undo what rewind cannot</td></tr>
+      <tr><td>One small commit per verified step</td><td>A bad step is one revert, not an afternoon of untangling. An agent produces changes faster than you can review a large one</td></tr>
+      <tr><td>Read the diff before every commit</td><td>The summary the agent gives is its account of the work; the diff is the work. Look for files you did not expect</td></tr>
+      <tr><td>Let the agent write the message, then read it</td><td>It has the whole change in context and writes a fair first draft. A message that claims more than the diff shows is a finding</td></tr>
+      <tr><td>Work on a branch or worktree, merge by pull request</td><td>The last word belongs to branch protection and a person approving the merge, not to the agent's summary</td></tr>
+      <tr><td>Commit before a risky prompt</td><td>The cheapest checkpoint there is, and it covers shell side effects on tracked files</td></tr>
+    </table></div>
+    <h3>What it should never do unasked</h3>
+    <p>The docs draw the line with a table of who has the last word: the agent's summary of what it did on one side, branch protection and a person who approves the merge on the other. Turn that into rules the harness enforces. Saying "don't push until I've reviewed" in the conversation does register with the auto mode classifier, but the docs warn it is still a model reading a transcript and the sentence can be lost when the conversation compacts.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Action</th><th>Stance</th><th>Control</th></tr>
+      <tr><td><code>git add</code>, <code>git commit</code> on a work branch</td><td>Allow</td><td>Allow rule, or the allowlist of a headless run</td></tr>
+      <tr><td><code>git push</code></td><td>Ask</td><td><code>"ask": ["Bash(git push *)"]</code> in <code>.claude/settings.json</code>, the docs' own example</td></tr>
+      <tr><td>Force push, rewriting published history, deleting branches</td><td>Deny</td><td>A deny rule; deny rules hold in every permission mode</td></tr>
+      <tr><td>Merge to the main branch, release, deploy</td><td>Human only</td><td>Branch protection on the server, where no local setting can reach</td></tr>
+    </table></div>
+    <aside class="trap">On Windows the shell tool may be PowerShell, not Bash. A rule written only as <code>Bash(git push *)</code> does not match a push sent through the PowerShell tool. Write both: <code>Bash(git push *)</code> and <code>PowerShell(git push *)</code>.</aside>
+    <p>The Security module covers permission rules and the sandbox in depth, and the Hooks module shows how to turn "never" into a guard that cannot be argued with.</p>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m17-lab1" data-title="Plan a change headless and prove nothing moved" data-minutes="15">
+      <p class="goal">You run the same small task twice in a toy repository, once in plan mode and once in accept-edits mode, and end up holding a plan file, proof that the first run changed no tracked file, and a checked, committed diff from the second.</p>
+      <ol class="steps">
+        <li><p>Build a toy repository with one script, its data and a baseline commit. The project setting <code>plansDirectory</code> keeps any plan file inside the lab folder.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m17/lab1/.claude | Out-Null
+Set-Location {{LAB}}/m17/lab1
+git init -q -b main
+git config user.name "Lab User"
+git config user.email "lab@example.com"
+Set-Content -Encoding utf8 -Path .claude\settings.json -Value '{ "plansDirectory": "./plans" }'
+Set-Content -Encoding utf8 -Path .gitignore -Value "run-*.json"
+Set-Content -Encoding utf8 -Path disks.csv -Value @'
+Host,Drive,SizeGB,UsedGB
+web-01,C,100,91
+web-01,D,500,120
+db-01,C,100,55
+'@
+Set-Content -Encoding utf8 -Path disk-report.ps1 -Value @'
+param([int]$WarnPercent = 80)
+$rows = Import-Csv "$PSScriptRoot\disks.csv"
+foreach ($r in $rows) {
+  $pct = [math]::Round(100 * [int]$r.UsedGB / [int]$r.SizeGB)
+  if ($pct -ge $WarnPercent) { "WARN $($r.Host) $($r.Drive) $pct%" } else { "ok   $($r.Host) $($r.Drive) $pct%" }
+}
+'@
+git add -A
+git commit -q -m "Baseline"
+powershell -NoProfile -ExecutionPolicy Bypass -File disk-report.ps1</code></pre>
+          <p class="expect"><b>Expected:</b> three lines: <code>WARN web-01 C 91%</code>, <code>ok   web-01 D 24%</code> and <code>ok   db-01 C 55%</code>. Git may warn that CRLF will be replaced by LF; ignore that warning in every lab of this module.</p></li>
+        <li><p>Ask for a change in plan mode. <code>--setting-sources project</code> loads only this folder's settings, not your user settings and hooks, and <code>--strict-mcp-config</code> loads no MCP servers except ones passed on the command line (none here). Together they keep your personal setup out of the measurement; every lab in this module uses them.</p>
+          <pre><code>claude -p "Add a -Json switch to disk-report.ps1 that prints the rows as JSON instead of text." --permission-mode plan --model haiku --setting-sources project --strict-mcp-config --max-turns 8 --output-format json &gt; run-plan.json
+$r = Get-Content run-plan.json -Raw | ConvertFrom-Json
+"turns: $($r.num_turns)  cost: $($r.total_cost_usd)  denials: $($r.permission_denials.Count)"
+"model: $($r.modelUsage.PSObject.Properties.Name -join ', ')"
+$r.result.Substring(0, [math]::Min(700, $r.result.Length))</code></pre>
+          <p class="expect"><b>Expected:</b> about 5 turns, 0 denials, and the model line reads <code>claude-sonnet-5-5</code>, not Haiku: a Haiku session is upgraded to Sonnet while it is in plan mode. Cost was about $0.055 in the verified runs. The result begins by saying the plan is written and <code>disk-report.ps1</code> has not been edited because plan mode is on, then gives the plan (a <code>[switch]$Json</code> parameter, one object per row, <code>ConvertTo-Json</code>). The model also noted that the tool for requesting plan approval is not available in this session, so it presented the plan as text.</p></li>
+        <li><p>Prove that nothing in the repository moved, and look for the plan file.</p>
+          <pre><code>git status --porcelain
+git diff --stat
+Get-ChildItem plans -ErrorAction SilentlyContinue | Select-Object Name, Length</code></pre>
+          <p class="expect"><b>Expected:</b> <code>git status --porcelain</code> prints one line, <code>?? plans/</code>; <code>git diff --stat</code> prints nothing; the <code>plans</code> folder holds one markdown file of about 1 KB with a generated name such as <code>add-a-json-switch-swirling-nova.md</code>. No tracked file changed.</p></li>
+        <li><p>Run the task in accept-edits mode as the control. The prompt names the check, and two allow rules (one per shell tool) let the agent run exactly that command and nothing else.</p>
+          <pre><code>$check = "powershell -NoProfile -ExecutionPolicy Bypass -File disk-report.ps1"
+claude -p "Add a -Json switch to disk-report.ps1 that prints the rows as JSON instead of text. Keep the default output unchanged. Check your work by running exactly this command and no other: $check -Json" --permission-mode acceptEdits --allowedTools "Bash($check*),PowerShell($check*)" --model haiku --setting-sources project --strict-mcp-config --max-turns 10 --output-format json &gt; run-edit.json
+$r = Get-Content run-edit.json -Raw | ConvertFrom-Json
+"turns: $($r.num_turns)  cost: $($r.total_cost_usd)  denials: $($r.permission_denials.Count)  subtype: $($r.subtype)"
+git status --porcelain
+git diff --stat</code></pre>
+          <p class="expect"><b>Expected:</b> about 5 turns, 0 denials, <code>subtype: success</code>, cost about $0.004. <code>git status</code> shows <code> M disk-report.ps1</code> next to <code>?? plans/</code>, and <code>git diff --stat</code> reports one file changed (11 insertions and 3 deletions in the verified run). A first verified attempt without the check command and its two allow rules ended differently: <code>subtype: error_max_turns</code> after 9 turns and 6 denials, because the agent kept trying to test its work through the shell and every attempt was refused.</p></li>
+        <li><p>Verify the change yourself with a check that returns pass or fail, then commit it.</p>
+          <pre><code>powershell -NoProfile -ExecutionPolicy Bypass -File disk-report.ps1
+$j = powershell -NoProfile -ExecutionPolicy Bypass -File disk-report.ps1 -Json | Out-String | ConvertFrom-Json
+"json rows: $(@($j).Count)"
+git commit -q -am "Add -Json switch to disk-report"
+git log --oneline</code></pre>
+          <p class="expect"><b>Expected:</b> the same three text lines as in step 1, then <code>json rows: 3</code>, then a log of two commits with yours above <code>Baseline</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>What changed on disk during the plan-mode run?</b> Only the plan file under <code>plans/</code>. No tracked file changed, and there were 0 denials: the model did not try to edit and get refused, it wrote the plan and stopped.</p>
+        <p><b>Who approved the plan?</b> Nobody. A <code>-p</code> run has no approval menu, so the run ends with the plan as its result. Acting on it took a second run in a mode that allows edits.</p>
+        <p><b>Why did the plan cost more than the implementation?</b> The plan ran on Sonnet 5.5, the implementation on Haiku 5.5. A Haiku session is upgraded to Sonnet in plan mode, and Sonnet's list price per token is twenty times Haiku's. On a subscription the same difference comes out of your usage window.</p>
+        <p><b>What let the control run finish in 5 turns with no denials?</b> It had a check it was allowed to run. Without one, the agent still tried to verify, was refused six times and ran out of turns.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m17-lab2" data-title="Review, undo, then commit with a narrow allowlist" data-minutes="25">
+      <p class="goal">You let a headless run change a tracked file and create a new one, undo both with git, walk the rewind menu on the same change, then let a second run commit with only <code>git add</code> and <code>git commit</code> allowed and watch a push get refused.</p>
+      <ol class="steps">
+        <li><p>Create the repository and a baseline commit.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m17/lab2 | Out-Null
+Set-Location {{LAB}}/m17/lab2
+git init -q -b main
+git config user.name "Lab User"
+git config user.email "lab@example.com"
+Set-Content -Encoding utf8 -Path .gitignore -Value "run-*.json"
+Set-Content -Encoding ascii -Path app.conf -Value @'
+port=8080
+workers=2
+log_level=info
+'@
+git add -A
+git commit -q -m "Baseline"
+git status --porcelain</code></pre>
+          <p class="expect"><b>Expected:</b> no output. A clean tree is the starting line: everything <code>git status</code> shows from here on is the agent's doing.</p></li>
+        <li><p>Let a run edit one tracked file and create one new file. Only the file tools are allowed.</p>
+          <pre><code>claude -p "In app.conf change port from 8080 to 9090. Then create NOTES.md with one line saying what you changed." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read,Edit,Write" --max-turns 6 --output-format json &gt; run-a.json
+$r = Get-Content run-a.json -Raw | ConvertFrom-Json
+"turns: $($r.num_turns)  cost: $($r.total_cost_usd)  denials: $($r.permission_denials.Count)"</code></pre>
+          <p class="expect"><b>Expected:</b> 6 or 7 turns, cost about $0.003, 0 denials.</p></li>
+        <li><p>Review before anything else.</p>
+          <pre><code>git status --porcelain
+git diff</code></pre>
+          <p class="expect"><b>Expected:</b> <code> M app.conf</code> and <code>?? NOTES.md</code>. The diff shows <code>-port=8080</code> and <code>+port=9090</code> and nothing else; <code>NOTES.md</code> is not in it because git does not track that file yet.</p></li>
+        <li><p>Undo with git. <code>git restore</code> covers the tracked file; the new file is untracked, so list what a clean would remove before removing it.</p>
+          <pre><code>git restore app.conf
+git status --porcelain
+git clean -n
+git clean -f
+git status --porcelain
+Get-Content app.conf | Select-Object -First 1</code></pre>
+          <p class="expect"><b>Expected:</b> after the restore, status shows only <code>?? NOTES.md</code>; the dry run prints <code>Would remove NOTES.md</code>; the clean prints <code>Removing NOTES.md</code>; the last status prints nothing, and the first line of <code>app.conf</code> is <code>port=8080</code>.</p></li>
+        <li><p>Do the same undo with the rewind menu. This step is interactive. Start <code>claude</code> in this folder, send the prompt from step 2, and approve the edits when asked. When the turn ends, press <code>Esc</code> twice on an empty prompt (or type <code>/rewind</code>), select that prompt, and choose <b>Restore code</b>. Then type <code>/exit</code> and check from the shell.</p>
+          <pre><code>Get-Content app.conf | Select-Object -First 1
+git status --porcelain</code></pre>
+          <p class="expect"><b>Expected (from the docs; this step was not machine-verified):</b> the menu lists your prompt with its file changes and offers Restore code and conversation, Restore conversation, Restore code and the two Summarize options. After Restore code, <code>app.conf</code> reads <code>port=8080</code> again. Note what <code>git status</code> shows for <code>NOTES.md</code> and compare it with what <code>git restore</code> left behind in step 4. Finish with <code>git restore .</code> and <code>git clean -f</code> so the tree is clean either way.</p></li>
+        <li><p>Now let a run make a change and commit it. The allowlist names the two git commands the task needs, in both shell spellings, and nothing else that writes.</p>
+          <pre><code>$allow = "Read,Edit,Bash(git add *),Bash(git commit *),Bash(git status *),Bash(git diff *),PowerShell(git add *),PowerShell(git commit *),PowerShell(git status *),PowerShell(git diff *)"
+claude -p "In app.conf change workers from 2 to 4, then commit that change with a one-line message." --model haiku --setting-sources project --strict-mcp-config --allowedTools $allow --max-turns 8 --output-format json &gt; run-b.json
+$r = Get-Content run-b.json -Raw | ConvertFrom-Json
+"turns: $($r.num_turns)  cost: $($r.total_cost_usd)  denials: $($r.permission_denials.Count)  subtype: $($r.subtype)"
+git log --oneline
+git log -1 --format=%B
+git show --stat --format= HEAD
+git status --porcelain</code></pre>
+          <p class="expect"><b>Expected:</b> about 5 turns, cost about $0.002, 0 denials, <code>subtype: success</code>. The log has two commits, the new one with a message such as <code>Increase workers from 2 to 4 in app.conf</code>. The full message ends with the trailer <code>Co-Authored-By: Claude Haiku 5.5 &lt;noreply@anthropic.com&gt;</code>. The stat line reads <code>app.conf | 2 +-</code> and the tree is clean.</p></li>
+        <li><p>Ask for a push with the same allowlist. There is no remote here, but the point is whether the command is allowed to run at all.</p>
+          <pre><code>claude -p "Run git push origin main and tell me in one line what happened." --model haiku --setting-sources project --strict-mcp-config --allowedTools $allow --max-turns 4 --output-format json &gt; run-c.json
+$r = Get-Content run-c.json -Raw | ConvertFrom-Json
+"denials: $($r.permission_denials.Count)"
+$r.permission_denials | ForEach-Object { "$($_.tool_name): $($_.tool_input.command)" }
+$r.result
+git log --oneline | Measure-Object | ForEach-Object { "commits: $($_.Count)" }</code></pre>
+          <p class="expect"><b>Expected:</b> <code>denials: 1</code>, then <code>Bash: git push origin main</code> (the tool name is <code>PowerShell</code> on a machine without Git Bash), then a one-line result saying the push was blocked because the command requires approval, then <code>commits: 2</code>. The command never ran.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Why did <code>git restore</code> leave <code>NOTES.md</code> in place?</b> It rewrites tracked paths only. A new file is untracked until someone adds it, so it needs <code>git clean</code>. Every undo tool has a coverage map; know it before you need it.</p>
+        <p><b>Which rules let the commit through, and what stopped the push?</b> <code>Bash(git add *)</code> and <code>Bash(git commit *)</code> matched the commit. The push matched no allow rule, and a <code>-p</code> run with no permission mode set denies what it would otherwise ask about. The denial is recorded in <code>permission_denials</code> with the tool name and the command.</p>
+        <p><b>Who wrote the commit message, and how would a reviewer know an agent made the commit?</b> The model wrote it. The author is still you, from your git config; the <code>Co-Authored-By</code> trailer names the model.</p>
+        <p><b>In step 5, what did Restore code do to <code>NOTES.md</code>?</b> Write down what you saw. The docs say checkpoints track the changes made by the file editing tools; your own observation on your version is the answer to keep.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m17-lab3" data-title="Run two sessions in two worktrees and merge them" data-minutes="25">
+      <p class="goal">You start two headless sessions with <code>--worktree</code>, have each change the same line differently, and end up with two branches, one merge conflict resolved by you, and a repository with a single worktree again.</p>
+      <ol class="steps">
+        <li><p>Create the repository. The <code>.gitignore</code> line keeps the worktrees out of the main checkout's status.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m17/lab3 | Out-Null
+Set-Location {{LAB}}/m17/lab3
+git init -q -b main
+git config user.name "Lab User"
+git config user.email "lab@example.com"
+Set-Content -Encoding utf8 -Path .gitignore -Value ".claude/worktrees/", "run-*.json"
+Set-Content -Encoding ascii -Path motd.txt -Value "Welcome to web-01"
+git add -A
+git commit -q -m "Baseline"
+git worktree list</code></pre>
+          <p class="expect"><b>Expected:</b> one line: the lab folder, a short commit hash and <code>[main]</code>.</p></li>
+        <li><p>Run one session per worktree. In daily use these would be two terminals at the same time; here they run one after the other.</p>
+          <pre><code>claude -p "Replace the line in motd.txt with: Welcome to web-01, maintenance window Sunday 02:00" --worktree alpha --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read,Edit" --max-turns 5 --output-format json &gt; run-alpha.json
+claude -p "Replace the line in motd.txt with: Welcome to web-01, now behind the new load balancer" --worktree beta --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read,Edit" --max-turns 5 --output-format json &gt; run-beta.json
+foreach ($n in 'alpha','beta') { $r = Get-Content "run-$n.json" -Raw | ConvertFrom-Json; "$n turns: $($r.num_turns)  cost: $($r.total_cost_usd)" }</code></pre>
+          <p class="expect"><b>Expected:</b> <code>alpha turns: 5</code> and <code>beta turns: 5</code>, each costing about 0.002 to 0.003.</p></li>
+        <li><p>See where the work landed.</p>
+          <pre><code>git worktree list
+git branch --list
+"main : $(Get-Content motd.txt)"
+"alpha: $(Get-Content .claude\worktrees\alpha\motd.txt)"
+"beta : $(Get-Content .claude\worktrees\beta\motd.txt)"
+git status --porcelain</code></pre>
+          <p class="expect"><b>Expected:</b> three worktrees at the same commit: the main checkout on <code>[main]</code>, <code>.claude/worktrees/alpha</code> on <code>[worktree-alpha]</code> and <code>.claude/worktrees/beta</code> on <code>[worktree-beta]</code>, the last two marked <code>locked</code>. The branch list shows <code>* main</code>, <code>+ worktree-alpha</code> and <code>+ worktree-beta</code>. Main still reads <code>Welcome to web-01</code>; each worktree has its own new line. <code>git status --porcelain</code> prints nothing: the main checkout was not touched.</p></li>
+        <li><p>Commit in each worktree, then look at the history from the main checkout.</p>
+          <pre><code>git -C .claude\worktrees\alpha commit -q -am "MOTD: maintenance window"
+git -C .claude\worktrees\beta commit -q -am "MOTD: load balancer"
+git log --oneline --all --graph</code></pre>
+          <p class="expect"><b>Expected:</b> a graph with two commits side by side above <code>Baseline</code>, one per branch.</p></li>
+        <li><p>Merge both branches into main. The second merge touches the same line.</p>
+          <pre><code>git merge -q worktree-alpha
+git merge worktree-beta
+git status --short
+Get-Content motd.txt</code></pre>
+          <p class="expect"><b>Expected:</b> the first merge is a silent fast-forward. The second prints <code>CONFLICT (content): Merge conflict in motd.txt</code>; status shows <code>UU motd.txt</code>; the file holds both lines between <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD</code>, <code>=======</code> and <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt; worktree-beta</code> markers.</p></li>
+        <li><p>Resolve it by hand and finish the merge.</p>
+          <pre><code>Set-Content -Encoding ascii -Path motd.txt -Value "Welcome to web-01, now behind the new load balancer, maintenance window Sunday 02:00"
+git add motd.txt
+git commit -q -m "Merge worktree-beta"
+git log --oneline --graph</code></pre>
+          <p class="expect"><b>Expected:</b> a graph topped by the merge commit <code>Merge worktree-beta</code>, joining the two MOTD commits above <code>Baseline</code>.</p></li>
+        <li><p>Clean up. A headless run leaves its worktree, and its lock, behind.</p>
+          <pre><code>git worktree remove .claude\worktrees\alpha
+git worktree unlock .claude\worktrees\alpha
+git worktree unlock .claude\worktrees\beta
+git worktree remove .claude\worktrees\alpha
+git worktree remove .claude\worktrees\beta
+git branch -d worktree-alpha worktree-beta
+git worktree list</code></pre>
+          <p class="expect"><b>Expected:</b> the first remove fails with <code>fatal: cannot remove a locked working tree, lock reason: claude session alpha (pid ...)</code>. After the two unlocks both removes succeed silently, git prints <code>Deleted branch worktree-alpha</code> and <code>Deleted branch worktree-beta</code>, and <code>git worktree list</code> is back to one line on <code>[main]</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Which commit did the two worktree branches start from?</b> Your local <code>HEAD</code>, because this repository has no remote. With a remote, the default base is the remote's default branch, so unpushed commits would be missing unless <code>worktree.baseRef</code> is <code>"head"</code>.</p>
+        <p><b>Did either session touch the main checkout?</b> No. Each ran with its worktree as its working directory; main's <code>motd.txt</code> and status were unchanged until you merged.</p>
+        <p><b>Who resolved the conflict?</b> You did. Worktrees stop sessions from colliding while they work, not when their branches meet. Splitting work so two sessions do not rewrite the same lines is still your job.</p>
+        <p><b>Why were the worktrees locked?</b> Claude Code locks a worktree when it creates it. An interactive session releases it on exit; a <code>-p</code> run has no exit prompt, so the lock stays until you unlock it or a later session's sweep does.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m17-lab4" data-title="Price one question at four effort levels" data-minutes="15">
+      <p class="goal">You send the same reasoning question at <code>low</code>, <code>medium</code>, <code>high</code> and <code>max</code> effort and end up with a four-row table of output tokens, thinking tokens, duration and cost.</p>
+      <ol class="steps">
+        <li><p>Make the folder and keep the question in a variable. The answer can be checked by hand: the backup starts at hours 0, 36, 72 and the rebuild at hours 12, 72, so the first shared start is 72 hours in, Thursday 00:00.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m17/lab4 | Out-Null
+Set-Location {{LAB}}/m17/lab4
+$q = "A backup job starts every 36 hours, first at Monday 00:00. An index rebuild starts every 60 hours, first at Monday 12:00. What is the first moment both start at the same time? Reply with the weekday and time on one line."</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Run it at four levels. This lab stays on Haiku so the only thing that changes is <code>--effort</code>. The <code>cachewrite</code> column is there because it explains the cost column better than effort does.</p>
+          <pre><code>foreach ($level in 'low','medium','high','max') {
+  claude -p $q --model haiku --effort $level --setting-sources project --strict-mcp-config --max-turns 3 --output-format json &gt; "run-$level.json"
+  $r = Get-Content "run-$level.json" -Raw | ConvertFrom-Json
+  '{0,-6} out={1,5} think={2,5} cachewrite={3,5} ms={4,6} cost={5:N4}  {6}' -f $level, $r.usage.output_tokens, $r.usage.output_tokens_details.thinking_tokens, $r.usage.cache_creation_input_tokens, $r.duration_ms, $r.total_cost_usd, ($r.result -replace '\s+', ' ')
+}</code></pre>
+          <p class="expect"><b>Expected:</b> four lines, each ending in <code>Thursday 00:00</code>. In the verified run: <code>low</code> 341 output tokens, <code>medium</code> 424, <code>high</code> 390, <code>max</code> 798, in 2.3 to 4.1 seconds. An earlier run of the first three levels gave 283, 353 and 436. The <code>think</code> column is within about 30 tokens of <code>out</code> on every line. Cost was about $0.0004 for a run with <code>cachewrite</code> 0 and 0.0012 to 0.0017 for a run that wrote cache (4,061 tokens in the <code>max</code> run).</p></li>
+        <li><p>Work out what the extra output cost, using Haiku 5.5's list price of 0.50 USD per million output tokens.</p>
+          <pre><code>$lo = Get-Content run-low.json -Raw | ConvertFrom-Json
+$mx = Get-Content run-max.json -Raw | ConvertFrom-Json
+'output ratio max/low : {0:N1}' -f ($mx.usage.output_tokens / $lo.usage.output_tokens)
+'thinking share at max: {0:P0}' -f ($mx.usage.output_tokens_details.thinking_tokens / $mx.usage.output_tokens)
+'output cost low, max at 0.50 USD per million: {0:N6}, {1:N6}' -f ($lo.usage.output_tokens * 0.5 / 1e6), ($mx.usage.output_tokens * 0.5 / 1e6)</code></pre>
+          <p class="expect"><b>Expected:</b> <code>output ratio max/low : 2.3</code>, <code>thinking share at max: 99%</code>, and an output cost of about $0.00017 against $0.00040.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Did more effort change the answer?</b> No. The question is within reach at every level, so the extra thinking bought only a longer wait. That is the docs' warning about <code>max</code> on ordinary tasks, in miniature.</p>
+        <p><b>Is low, medium, high a strict ladder?</b> No. In the verified run <code>high</code> used fewer output tokens than <code>medium</code>. Effort is a behavioural signal and single runs are noisy; the Evals and A/B testing module shows how to compare settings with repeats.</p>
+        <p><b>Why does <code>total_cost_usd</code> not follow the output tokens?</b> On a prompt this small the system prompt and tool definitions dominate. A run that has to write them to the cache costs three to four times one that reads them, whatever the effort level. Compare output tokens, or compare warm runs only.</p>
+        <p><b>What would a ratio of 2.3 mean on a real task?</b> More than 2.3 times the output bill, because at higher effort the agent also makes more tool calls and each one is another request. On an API key that is money at the output rate; on a subscription it is a faster-draining window.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m17-lab5" data-title="Take one real task of your own through the whole loop" data-minutes="30">
+      <p class="goal">You pick one small, real change in a repository of your own and carry it from a clean tree to a single reviewed commit, using each habit of this module once.</p>
+      <ol class="steps">
+        <li><p>Pick a task that fits in one sitting and has a check: a script that needs a new switch, a failing test, a config template with a missing case. Write down the command that will prove it works before you start. Then make the starting line clean.</p>
+          <pre><code>git status --porcelain
+git switch -c agent/my-task</code></pre>
+          <p class="expect"><b>Expected:</b> no output from the first command (commit or stash anything it lists), then a new branch. Use <code>claude -w my-task</code> instead of the branch if someone else, or another session, is working in this checkout.</p></li>
+        <li><p>Explore and plan. Start in plan mode with a name, and put the check in the prompt.</p>
+          <pre><code>claude --permission-mode plan -n my-task</code></pre>
+          <p class="expect"><b>Expected:</b> the status bar shows plan mode on. Ask one question about how the code works today, then describe the change, name the file, say what done looks like and give the check command. Read the plan. Send it back with "No, keep planning" at least once if anything in it surprises you.</p></li>
+        <li><p>Approve, and watch the first minute. Press <code>Esc</code> if it heads somewhere you did not intend. When it reports done, ask for the check command it ran and the output.</p>
+          <p class="expect"><b>Expected:</b> the agent shows the command and its passing output, not a sentence saying it passed.</p></li>
+        <li><p>Review in the session and from your own shell, and run the check yourself once.</p>
+          <pre><code>git status --porcelain
+git diff --stat
+git diff</code></pre>
+          <p class="expect"><b>Expected:</b> only files you expected. If the diff holds something you do not want, use the rewind menu for a tool edit or <code>git restore &lt;file&gt;</code> for anything else, and say why in the next prompt.</p></li>
+        <li><p>Have the agent commit with a message it writes, read the message, and note what the session cost with <code>/usage</code> and which effort level it ran at with <code>/effort status</code>.</p>
+          <pre><code>git log -1 --stat
+git status --porcelain</code></pre>
+          <p class="expect"><b>Expected:</b> one commit touching only the files of this task, a message that matches the diff, and a clean tree.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Done-test.</b> You are done when all five hold: <code>git status --porcelain</code> prints nothing; <code>git log -1 --stat</code> shows one commit with only the expected files; your check command exits 0 when you run it yourself; nothing was pushed that you did not push; and you can say which effort level the session used and what <code>/usage</code> reported.</p>
+        <p><b>Which step would you skip next time for a task this size?</b> If the plan told you nothing the diff did not, skip the plan for this kind of task. If you never looked at the check output, the check was too weak or too slow; fix that before the next task, not the prompt.</p>
+        <p><b>Did you correct the same thing more than twice?</b> Then the prompt was missing something the agent could not see. Write that fact down where it will be read next time: the prompt for a one-off, <code>CLAUDE.md</code> if every session needs it.</p>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Keys and commands in a session</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Key or command</th><th>Effect</th></tr>
+      <tr><td><code>Shift+Tab</code></td><td>Cycle permission modes: Manual, accept edits, plan (from auto mode the first press goes to Manual)</td></tr>
+      <tr><td><code>/plan [description]</code></td><td>Enter plan mode, optionally starting on a task</td></tr>
+      <tr><td><code>Ctrl+G</code></td><td>Open the proposed plan (or your prompt) in your text editor</td></tr>
+      <tr><td><code>Esc</code></td><td>Stop the agent, keep what is done</td></tr>
+      <tr><td><code>Esc</code> <code>Esc</code> on an empty prompt, <code>/rewind</code></td><td>Open the rewind menu</td></tr>
+      <tr><td><code>/diff</code></td><td>Review working-tree changes, including the agent's edits</td></tr>
+      <tr><td><code>/clear [name]</code></td><td>New empty context; the name labels the session you leave</td></tr>
+      <tr><td><code>/compact [instructions]</code></td><td>Replace history with a focused summary</td></tr>
+      <tr><td><code>/rename [name]</code>, <code>/resume [session]</code>, <code>/branch [name]</code></td><td>Name, switch to, or copy a session</td></tr>
+      <tr><td><code>/btw [question]</code></td><td>Side question that does not enter the history</td></tr>
+      <tr><td><code>/effort [level|auto|status]</code></td><td>Set or show the effort level</td></tr>
+      <tr><td><code>/goal [condition]</code>, <code>/code-review</code></td><td>A completion condition checked each turn; a review of the diff by a fresh subagent</td></tr>
+      <tr><td><code>/usage</code></td><td>Session cost, plan limits, activity</td></tr>
+    </table></div>
+    <h3>Launch flags</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Flag</th><th>Effect</th></tr>
+      <tr><td><code>--permission-mode plan</code></td><td>Start in plan mode. Other values: <code>manual</code> (alias of <code>default</code>), <code>acceptEdits</code>, <code>auto</code>, <code>dontAsk</code>, <code>bypassPermissions</code></td></tr>
+      <tr><td><code>-c</code>, <code>--continue</code></td><td>Most recent session in this folder (skips <code>-p</code> sessions unless used with <code>-p</code>)</td></tr>
+      <tr><td><code>-r</code>, <code>--resume [name-or-id]</code></td><td>Resume by name or id, or open the picker</td></tr>
+      <tr><td><code>--fork-session</code></td><td>With continue or resume: copy into a new session id</td></tr>
+      <tr><td><code>-n</code>, <code>--name &lt;name&gt;</code></td><td>Name the session</td></tr>
+      <tr><td><code>--from-pr [number-or-url]</code></td><td>Find sessions linked to a pull request</td></tr>
+      <tr><td><code>-w</code>, <code>--worktree [name]</code></td><td>Start in a new worktree at <code>.claude/worktrees/&lt;name&gt;</code> on branch <code>worktree-&lt;name&gt;</code></td></tr>
+      <tr><td><code>--effort &lt;level&gt;</code></td><td><code>low</code>, <code>medium</code>, <code>high</code>, <code>xhigh</code>, <code>max</code> for this session</td></tr>
+      <tr><td><code>--allowedTools "Read,Edit,Bash(git commit *)"</code></td><td>Tools that run without a prompt; in a <code>-p</code> run everything else that needs approval is denied</td></tr>
+    </table></div>
+    <h3>Settings and environment</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Name</th><th>Where</th><th>Effect</th></tr>
+      <tr><td><code>permissions.defaultMode</code></td><td>Settings file</td><td>Starting permission mode, for example <code>"plan"</code></td></tr>
+      <tr><td><code>plansDirectory</code></td><td>Settings file</td><td>Where plan files go; default <code>~/.claude/plans</code></td></tr>
+      <tr><td><code>useAutoModeDuringPlan</code></td><td>User, local or managed settings</td><td>Classifier reviews shell commands while planning (default on)</td></tr>
+      <tr><td><code>showClearContextOnPlanAccept</code></td><td>Settings file</td><td>Adds "approve and clear context" to the plan menu (default off)</td></tr>
+      <tr><td><code>fileCheckpointingEnabled</code></td><td>Settings file</td><td>Snapshots before edits so rewind can restore (default on)</td></tr>
+      <tr><td><code>cleanupPeriodDays</code></td><td>Settings file</td><td>How long snapshots and leftover agent worktrees are kept</td></tr>
+      <tr><td><code>worktree.baseRef</code></td><td>Settings file</td><td><code>"fresh"</code> (default branch on the remote) or <code>"head"</code></td></tr>
+      <tr><td><code>.worktreeinclude</code></td><td>Repository root</td><td>Ignored files to copy into each new worktree</td></tr>
+      <tr><td><code>effortLevel</code>, <code>modelSettings</code></td><td>Settings file</td><td>Default effort, overall or per model (<code>max</code> not accepted)</td></tr>
+      <tr><td><code>CLAUDE_CODE_EFFORT_LEVEL</code></td><td>Environment</td><td>Effort level that outranks every other source</td></tr>
+      <tr><td><code>attribution</code>, <code>includeGitInstructions</code></td><td>Settings file</td><td>The commit trailer and pull request text; the built-in git instructions and status snapshot</td></tr>
+      <tr><td><code>permissions.ask</code> / <code>deny</code></td><td>Settings file</td><td>For example <code>Bash(git push *)</code> and <code>PowerShell(git push *)</code></td></tr>
+    </table></div>
+    <h3>Which undo covers what</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Change</th><th>Rewind menu</th><th>Git</th></tr>
+      <tr><td>Tool edit to a tracked file</td><td>Yes</td><td>Yes (<code>git restore</code>)</td></tr>
+      <tr><td>Shell command changed a tracked file the agent never edited</td><td>No</td><td>Yes</td></tr>
+      <tr><td>New untracked file from a shell command</td><td>No</td><td><code>git clean</code>, after a dry run with <code>-n</code></td></tr>
+      <tr><td>The conversation</td><td>Yes</td><td>No</td></tr>
+      <tr><td>A commit already made</td><td>No</td><td><code>git revert</code></td></tr>
+      <tr><td>A push, a deploy, a database write</td><td>No</td><td>No</td></tr>
+    </table></div>
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>The agent says done; the feature does not work</td><td>No check it could run</td><td>Put the check command in the prompt and ask for its output</td></tr>
+      <tr><td>Third correction, still wrong</td><td>The conversation is full of failed attempts</td><td><code>/clear</code>, one better prompt</td></tr>
+      <tr><td>Double <code>Esc</code> does nothing but empty the input</td><td>The prompt box held text</td><td>Press it again on the empty prompt, or type <code>/rewind</code></td></tr>
+      <tr><td>Rewind offers no code restore</td><td>No tool edits after that point, or the change came from a shell command</td><td>Use git</td></tr>
+      <tr><td><code>claude --continue</code> opens the wrong session, or none</td><td>The session was a <code>-p</code> run, or belongs to another folder</td><td><code>claude --resume &lt;id-or-name&gt;</code></td></tr>
+      <tr><td>Two sessions overwrite each other's edits</td><td>Same folder</td><td><code>claude -w &lt;name&gt;</code> for each</td></tr>
+      <tr><td><code>git worktree remove</code> refuses</td><td>The lock a headless run left, or uncommitted files</td><td><code>git worktree unlock</code>, then remove; <code>--force</code> only if the work is disposable</td></tr>
+      <tr><td>Tests fail in a new worktree</td><td>Ignored files and dependencies are not in a fresh checkout</td><td><code>.worktreeinclude</code>; run the install there</td></tr>
+      <tr><td><code>/effort</code> appears to be ignored</td><td><code>CLAUDE_CODE_EFFORT_LEVEL</code> is set</td><td>Unset it</td></tr>
+      <tr><td>A push went out that nobody approved</td><td>The rule was a sentence in the prompt</td><td>An ask or deny rule in both shell spellings; branch protection</td></tr>
+    </table></div>
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+        <li>Claude Code docs, "Best practices for Claude Code": <a href="https://code.claude.com/docs/en/best-practices" target="_blank" rel="noopener">code.claude.com/docs/en/best-practices</a></li>
+        <li>Claude Code docs, "How Claude Code works": <a href="https://code.claude.com/docs/en/how-claude-code-works" target="_blank" rel="noopener">code.claude.com/docs/en/how-claude-code-works</a></li>
+        <li>Claude Code docs, "Common workflows": <a href="https://code.claude.com/docs/en/common-workflows" target="_blank" rel="noopener">code.claude.com/docs/en/common-workflows</a></li>
+        <li>Claude Code docs, "Choose a permission mode": <a href="https://code.claude.com/docs/en/permission-modes" target="_blank" rel="noopener">code.claude.com/docs/en/permission-modes</a></li>
+        <li>Claude Code docs, "Checkpointing": <a href="https://code.claude.com/docs/en/checkpointing" target="_blank" rel="noopener">code.claude.com/docs/en/checkpointing</a></li>
+        <li>Claude Code docs, "Manage sessions": <a href="https://code.claude.com/docs/en/sessions" target="_blank" rel="noopener">code.claude.com/docs/en/sessions</a></li>
+        <li>Claude Code docs, "Run parallel sessions with worktrees": <a href="https://code.claude.com/docs/en/worktrees" target="_blank" rel="noopener">code.claude.com/docs/en/worktrees</a></li>
+        <li>Claude Code docs, "Model configuration": <a href="https://code.claude.com/docs/en/model-config" target="_blank" rel="noopener">code.claude.com/docs/en/model-config</a></li>
+        <li>Claude Code docs, "All settings", "CLI reference" and "Commands": <a href="https://code.claude.com/docs/en/settings-reference" target="_blank" rel="noopener">code.claude.com/docs/en/settings-reference</a>, <a href="https://code.claude.com/docs/en/cli-reference" target="_blank" rel="noopener">code.claude.com/docs/en/cli-reference</a>, <a href="https://code.claude.com/docs/en/commands" target="_blank" rel="noopener">code.claude.com/docs/en/commands</a></li>
+        <li>Claude API docs, "Effort" and "Thinking": <a href="https://platform.claude.com/docs/en/build-with-claude/effort" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/effort</a>, <a href="https://platform.claude.com/docs/en/build-with-claude/thinking" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/thinking</a></li>
+        <li>Measured: every Expected line in the labs, except the interactive steps marked as not machine-verified, comes from a run on Claude Code 2.1.322 on 11 November 2026; flags were checked against <code>claude --help</code> on the same version.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "During a session the agent ran a shell one-liner that rewrote 40 tracked config files it had never opened with its file tools. The result is wrong and you want the files back. Nothing was committed since the task began. What do you reach for?", "o": ["The rewind menu, Restore code, at the prompt before the one-liner", "git restore on the affected paths, after reading git status", "/clear, then ask the agent to put the files back from memory", "claude --continue --fork-session, which starts from the original files"], "a": 1, "why": "Checkpoints track files changed by the agent's file editing tools; a file only a shell command changed is not tracked and stays as it is. The files are tracked by git and the tree was clean at the start, so git restore brings them back exactly. Forking copies the conversation, not the working tree."},
+    {"q": "You want one session to build a feature while another fixes an unrelated bug in the same repository, both this afternoon. Which setup avoids the two trampling each other with the least ceremony?", "o": ["Start each with claude -w and a different name", "Open two terminals in the same folder and tell each session which files are its own", "Start one session, then /branch it for the second task", "Run the second one with claude --continue --fork-session in the same folder"], "a": 0, "why": "A worktree gives each session its own folder and branch, and Claude Code blocks file-tool edits from a worktree session into the main checkout. /branch and --fork-session copy the conversation; both copies still edit the same files. An instruction about file ownership is a request, not isolation."},
+    {"q": "A flaky test in code you did not write. At the default effort the agent has proposed two fixes; both were plausible and wrong, and you corrected it each time. What is the best next move?", "o": ["Send a third correction that adds 'think harder and be thorough'", "Set effortLevel to max in the project settings file so it is permanent", "/clear, raise the level with /effort high, and send one prompt that includes what the two failed fixes taught you and the command that reproduces the flake", "Turn extended thinking off with Alt+T so the answers come faster"], "a": 2, "why": "The docs name this case for a higher level: a bug in unfamiliar code, a flaky test, where mistakes are the easy-to-overlook kind. After two failed corrections they advise /clear and one better prompt, because a third correction adds to a conversation the model re-reads every turn. 'Think harder' is ordinary prompt text, max is not accepted in the settings key, and thinking cannot be turned off on current models."},
+    {"q": "You are about to ask for a column rename in a shared schema. You do not know how many scripts read the old name. Your colleague says plan mode is a waste of time, just let it edit and read the diff. Who is right for this task?", "o": ["Your colleague: rewind makes any edit cheap to undo, so planning never pays", "Your colleague: plan mode cannot run the searches needed to find the readers", "Neither: use bypassPermissions so the agent can also run the migration", "You: this is a change where the approach (finding every reader, the order of changes, the check) deserves review before the diff exists"], "a": 3, "why": "Planning earns its cost when a change spans files you do not know and a wrong start is expensive. Plan mode reads and searches freely, so it can find the readers and list them in the plan. Skipping the plan is right for a typo or a one-line fix, where the diff is the approach. A migration against shared data is exactly what no local undo covers."},
+    {"q": "A nightly headless run should fix lint findings and commit them on a work branch. It must never push. Which configuration holds up?", "o": ["Auto mode, with 'never push' written at the top of the prompt", "--allowedTools limited to the read and edit tools plus git add and git commit, no permission mode flag, and a deny rule for git push in both Bash and PowerShell spellings", "--dangerously-skip-permissions, with a CLAUDE.md line forbidding pushes", "--permission-mode plan, so that nothing can be written"], "a": 1, "why": "A -p run with no mode set denies anything needing approval that an allow rule does not cover, so a narrow allowlist is already a fence, and a deny rule holds in every mode if someone later widens the allowlist. A sentence in a prompt or CLAUDE.md is a request the model weighs. Plan mode would block the edits the job exists to make."}
+  ]</script>
+</section>
+</section>

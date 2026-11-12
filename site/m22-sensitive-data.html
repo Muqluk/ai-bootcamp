@@ -1,0 +1,745 @@
+<section class="module" id="m22" data-title="Sensitive data" data-sub="PHI, PII and secrets: what leaves the machine and how to stop it" data-level="practitioner" data-prereq="m5,m16" data-minutes="265">
+  <div class="overview">
+    <p class="lede">Everything a coding agent reads becomes part of a request to a model provider, and most of it is also written to a plain-text file on your disk. If you work where protected health information (PHI), personal data or credentials exist, the question is what is permitted to leave, under which agreement, and what stops the rest. This module is the data-handling half of security: it reports what Anthropic's own pages said on 11 November 2026, names the page for each statement, and shows the controls that keep sensitive data out of the request and out of the files that persist.</p>
+    <aside class="trap">This module is not legal advice and does not interpret HIPAA or any contract. The plan type and the agreement your organisation signed decide whether PHI may be sent at all. Your compliance office decides what is permitted. Where the pages do not answer a question, the module says so.</aside>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>List what one agent turn sends to the model provider and what it leaves on the local disk, and find a given string in a session's own transcript.</li>
+      <li>Read the retention and training position for a consumer plan, a Team or Enterprise seat, an API key, zero data retention and a third-party cloud platform off the pages that state it.</li>
+      <li>Say which Claude Code configurations Anthropic's pages list as covered by a Business Associate Agreement, which features they exclude, and who decides.</li>
+      <li>Reduce what a task needs before the prompt: schemas instead of rows, synthetic data, and a de-identified copy with stable pseudonyms.</li>
+      <li>Write a <code>UserPromptSubmit</code> hook that blocks a prompt carrying an identifier pattern, a <code>PreToolUse</code> hook that refuses files holding such patterns, and a <code>PostToolUse</code> hook that rewrites a tool result.</li>
+      <li>State what each control cannot catch, and prove a control works with a test that uses no real sensitive data.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key). The labs were run on 2.1.322.</li>
+      <li>Windows PowerShell 5.1 or PowerShell 7. Hook scripts and the de-identification script are PowerShell with no packages.</li>
+      <li>About $0.05 of Haiku usage at API list price for all five labs, or the same share of a subscription's 5-hour window.</li>
+      <li>Synthetic data only. Every name and identifier in the labs is invented. Do not substitute real records at any step.</li>
+    </ul>
+    <div class="recap"><h3>If you skipped the prerequisites</h3>
+      <p><b>From Hooks.</b> A hook is a program Claude Code runs at a fixed point in its loop, registered under <code>hooks</code> in a settings file. It receives one JSON object on stdin. This module uses three events: <code>UserPromptSubmit</code> (a prompt was submitted and the model has not seen it yet; the input carries <code>prompt</code>), <code>PreToolUse</code> (the model wrote a tool call that has not run; the input carries <code>tool_name</code> and <code>tool_input</code>) and <code>PostToolUse</code> (the tool ran; the input adds <code>tool_response</code>). Exit code 0 means success and stdout is parsed as JSON when it is one JSON object. Exit code 2 blocks on a blockable event and stderr is the reason. Any other exit code is a non-blocking error: the action goes ahead. A <code>PreToolUse</code> hook denies with <code>hookSpecificOutput.permissionDecision: "deny"</code>, and a <code>UserPromptSubmit</code> hook blocks with <code>decision: "block"</code> and a <code>reason</code>.</p>
+      <p><b>From Security.</b> The threat model is three verbs: an agent can read what your account can read, run what your account can run, and send what it has read over the network. Permission rules live under <code>permissions</code> in a settings file as <code>allow</code>, <code>ask</code> and <code>deny</code>; deny is evaluated first and holds in every permission mode. A <code>Read(./path)</code> deny rule covers the built-in file tools and the file commands Claude Code recognises in a shell command (<code>cat</code>, <code>Get-Content</code> and similar). It does not cover a script or program that opens the file itself.</p>
+    </div>
+  </div>
+
+  <div class="lesson" id="m22-l1" data-title="What leaves the machine, and where it goes" data-minutes="20">
+    <h3>The request is the whole context</h3>
+    <p>Claude Code runs locally and the model does not. The Claude Code "Data usage" page puts it in one sentence: "To interact with the LLM, Claude Code sends data over the network. This data includes all user prompts and model outputs, encrypted in transit via TLS 1.2+." The phrase "user prompts" undersells it. The request that goes to the provider on every turn is the entire working context, and the "Explore the .claude directory" page lists what that context holds when it describes the transcript: "Anything that passes through a tool is written to a transcript on disk: file contents, command output, pasted text", plus the system prompt, tool definitions, request parameters and "the instruction files it loaded, such as CLAUDE.md".</p>
+    <div class="tablewrap"><table>
+      <tr><th>Goes to the model provider</th><th>How it gets into the request</th></tr>
+      <tr><td>Your prompt, including pasted text and attached images</td><td>You typed or pasted it</td></tr>
+      <tr><td>The system prompt and tool definitions</td><td>Sent with every request</td></tr>
+      <tr><td>CLAUDE.md, rules files and auto memory</td><td>Loaded at session start, before your first prompt</td></tr>
+      <tr><td>Every file the agent reads, in full or in the part it read</td><td>A <code>Read</code>, <code>Grep</code> or shell call returns it as a tool result</td></tr>
+      <tr><td>Every command's output</td><td>Tool result of a <code>Bash</code> or <code>PowerShell</code> call: query results, log tails, <code>git diff</code>, environment dumps</td></tr>
+      <tr><td>Every MCP tool result and every fetched web page</td><td>Tool result</td></tr>
+      <tr><td>The model's own output and its tool call arguments</td><td>Replayed as conversation history on the next turn</td></tr>
+    </table></div>
+    <p>Nothing in that list is filtered by sensitivity. If a query returns 500 patient rows into a tool result, 500 patient rows are in the next request, and in every request after it until the conversation is compacted or ends. The answer the model prints may be one number. What was sent is everything the model was shown to produce that number. Lab 1 measures the difference.</p>
+<figure class="diagram">
+<pre class="mermaid">flowchart LR
+  p["Your prompt"] --> ctx["Request context"]:::hot
+  i["CLAUDE.md, rules, memory"] --> ctx
+  f["Files the agent reads"] --> ctx
+  t["Tool and MCP results"] --> ctx
+  ctx --> prov["Model provider"]:::info
+  ctx --> tr["Transcript on disk"]:::alt
+  prov --> tca["Tool call arguments"]
+  tca -.-> third["MCP servers, fetched sites"]:::ghost
+  tr -.-> fb["Feedback report, if sent"]:::ghost
+  ctx -.-> otel["Your OTel collector, if on"]:::ghost
+</pre>
+  <figcaption>Solid arrows happen on every turn; dashed arrows happen only when a feature is used or switched on. Everything on the left reaches both the provider and the local transcript.</figcaption>
+</figure>
+    <h3>Other outbound flows</h3>
+    <p>The same page documents the traffic that is not the model request. Each has its own switch.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Flow</th><th>What the page says it carries</th><th>Off switch</th></tr>
+      <tr><td>Metrics</td><td>"latency, reliability, and usage patterns", sent to Anthropic and third-party logging infrastructure. "Metrics never include your code, prompts, or file paths."</td><td><code>DISABLE_TELEMETRY=1</code></td></tr>
+      <tr><td>Error reports</td><td>Error messages and stack traces from Claude Code's own internals, to a third-party error tracking service, with known patterns of secrets, file paths and email addresses redacted first. On only for Pro, Max or Ultra sign-ins on v2.1.198 or later, connecting directly to the Claude API, with no zero data retention or HIPAA agreement</td><td><code>DISABLE_ERROR_REPORTING=1</code></td></tr>
+      <tr><td><code>/feedback</code>, <code>/bug</code>, <code>/share</code></td><td>"a copy of your conversation history including code". You choose the current session only (the default) or also other sessions from the same project over the last 24 hours or 7 days. Stored in Google Cloud Storage; optionally a GitHub issue is created in the public repository</td><td><code>DISABLE_FEEDBACK_COMMAND=1</code></td></tr>
+      <tr><td>Transcript share after the session survey</td><td>Only if you answer Yes: the conversation transcript, any subagent transcripts and the raw session log. "Known API key and token patterns are redacted before upload. Source code, file contents, and other conversation content are uploaded as-is."</td><td><code>CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1</code></td></tr>
+      <tr><td>WebFetch domain check</td><td>The hostname of a URL about to be fetched goes to <code>api.anthropic.com</code>. "Only the hostname is sent, not the full URL, path, or page contents."</td><td><code>skipWebFetchPreflight: true</code> in settings</td></tr>
+      <tr><td>OpenTelemetry export</td><td>Whatever you configured, to your own collector. Off unless you turn it on; content fields are redacted unless you set the variables in lesson 5</td><td>Do not enable it, or leave the content variables unset</td></tr>
+    </table></div>
+    <p><code>CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC</code> turns off metrics, error reports, feedback and surveys together; it does not affect the WebFetch check. On Amazon Bedrock, Google Cloud's Agent Platform, Microsoft Foundry and Claude Platform on AWS, the page says metrics, error reporting and <code>/feedback</code> reports are off by default, and <code>/feedback</code> writes a local archive under <code>~/.claude/feedback-bundles/</code> instead of uploading.</p>
+    <h3>Flows that put the session itself on someone else's disk</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Feature</th><th>What the docs say is stored elsewhere</th></tr>
+      <tr><td>Cloud sessions</td><td>"Your repository is cloned into the session's isolated VM. Anthropic stores the session transcript so you can return to the session later."</td></tr>
+      <tr><td>Remote Control</td><td>Execution stays on your machine, and "while connected, the session transcript is also stored on Anthropic servers to sync the conversation across devices"</td></tr>
+      <tr><td>MCP servers and connectors</td><td>Tool call arguments go to whoever runs the server. The zero data retention page: "Data processed by third-party tools, MCP servers, or other external integrations is not covered"</td></tr>
+      <tr><td>The Compliance API, where an organisation has it turned on</td><td>The platform "API and data retention" page: local session transcripts "come from sessions on users' machines, in apps such as Cowork and Claude Code" and are "stored for 6 years by default", or for the organisation's custom retention period</td></tr>
+    </table></div>
+    <h3>What stays on your disk</h3>
+    <p>The local side is the part engineers forget. The directory page: "These files are plaintext" and "Transcripts and history are not encrypted at rest. OS file permissions are the only protection."</p>
+    <div class="tablewrap"><table>
+      <tr><th>Path under <code>~/.claude/</code></th><th>Holds</th><th>Removed by the retention sweep?</th></tr>
+      <tr><td><code>projects/&lt;project&gt;/&lt;session&gt;.jsonl</code></td><td>The transcript: messages, tool calls, tool results, system prompt</td><td>Yes, after <code>cleanupPeriodDays</code> (default 30)</td></tr>
+      <tr><td><code>projects/&lt;project&gt;/&lt;session&gt;/subagents/</code>, <code>tool-results/</code></td><td>Subagent transcripts; large tool outputs spilled to files</td><td>Yes, with the parent transcript</td></tr>
+      <tr><td><code>projects/&lt;project&gt;/memory/</code></td><td>Auto memory files</td><td>No</td></tr>
+      <tr><td><code>history.jsonl</code></td><td>"Prompts you've typed, with timestamp and project path"</td><td>No, except where the HIPAA configuration applies</td></tr>
+      <tr><td><code>file-history/&lt;session&gt;/</code></td><td>Pre-edit snapshots of files Claude changed</td><td>Yes</td></tr>
+      <tr><td><code>paste-cache/</code></td><td>Contents of large pastes</td><td>Yes</td></tr>
+      <tr><td><code>debug/</code></td><td>Per-session debug logs, while debug logging is on</td><td>Yes</td></tr>
+    </table></div>
+    <p>Pasted and attached images, and each session's scratchpad, sit under the temp directory, not under <code>~/.claude</code>. Your shell's own history file and any log your hooks write are also yours to account for. The Session transcripts module covers the transcript format in depth and the Telemetry module covers the export; this module only needs you to know they exist and hold content.</p>
+    <aside class="rule">Treat "the agent read it" as "it was sent to the provider and written to disk". Both are true by default.</aside>
+  </div>
+
+  <div class="lesson" id="m22-l2" data-title="Retention and training, by plan" data-minutes="20">
+    <h3>The account type decides, not the tool</h3>
+    <p>Claude Code is one binary. Which terms apply to what it sends depends on how it signed in. The Claude Code "Legal and compliance" page: the Commercial Terms of Service apply to "Team, Enterprise, and Claude API users" and the Consumer Terms of Service to "Free, Pro, Max, and Ultra users". A Pro, Max or Ultra subscription used for work is still a consumer account. An API key from a Claude Console organisation, or a Team or Enterprise seat, is commercial. The table gives what each page stated when it was fetched on 11 November 2026. Periods and plan names change; read the page before you rely on a cell.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Account or arrangement</th><th>Used for model training</th><th>Server-side retention</th><th>Page</th></tr>
+      <tr><td>Free, Pro, Max, Ultra with the model improvement setting on</td><td>Yes: "We will train new models using data from Free, Pro, Max, and Ultra accounts when this setting is on (including when you use Claude Code from these accounts)"</td><td class="num">5 years</td><td>Claude Code docs, "Data usage"</td></tr>
+      <tr><td>Free, Pro, Max, Ultra with the setting off</td><td>No, with two exceptions in the Consumer Terms: feedback you provide, and material "flagged for safety review"</td><td class="num">30 days</td><td>"Data usage"; Consumer Terms</td></tr>
+      <tr><td>Team and Enterprise</td><td>No: "Anthropic does not train generative models using code or prompts sent to Claude Code under commercial terms", unless the customer opts in (for example the Development Partner Program)</td><td>"Standard: 30-day retention period" for Claude Code. For products that save conversations, the Privacy Center says chats and coding sessions are kept in the product until deleted, then removed from back-end storage within 30 days</td><td>"Data usage"; Privacy Center, "How long do you store my organization's data?"</td></tr>
+      <tr><td>Claude API key (Console organisation)</td><td>No: the Commercial Terms say "Anthropic may not train models on Customer Content from Services"</td><td>"we automatically delete inputs and outputs on our backend within 30 days of receipt or generation", with exceptions for longer-retention services you control (such as the Files API), other agreements, Usage Policy enforcement and law</td><td>Privacy Center, same article; Commercial Terms</td></tr>
+      <tr><td>Zero data retention on the Claude API</td><td>No</td><td>"Anthropic does not store customer prompts or responses at rest after the API response is returned." Covers Claude Code "used with API keys from a Commercial organization". Requested through sales, enabled per organisation</td><td>Platform docs, "API and data retention"</td></tr>
+      <tr><td>Zero data retention for Claude Code on Claude for Enterprise</td><td>No</td><td>Prompts and responses "not stored by Anthropic after the response is returned, except where needed to comply with law or combat misuse". Qualified accounts only; "not included in the standard Claude for Enterprise plan and cannot be enabled from your admin settings"</td><td>Claude Code docs, "Zero data retention"</td></tr>
+      <tr><td>Amazon Bedrock, Google Cloud's Agent Platform, Microsoft Foundry</td><td>No (commercial terms)</td><td>"refer to those platforms' data retention policies". On Bedrock and Google-managed deployments "the cloud provider is the data processor"</td><td>"Zero data retention"; "API and data retention"</td></tr>
+    </table></div>
+    <aside class="trap">The pages do not word the commercial default identically. The Claude Code page says "Standard: 30-day retention period". The Privacy Center says inputs and outputs are deleted "within 30 days". The platform page says conversation content "is not retained by default" for features that do not need storage, with a 30-day requirement for the models it calls Covered Models. Do not pick the sentence you prefer. Your contract and your account team settle it.</aside>
+    <h3>Things that change the row you are in</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Event</th><th>Effect stated on the page</th><th>Page</th></tr>
+      <tr><td>You send <code>/feedback</code>, <code>/bug</code> or <code>/share</code></td><td>"Transcripts shared via <code>/feedback</code>, or via <code>/bug</code> and <code>/share</code>, which report through the same path, are retained for 5 years." For commercial products the Privacy Center adds that feedback may be used to train models</td><td>"Data usage"; Privacy Center, "Is my data used for model training?"</td></tr>
+      <tr><td>You answer Yes to the transcript share after a session survey</td><td>Uploaded transcripts are "retained for up to 6 months" and "cannot be used to train our AI models"</td><td>"Data usage"</td></tr>
+      <tr><td>Automated systems flag a session for a Usage Policy violation</td><td>Inputs and outputs kept "for up to 2 years", classification scores "for up to 7 years". The platform page says this holds "even with ZDR or HIPAA arrangements in place"</td><td>Privacy Center retention articles; "API and data retention"</td></tr>
+      <tr><td>You use a stateful API feature under zero data retention (Batch, Files, code execution)</td><td>"Nothing blocks the request." The feature's own retention applies: "a choice to step outside your ZDR arrangement for that specific data"</td><td>"API and data retention"</td></tr>
+      <tr><td>You pick a Covered Model (the Fable and Mythos families)</td><td>They "require 30-day data retention and are not available under ZDR unless expressly authorized by Anthropic"</td><td>"API and data retention"</td></tr>
+    </table></div>
+    <h3>Zero data retention: what it covers and what it does not</h3>
+    <p>There are two separate offerings with the same name. One is an arrangement for the Claude API, which also covers Claude Code when it runs on an API key from that organisation. The other is for Claude Code on Claude for Enterprise. Both are enabled by Anthropic per organisation after a request through sales or the account team; neither is a setting you can flip. The Enterprise page is specific about the edges:</p>
+    <ul>
+      <li>It covers "model inference calls made through Claude Code". It does not cover chat on claude.ai, Cowork, artifacts, analytics metadata such as account emails and usage statistics, seat management, or "third-party tools, MCP servers, or other external integrations".</li>
+      <li>It applies "to requests that authenticate into a ZDR-enabled organization. If a developer signs in to Claude Code with a personal account or with an API key from a different organization, those sessions are not covered." The page points to the <code>forceLoginMethod</code> and <code>forceLoginOrgUUID</code> managed settings to pin sign-in.</li>
+      <li>Features that need server-side storage are disabled at the back end: cloud sessions, Remote Control, artifacts, and <code>/feedback</code>, <code>/bug</code> and <code>/share</code>.</li>
+      <li>On the API arrangement, "if metrics logging is enabled in Claude Code, productivity data such as usage statistics is exempted from ZDR and may be retained".</li>
+    </ul>
+    <p>Zero data retention is about Anthropic's servers. It changes nothing on your disk: the transcript, the prompt history and the memory files are still written, in plain text, for <code>cleanupPeriodDays</code>.</p>
+    <h3>Subscription and API</h3>
+    <p>For the other modules the difference between a subscription and an API key is billing. Here it is which contract applies. A personal Pro, Max or Ultra login is under consumer terms, with a training setting the account holder controls and a 30-day or 5-year retention period that follows it. An API key is under commercial terms with no training by default. A Team or Enterprise seat is a subscription in billing terms and commercial in data terms. Check which one a machine is using with <code>/status</code> before you assume.</p>
+    <aside class="rule">Find out which account type a session signs in with before you ask what the retention period is. The same command line can be under either set of terms.</aside>
+  </div>
+
+  <div class="lesson" id="m22-l3" data-title="HIPAA and business associate agreements" data-minutes="20">
+    <h3>What the pages say, and no more</h3>
+    <p>This lesson reports four Anthropic pages: the Claude Code "Legal and compliance" and "Set up Claude Code (local mode) for a HIPAA-ready organization" pages, the platform "API and data retention" page, and the Privacy Center article "Business Associate Agreements (BAA) for Commercial Customers". All were fetched on 11 November 2026. They refer to an Implementation Guide in the Anthropic Trust Center as the contractual list of Eligible Services. The Trust Center did not serve that guide as readable text to an unauthenticated fetch, so nothing here comes from it. The platform page states the hierarchy: "Your signed BAA is the official source of truth for which features are covered."</p>
+    <h3>Which services a BAA is offered for</h3>
+    <p>The Privacy Center article: "Anthropic provides a BAA covering our HIPAA-ready services, such as use of our first-party API, Claude in Microsoft Foundry, or Enterprise plans." It adds that "the BAA only covers the single organization that accepted it" and that "Standard Claude Enterprise plans do not include BAA coverage without action from a Primary Owner". The platform page lists what HIPAA readiness does not cover, and the first entry is "Claude consumer products: Claude Free, Pro, Max, and Ultra plans." None of the pages names the Team plan as a HIPAA-ready service. They do not say it is excluded either; ask rather than infer.</p>
+    <aside class="rule">A consumer plan login is not a route for PHI. The pages list Free, Pro, Max and Ultra under what HIPAA readiness and zero data retention do not cover.</aside>
+    <h3>Claude Code specifically</h3>
+    <p>"Legal and compliance" says a BAA "extends to Claude Code in two configurations". The Privacy Center article gives the same picture as a table. Combined:</p>
+    <div class="tablewrap"><table>
+      <tr><th>How Claude Code runs</th><th>Coverage stated in the BAA article</th></tr>
+      <tr><td>Terminal, signed in with a Claude Enterprise account, HIPAA configuration applied, connecting directly to Anthropic</td><td>Covered</td></tr>
+      <tr><td>Code tab of Claude Desktop, same organisation, after an Owner turns it on</td><td>Covered</td></tr>
+      <tr><td>Enterprise account without the HIPAA configuration, with zero data retention for Claude Code</td><td>"Covered through ZDR. ZDR is available for qualified accounts only"</td></tr>
+      <tr><td>Enterprise account with neither</td><td>Not covered</td></tr>
+      <tr><td>Claude Console API key, where that Console organisation has zero data retention</td><td>"Covered through ZDR, not through the HIPAA configuration"</td></tr>
+      <tr><td>Claude Console API key without zero data retention</td><td>Not covered</td></tr>
+      <tr><td>VS Code and JetBrains extensions</td><td>"Not covered. The extensions run on a member's computer, but Claude Code (local mode) includes only the terminal and the Code tab"</td></tr>
+      <tr><td>Through Amazon Bedrock, Google Cloud's Agent Platform, Microsoft Foundry, an LLM gateway or a custom base URL</td><td>Not covered</td></tr>
+      <tr><td>Cloud sessions, Remote Control, Claude Code in the mobile app</td><td>Not covered</td></tr>
+    </table></div>
+<figure class="diagram">
+<pre class="mermaid">flowchart TD
+  s{"How does it sign in?"}
+  s -- "Free, Pro, Max, Ultra" --> c["Consumer terms, no BAA"]:::bad
+  s -- "Console API key" --> k{"ZDR on that organisation?"}
+  k -- yes --> kz["Covered through ZDR"]:::good
+  k -- no --> kn["Not covered"]:::bad
+  s -- "Enterprise account" --> e{"HIPAA configuration?"}
+  e -- applied --> ey["Covered: terminal, Code tab"]:::good
+  e -- "not applied" --> ez{"ZDR for Claude Code?"}
+  ez -- yes --> kz
+  ez -- no --> kn
+  s -- "Cloud provider or gateway" --> g["Not under Anthropic's BAA"]:::bad
+</pre>
+  <figcaption>BAA coverage of a Claude Code session as the Privacy Center article tabulated it on 11 November 2026, assuming the organisation has a signed BAA. Your signed agreement, not this picture, is the authority.</figcaption>
+</figure>
+    <h3>What the HIPAA configuration changes on the machine</h3>
+    <p>The configuration is an organisation setting on Claude Enterprise plans that the Primary Owner applies; the support article says the button stays greyed out until Anthropic's account team enables it. It "takes effect only in sessions where a developer signs in with a Claude Enterprise account and Claude Code connects directly to the Claude API", and needs Claude Code v2.1.285 or later. The setup page lists what developers then see:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Feature</th><th>With the HIPAA configuration</th></tr>
+      <tr><td>WebFetch</td><td>Off. "Web search still works"</td></tr>
+      <tr><td><code>--cloud</code>, <code>/teleport</code>, Remote Control</td><td>Refused</td></tr>
+      <tr><td><code>/feedback</code>, <code>/bug</code>, surveys, crash and error reports to third-party tools</td><td>Unavailable</td></tr>
+      <tr><td>Artifact publishing</td><td>Off</td></tr>
+      <tr><td>Anthropic credentials in subprocesses</td><td>Removed from the environment of the shell commands, hooks and MCP servers Claude Code starts</td></tr>
+      <tr><td>Local MCP servers, connectors, skills, plugins</td><td>Usable, and <b>not covered</b>: "Your BAA doesn't cover any of them, even after an Owner turns them on"</td></tr>
+      <tr><td>OpenTelemetry export</td><td>Available and not covered: "The data you export is your organization's responsibility"</td></tr>
+      <tr><td>Auto memory</td><td>Covered. "Memory stays on the member's computer until someone deletes it"</td></tr>
+    </table></div>
+    <p>A developer confirms the state with <code>/status</code>: the Status tab lists <code>HIPAA</code> on the <code>Organization configuration</code> line, and the footer shows a <code>HIPAA configured</code> tag. The setup page recommends four managed settings so that a machine cannot drift onto an uncovered route: <code>forceLoginMethod</code>, <code>forceLoginOrgUUID</code>, <code>allowedProviders</code> set to <code>["anthropic"]</code>, and <code>cleanupPeriodDays</code>. It is explicit about the local side: "Securing and deleting that data is your organization's responsibility", and "Removing a developer's seat or account deletes nothing on their computer".</p>
+    <h3>The API</h3>
+    <p>For the Claude API, the platform page describes "HIPAA readiness": a signed BAA plus a HIPAA-enabled organisation. Eligible organisations "can review and execute the BAA and enable HIPAA readiness directly from the Claude Console", on the Data retention page, and others go through sales. The Privacy Center article describes the same step as signing a BAA and then contacting Anthropic to have it turned on; the two pages differ on that detail, so ask. Once enabled it "is permanent and cannot be disabled by an administrator", and it is enforced per organisation: the API returns a <code>400</code> for a request that uses a feature marked not eligible. The eligibility table marks batch processing, the Files API, code execution, web fetch and the MCP connector as not eligible, and the page warns: "Do not include PHI in JSON schema definitions", because schemas for structured outputs are cached separately from message content. The same page says, under what HIPAA readiness does not cover, "Claude Code is not covered under HIPAA readiness"; Claude Code on an API key reaches BAA coverage only through zero data retention, as the table above shows.</p>
+    <h3>The plain consequence</h3>
+    <p>No setting an engineer can change on a workstation makes PHI permissible to send. Whether it may be sent is decided by the plan type, the signed agreement, and whether Anthropic has applied the configuration to that organisation. What the engineer controls is the other direction: making sure a session is on the covered route, that uncovered features are not fed PHI, and that the local copies are handled. The support article puts the limit of the vendor's side in one line: "HIPAA-ready" means the product is configured to support your HIPAA obligations under the BAA, and "Compliance remains your organization's responsibility."</p>
+    <aside class="trap">A feature can be available and still not covered. The BAA article marks local MCP servers and the IDE extensions as both. A session with the <code>HIPAA configured</code> tag in the footer will still hand a query result to an MCP server if you ask it to.</aside>
+  </div>
+
+  <div class="lesson" id="m22-l4" data-title="Reducing what you send" data-minutes="20">
+    <h3>Minimise before you prompt</h3>
+    <p>The cheapest control is not needing the data. Most engineering tasks that touch a sensitive system are about its structure: a slow query, a failing import, a schema migration, a parser for a report format. The model needs the shape, not the people.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Instead of</th><th>Give the agent</th><th>What it can still do</th></tr>
+      <tr><td>A table export</td><td>The <code>CREATE TABLE</code> statement, row counts, and the query plan</td><td>Rewrite the query, propose an index</td></tr>
+      <tr><td>A production log</td><td>The log format, one line with the values replaced, and the error class</td><td>Write the parser, find the failing branch</td></tr>
+      <tr><td>The failing input file</td><td>A synthetic file with the same columns, encodings and edge cases</td><td>Reproduce and fix the bug</td></tr>
+      <tr><td>A database connection</td><td>A connection to a test database loaded with generated rows</td><td>Run and verify the migration</td></tr>
+      <tr><td>Rows it must genuinely analyse</td><td>A de-identified copy made before the session starts</td><td>Count, group, summarise</td></tr>
+    </table></div>
+    <h3>Why "the model will ignore it" is not a control</h3>
+    <p>An instruction in CLAUDE.md such as "never repeat patient identifiers" shapes the output. It does nothing to the input. By the time the model can follow or ignore the instruction, the identifiers are in the request, the request has reached the provider, and the tool result has been written to the transcript. The same is true of asking the model to redact: the unredacted text was sent in order to be redacted. Controls for sensitive data have to act before the request is built, which means before the prompt is submitted or before the tool runs.</p>
+    <h3>De-identification, in the words of the rule</h3>
+    <p>The HIPAA Privacy Rule gives two ways to treat health information as de-identified, in 45 CFR 164.514(b). The first is a determination by a qualified expert that the risk of identification is very small. The second, usually called Safe Harbor, removes a list of identifiers "of the individual or of relatives, employers, or household members of the individual". The list below is the rule's, taken from the eCFR text of the regulation (the HHS guidance page that explains it refused an automated fetch on 11 November 2026, so this is the regulation, not the guidance). It is shortened for reading; use the rule's own wording for any real decision.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Identifiers the Safe Harbor paragraph lists (A to R)</th></tr>
+      <tr><td>(A) Names. (B) Geographic subdivisions smaller than a State, including street address, city, county, precinct and zip code, with a conditional exception for the first three zip digits that depends on census population. (C) All elements of dates except year for dates directly related to an individual (birth, admission, discharge, death), and all ages over 89, which may be aggregated as 90 or older.</td></tr>
+      <tr><td>(D) Telephone numbers. (E) Fax numbers. (F) Email addresses. (G) Social security numbers. (H) Medical record numbers. (I) Health plan beneficiary numbers. (J) Account numbers. (K) Certificate and license numbers.</td></tr>
+      <tr><td>(L) Vehicle identifiers and serial numbers, including license plates. (M) Device identifiers and serial numbers. (N) URLs. (O) IP addresses. (P) Biometric identifiers, including finger and voice prints. (Q) Full face photographic images and comparable images. (R) "Any other unique identifying number, characteristic, or code", except a re-identification code as paragraph (c) permits.</td></tr>
+    </table></div>
+    <p>Two conditions sit beside the list. The method also requires that the covered entity "does not have actual knowledge that the information could be used alone or in combination with other information to identify an individual". And paragraph (c) says a code assigned to allow later re-identification must not be "derived from or related to information about the individual", and that the mechanism for re-identification is not disclosed. That second point matters to engineers: a hash of a record number is derived from the record number. Lab 4 therefore uses random pseudonyms held in a mapping file that stays outside the agent's folder. Whether any script's output meets the rule is a determination for your privacy office, not for the script's author.</p>
+    <h3>The limits of pattern matching</h3>
+    <p>Every automated control in this module is a pattern match, and pattern matches fail in both directions.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Failure</th><th>Example</th><th>Consequence</th></tr>
+      <tr><td>False negative: format drift</td><td>An SSN typed as nine digits with no hyphens; a record number with a new prefix</td><td>The guard passes it</td></tr>
+      <tr><td>False negative: no format at all</td><td>Names, addresses, a rare diagnosis in a small town, "the mayor's daughter"</td><td>No regular expression exists for it</td></tr>
+      <tr><td>False negative: free text</td><td>A notes column that mentions a relative by nickname</td><td>Column-based de-identification leaves it in place</td></tr>
+      <tr><td>False negative: encoding</td><td>The same value inside base64, a PDF, an image or a compressed file</td><td>A text scan never sees it</td></tr>
+      <tr><td>False positive</td><td>A part number or timestamp shaped like an identifier; a surname that is also a common word</td><td>Legitimate work is blocked, and people start bypassing the guard</td></tr>
+    </table></div>
+    <p>Structured columns are tractable: you know which column holds the record number and you can drop or replace it. Free text is where de-identification fails, and it is also where clinical systems keep the most identifying material. A pipeline that handles the columns and passes the notes column through has moved the problem, not solved it. The safe defaults are to drop free-text columns unless the task needs them, and to treat any column you have not classified as identifying.</p>
+    <aside class="rule">Use pattern guards to catch mistakes by people who are trying to comply. Do not count on them to make an uncovered route safe for real data.</aside>
+    <h3>Synthetic data</h3>
+    <p>For anything that is about code paths, generate data. Keep the generator in the repository so the test file can be rebuilt, give synthetic identifiers a shape that cannot be mistaken for real ones (the labs use <code>MRN-000123</code> and SSN-shaped strings that start with 900), and make the synthetic file exercise the edge cases that caused the bug: the over-long field, the embedded delimiter, the age over 89. A synthetic file that is safe to paste anywhere is also safe in a transcript, a bug report and a screenshot.</p>
+  </div>
+
+  <div class="lesson" id="m22-l5" data-title="Keeping it out of the places that persist" data-minutes="20">
+    <h3>The request ends; the copies stay</h3>
+    <p>A value that entered one session can outlive it in half a dozen places. Each has its own lifetime and its own way to shorten it. All settings and paths below are from the Claude Code docs.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Place</th><th>How sensitive data gets there</th><th>What the docs give you</th></tr>
+      <tr><td>Session transcript</td><td>Any prompt, file read or command output</td><td><code>cleanupPeriodDays</code> (default 30, minimum 1; <code>0</code> is a validation error). <code>--no-session-persistence</code> with <code>-p</code>, or <code>CLAUDE_CODE_SKIP_PROMPT_HISTORY</code> in any mode, to skip writing transcripts and prompt history. <code>claude purge</code> to delete a project's state</td></tr>
+      <tr><td>Prompt history (<code>history.jsonl</code>)</td><td>Every prompt you type</td><td>Kept until you delete it; the sweep trims it only where the HIPAA configuration applies. <code>claude purge</code> removes a project's lines</td></tr>
+      <tr><td>Auto memory</td><td>The model decides a fact is worth remembering and writes it down</td><td><code>autoMemoryEnabled: false</code> in settings, or <code>CLAUDE_CODE_DISABLE_AUTO_MEMORY=1</code>. The sweep does not delete memory files</td></tr>
+      <tr><td>CLAUDE.md and rules files</td><td>Someone pastes an example record, a hostname list or a connection string as "context"</td><td>Nothing automatic. These files are loaded into every session and usually committed</td></tr>
+      <tr><td>Shared project settings</td><td>A token in an <code>env</code> block or an MCP server definition in <code>.claude/settings.json</code></td><td><code>.claude/settings.local.json</code> for machine-local values; a secret store for the secret</td></tr>
+      <tr><td>Pastes and images</td><td>A screenshot of a patient list; a pasted log</td><td><code>paste-cache/</code> is swept; images live under the temp directory and are swept by age. <code>claude purge</code> does not remove them</td></tr>
+      <tr><td>Telemetry export</td><td>You turned on content logging</td><td>See below</td></tr>
+      <tr><td>Hook logs</td><td>Your own guard logs the prompt it blocked</td><td>Log the rule that matched and a count, never the text</td></tr>
+    </table></div>
+    <p>The retention sweep "runs only when someone starts Claude Code, so a computer where nobody starts it keeps its data". The sweep is also skipped in a <code>claude -p --bare</code> run. A <code>cleanupPeriodDays</code> value in a developer's own settings can be raised by the developer; set in managed settings, "Claude Code ignores the developer's value". Transcripts of sessions started or last continued in Claude Desktop are kept at any age by default unless <code>desktopSessionCleanupPeriodDays</code> or a managed <code>cleanupPeriodDays</code> says otherwise.</p>
+    <aside class="trap">Neither the sweep nor <code>claude purge</code> touches a heap snapshot written by <code>/heapdump</code>. The directory page: "A heap snapshot contains the full conversation and any credentials the process held".</aside>
+    <h3>Telemetry: what is and is not included</h3>
+    <p>The built-in metrics sent to Anthropic "never include your code, prompts, or file paths". OpenTelemetry export to your own collector is a different channel, and the "Monitoring" page documents its content gates. With none set, prompt text is the literal value <code>&lt;REDACTED&gt;</code> and tool details are withheld.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Variable</th><th>Default</th><th>Setting it to <code>1</code> adds</th></tr>
+      <tr><td><code>OTEL_LOG_USER_PROMPTS</code></td><td>off</td><td>Prompt text on <code>user_prompt</code> events and spans. Also turns on assistant response text unless <code>OTEL_LOG_ASSISTANT_RESPONSES=0</code></td></tr>
+      <tr><td><code>OTEL_LOG_TOOL_DETAILS</code></td><td>off</td><td>Tool parameters: Bash commands, file paths, MCP server and tool names, tool input</td></tr>
+      <tr><td><code>OTEL_LOG_TOOL_CONTENT</code></td><td>off</td><td>Tool content on trace spans: the text a Read returned, command output. Truncated at 60 KB by default</td></tr>
+      <tr><td><code>OTEL_LOG_RAW_API_BODIES</code></td><td>off</td><td>The full Messages API request and response JSON. "Bodies include the entire conversation history"</td></tr>
+    </table></div>
+    <p>Each of these copies session content into a system with its own retention, access list and backups. Under the HIPAA configuration the BAA article marks OpenTelemetry export as available and not covered. If you operate the collector, the content variables are a decision for whoever owns the data classification, and the safe state is unset. Note one interaction from the hooks reference: a <code>PostToolUse</code> hook that rewrites a tool result does not rewrite telemetry, which "captures the original output before the hook runs".</p>
+    <h3>Context that copies itself elsewhere</h3>
+    <ul>
+      <li><b>Subagents.</b> A subagent is another model conversation. What the parent passes in its task prompt, and whatever the subagent reads, goes to the provider in the subagent's own requests and is written to <code>projects/&lt;project&gt;/&lt;session&gt;/subagents/</code>. A deny rule or hook registered in settings applies there too; a control that exists only as a sentence in the parent's prompt does not travel.</li>
+      <li><b>Cloud sessions.</b> The repository is cloned into an Anthropic-managed VM and the transcript is stored by Anthropic. If the repository holds a data extract, the extract is now there. Both zero data retention and the HIPAA configuration disable cloud sessions for this reason.</li>
+      <li><b>Compaction and resume.</b> A summary is still content. Resuming a session replays its history into a new request, so a value from last week is sent again today.</li>
+      <li><b>Bug reports.</b> <code>/feedback</code> can include other sessions from the same project from the last 7 days. One report can carry a week of work.</li>
+    </ul>
+    <h3>Shared configuration</h3>
+    <p>A project's <code>.claude/</code> folder and its CLAUDE.md are committed and read by everyone who clones the repository, and by every agent session in it. Review them like code, with one extra question: does any line contain a real record, a real person's name, an internal hostname list or a credential. The mistake is rarely malicious. It is an engineer pasting "an example of the data we deal with" into the instructions so the model understands the format. Give the model a synthetic example instead, and say that it is synthetic.</p>
+    <aside class="rule">Decide the retention period for local transcripts on purpose and set it in managed settings. The default of 30 days was chosen for session resumption, not for your records policy.</aside>
+  </div>
+
+  <div class="lesson" id="m22-l6" data-title="Enforcement, and what each layer cannot catch" data-minutes="25">
+    <h3>Four places to stand</h3>
+    <p>The Hooks module teaches the mechanics and the Security module teaches permission rules. This lesson only places them on the path a sensitive value would take, and says what each one sees.</p>
+<figure class="diagram">
+<pre class="mermaid">flowchart LR
+  u["Prompt typed"] --> h1{"UserPromptSubmit hook"}
+  h1 -- block --> x1["Prompt never sent"]:::good
+  h1 -- pass --> m["Model request"]:::info
+  m --> tc["Tool call proposed"]
+  tc --> h2{"PreToolUse hook, deny rules"}
+  h2 -- deny --> x2["Tool does not run"]:::good
+  h2 -- allow --> run["Tool runs"]
+  run --> h3{"PostToolUse hook"}
+  h3 -- rewrite --> red["Redacted result"]:::alt
+  h3 -- pass --> raw["Full result"]:::hot
+  red --> m
+  raw --> m
+</pre>
+  <figcaption>A value can be stopped before the prompt is sent, before a tool runs, or between the tool and the model. Whatever reaches "Model request" has left the machine.</figcaption>
+</figure>
+    <div class="tablewrap"><table>
+      <tr><th>Layer</th><th>Sees</th><th>Stops</th><th>Cannot catch</th></tr>
+      <tr><td><code>UserPromptSubmit</code> hook</td><td>The submitted prompt text, with pasted text expanded in place</td><td>A prompt that matches a pattern, before the model sees it</td><td>Anything a tool reads later. Identifiers with no fixed shape. Images. The copy of the blocked text in local files</td></tr>
+      <tr><td><code>Read</code> deny rules</td><td>Paths</td><td>The file tools and recognised shell file commands on the named paths</td><td>The same data under another name or path. A script that opens the file itself</td></tr>
+      <tr><td><code>PreToolUse</code> hook</td><td>The tool name and its full input; it can open the target file and inspect it</td><td>A read of any file whose content matches, whatever it is called; a shell command whose text names such a file; an MCP call whose arguments match</td><td>Data reached indirectly: a script, a query, a URL. Content it cannot parse</td></tr>
+      <tr><td><code>PostToolUse</code> hook with <code>updatedToolOutput</code></td><td>The tool's result after it ran</td><td>Matching strings from reaching the model, by replacing the result</td><td>Side effects that already happened. Telemetry, which records the original. Unpatterned values</td></tr>
+      <tr><td>Managed settings</td><td>Nothing; they pin the layers above</td><td>A user or repository switching the controls off</td><td>A machine or account outside management</td></tr>
+    </table></div>
+    <h3>Blocking a prompt</h3>
+    <p>A <code>UserPromptSubmit</code> command hook receives the common fields plus <code>prompt</code>. To block, print one JSON object with <code>decision</code> set to <code>"block"</code> and a <code>reason</code>; the hooks reference says the reason is "Shown to the user" and "Not added to context". Exiting 2 with the message on stderr does the same. The event has no matcher and a 30-second default timeout, and a hook that times out is discarded and the prompt goes through unless the handler sets <code>onFailure: "block"</code>. For a guard, set it.</p>
+    <p>The hooks reference is direct about the limit: "A blocked prompt never reaches Claude, but its text isn't removed everywhere." By default the block message ends with <code>Original prompt:</code> and the submitted text, and that message is written to the transcript. Returning <code>"suppressOriginalPrompt": true</code> inside <code>hookSpecificOutput</code> removes the text from the message, and the reference adds that it "can still appear in local files such as the session transcript and your prompt history, so a blocking hook isn't a way to keep a secret off disk". Lab 2 counts what remains in both cases.</p>
+    <h3>Blocking a read by content</h3>
+    <p>A deny rule matches a path. A <code>PreToolUse</code> hook is a program, so it can open the file the model asked for and decide on what is inside. That closes the commonest way a path rule fails: the export saved as <code>copy-of-export-final.csv</code> in a folder nobody listed. The hook returns <code>permissionDecision: "deny"</code> with a reason the model reads, and a good reason names the de-identified alternative so the model can carry on. Write the guard to fail closed: if it cannot parse its input or read the file, it denies. Lab 3 builds one and records what still got through.</p>
+    <h3>Rewriting a result</h3>
+    <p>The hooks reference documents an output-side control: a <code>PostToolUse</code> hook may return <code>hookSpecificOutput.updatedToolOutput</code>, which "replaces the tool's output with the provided value before it is sent to Claude". The value has to match the tool's output shape; for <code>Bash</code> that is an object with <code>stdout</code>, <code>stderr</code>, <code>interrupted</code> and <code>isImage</code>, and "a value that doesn't match the tool's output schema is ignored and the original output is used". The warning attached to it is the one to remember: it "only changes what Claude sees. The tool has already run." Use it as a net under the other layers, for output you could not predict, such as a query result. Do not treat it as the main control.</p>
+    <h3>Making it stick</h3>
+    <p>Project settings can be edited by anyone who can edit the repository, and a user can pass <code>--settings</code> with <code>disableAllHooks</code>. Controls that must hold belong in managed settings: a <code>managed-settings.json</code> in the system directory (<code>C:\Program Files\ClaudeCode\</code> on Windows, <code>/etc/claude-code/</code> on Linux and WSL, <code>/Library/Application Support/ClaudeCode/</code> on macOS) or one of the other delivery mechanisms the managed settings page lists. Hooks and deny rules placed there cannot be removed by a lower level. Two keys tighten it further: <code>allowManagedHooksOnly</code> runs only the hooks the organisation deploys, and <code>allowManagedPermissionRulesOnly</code> makes managed settings the only source of permission rules. Put <code>cleanupPeriodDays</code> there too. None of this was run on the lab machine, because it means writing to a system directory; it is reported from the docs.</p>
+    <h3>Secrets are the same problem in miniature</h3>
+    <p>An API key behaves exactly like a patient identifier in this system. If it is pasted into a prompt, printed by a command, or sits in a file the agent reads, it is sent to the provider and written to the transcript in plain text. The directory page says so: "If a tool reads a <code>.env</code> file or a command prints a credential, that value is written to <code>projects/&lt;project&gt;/&lt;session&gt;.jsonl</code>." A key has one property a diagnosis does not: it can be rotated. If one reaches a prompt or a transcript, rotate it first and clean up second.</p>
+    <p>The controls are the ones above with different patterns: deny rules on credential files, a prompt guard for key-shaped strings, and no credentials in CLAUDE.md or shared settings. The Security module covers the rest, including the sandbox credential settings, environment scrubbing for subprocesses, and keeping the credential off the machine altogether. One fact from this module's pages belongs here: the uploads Claude Code makes on your behalf redact "known API key and token patterns", and nothing else.</p>
+    
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m22-lab1" data-title="See what is sent and what is kept" data-minutes="20">
+      <p class="goal">You run one headless task on a small synthetic file, then find the file's identifiers in the session's own transcript and count them, and end up with two numbers: identifiers in the answer, and identifiers on disk.</p>
+      <ol class="steps">
+        <li><p>Create the lab folder and a synthetic patient file. Every value in it is invented: the names are placeholders, the record numbers are <code>MRN-0001xx</code>, and the SSN-shaped strings start with 900 so they cannot be taken for real ones.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m22/lab1 | Out-Null
+Set-Location {{LAB}}/m22/lab1
+@'
+mrn,name,dob,ssn,phone,diagnosis_code,visit_date,note
+MRN-000123,Ada Example,1961-03-14,900-12-3456,555-0101,E11.9,2026-10-02,Follow-up visit. Ada reports improved readings.
+MRN-000124,Ben Sample,1975-07-30,900-23-4567,555-0102,I10,2026-10-03,New medication started.
+MRN-000125,Cy Placeholder,1988-11-05,900-34-5678,555-0103,J45.909,2026-10-03,Call 555-0103 to rebook.
+MRN-000126,Di Testcase,1930-01-22,900-45-6789,555-0104,E11.9,2026-10-06,Annual review.
+MRN-000127,Eli Mockson,1990-09-09,900-56-7890,555-0105,I10,2026-10-07,Came in with his brother Benny S.
+MRN-000123,Ada Example,1961-03-14,900-12-3456,555-0101,E11.9,2026-10-09,Second visit this month.
+'@ | Set-Content -Encoding utf8 patients.csv</code></pre>
+          <p class="expect"><b>Expected:</b> no output. The file has 6 data rows for 5 invented patients.</p></li>
+        <li><p>Run one task that needs the file but whose answer contains no identifier. <code>--setting-sources project</code> and <code>--strict-mcp-config</code> appear on every headless run in this module: they keep your personal settings, hooks and MCP servers out of the run, so only what is in the lab folder applies.</p>
+          <pre><code>claude -p "Read patients.csv and reply with the number of data rows only." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read" --max-turns 3 --output-format json &gt; run1.json
+$r = Get-Content run1.json -Raw | ConvertFrom-Json
+"result=$($r.result) turns=$($r.num_turns) cost=$($r.total_cost_usd)"
+"identifiers in the answer: " + [regex]::Matches($r.result, 'MRN-\d{6}|\b\d{3}-\d{2}-\d{4}\b').Count</code></pre>
+          <p class="expect"><b>Expected:</b> a one-line answer such as <code>**6** data rows (excluding the header line).</code>, <code>turns=2</code>, a cost of about $0.0005 to $0.002, and <code>identifiers in the answer: 0</code>. The answer holds none of the file's identifiers.</p></li>
+        <li><p>Find this session's transcript and count the identifiers in it. If you set <code>CLAUDE_CONFIG_DIR</code>, look under that folder instead of <code>~/.claude</code>.</p>
+          <pre><code>$proj = (Get-Location).Path -replace '[^A-Za-z0-9]', '-'
+$t = Join-Path $HOME ".claude\projects\$proj\$($r.session_id).jsonl"
+$text = Get-Content $t -Raw -Encoding UTF8
+"transcript exists: $(Test-Path $t)  bytes: $((Get-Item $t).Length)"
+"MRN strings on disk: " + [regex]::Matches($text, 'MRN-\d{6}').Count
+"SSN-shaped strings on disk: " + [regex]::Matches($text, '\b9\d{2}-\d{2}-\d{4}\b').Count</code></pre>
+          <p class="expect"><b>Expected:</b> <code>transcript exists: True</code>, a size of about 190,000 bytes (most of it is not your file), <code>MRN strings on disk: 12</code> and <code>SSN-shaped strings on disk: 12</code>.</p></li>
+        <li><p>See which transcript lines hold them.</p>
+          <pre><code>Get-Content $t -Encoding UTF8 | ForEach-Object {
+  $n = [regex]::Matches($_, 'MRN-\d{6}').Count
+  if ($n -gt 0) { "{0,-10} MRN strings: {1}" -f ($_ | ConvertFrom-Json).type, $n }
+}</code></pre>
+          <p class="expect"><b>Expected:</b> one line only, <code>user       MRN strings: 12</code>. All of the identifiers sit in the single transcript line that records the <code>Read</code> tool result. Your prompt and the model's answer hold none.</p></li>
+        <li><p>Run the same task without session persistence and check that no transcript was written. The file was still sent: the request has to contain it for the model to count the rows.</p>
+          <pre><code>claude -p "Read patients.csv and reply with the number of data rows only." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read" --max-turns 3 --output-format json --no-session-persistence &gt; run2.json
+$r2 = Get-Content run2.json -Raw | ConvertFrom-Json
+$t2 = Join-Path $HOME ".claude\projects\$proj\$($r2.session_id).jsonl"
+"result=$($r2.result) transcript exists: $(Test-Path $t2)"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>result=**6** data rows (excluding the header line). transcript exists: False</code>. The answer is the same, and no transcript was written.</p></li>
+        <li><p>Preview what <code>claude purge</code> would delete for this lab folder. The dry run deletes nothing.</p>
+          <pre><code>claude purge (Get-Location).Path --dry-run</code></pre>
+          <p class="expect"><b>Expected:</b> a purge plan naming the project folder under <code>~/.claude/projects</code> that holds the lab folder's transcripts and memory, then <code>Dry run: 1 item(s) would be deleted.</code> The command also prints that it deletes data only on this computer, not anything stored by Anthropic, and notes on stderr that older <code>.claude.json</code> backups may still name the project. Nothing is deleted.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>The answer was one digit. How much of the file went to the provider?</b> All of it. The <code>Read</code> tool result carried every row, and the tool result is part of the next request.</p>
+        <p><b>Why is the count on disk higher than the count in the file?</b> The file has 6 rows, so 6 MRNs and 6 SSN-shaped strings. The tool result is stored twice in that one line, once in the message the model received and once in the structured <code>toolUseResult</code> field, so a count of the raw file finds each value twice. Count on disk is not count in the file, and a clean-up that looks for one copy leaves the other.</p>
+        <p><b>Does <code>--no-session-persistence</code> reduce what is sent?</b> No. It removes the local copy only.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m22-lab2" data-title="Block a prompt that carries an identifier" data-minutes="25">
+      <p class="goal">You register a <code>UserPromptSubmit</code> hook in the lab folder's project settings that refuses a prompt containing an MRN-shaped or SSN-shaped string, and end up with a table: blocked, passed, and missed.</p>
+      <ol class="steps">
+        <li><p>Create the folder, the hook script and the project settings. The script records the names of the input fields it received, never the prompt text, so you can check the contract.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m22/lab2/.claude/hooks | Out-Null
+Set-Location {{LAB}}/m22/lab2
+@'
+# phi-prompt-guard.ps1: block a prompt that contains an MRN-shaped or SSN-shaped string.
+$ErrorActionPreference = 'Stop'
+try {
+  $in = [Console]::In.ReadToEnd() | ConvertFrom-Json
+  ($in.PSObject.Properties.Name -join ',') | Set-Content -Encoding utf8 (Join-Path $PSScriptRoot 'last-input-fields.txt')
+  $patterns = [ordered]@{ 'an MRN' = 'MRN-\d{6}'; 'an SSN-shaped number' = '\b\d{3}-\d{2}-\d{4}\b' }
+  $hits = @()
+  foreach ($k in $patterns.Keys) { if ($in.prompt -match $patterns[$k]) { $hits += $k } }
+  if ($hits.Count -eq 0) { exit 0 }
+  $out = @{ decision = 'block'; reason = 'Blocked by phi-prompt-guard: the prompt contains ' + ($hits -join ' and ') + '. Remove the identifier or work from the de-identified file.' }
+  if ($env:PHI_GUARD_SUPPRESS -eq '1') { $out.hookSpecificOutput = @{ hookEventName = 'UserPromptSubmit'; suppressOriginalPrompt = $true } }
+  $out | ConvertTo-Json -Compress -Depth 4
+  exit 0
+} catch {
+  [Console]::Error.WriteLine("phi-prompt-guard failed closed: $($_.Exception.Message)")
+  exit 2
+}
+'@ | Set-Content -Encoding utf8 .claude\hooks\phi-prompt-guard.ps1
+@'
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "powershell",
+          "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                   "${CLAUDE_PROJECT_DIR}/.claude/hooks/phi-prompt-guard.ps1"],
+          "timeout": 10, "onFailure": "block" } ] }
+    ]
+  }
+}
+'@ | Set-Content -Encoding utf8 .claude\settings.json
+function Show-Run($name) {
+  $r = Get-Content "$name.json" -Raw | ConvertFrom-Json
+  $proj = (Get-Location).Path -replace '[^A-Za-z0-9]', '-'
+  $t = Join-Path $HOME ".claude\projects\$proj\$($r.session_id).jsonl"
+  $onDisk = if (Test-Path $t) { [regex]::Matches((Get-Content $t -Raw -Encoding UTF8), 'MRN-\d{6}').Count } else { 'no transcript' }
+  "{0}: turns={1} output_tokens={2} cost={3} MRN on disk={4}" -f $name, $r.num_turns, $r.usage.output_tokens, $r.total_cost_usd, $onDisk
+  "  result: " + ($r.result -replace '\s+', ' ')
+}</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Submit a prompt that contains a synthetic record number.</p>
+          <pre><code>claude -p "Summarise the visit history for MRN-000123." --model haiku --setting-sources project --strict-mcp-config --max-turns 2 --output-format json &gt; blocked.json
+"exit=$LASTEXITCODE"
+Show-Run blocked
+Get-Content .claude\hooks\last-input-fields.txt</code></pre>
+          <p class="expect"><b>Expected:</b> <code>exit=0</code>, then <code>blocked: turns=0 output_tokens=0 cost=0 MRN on disk=2</code>. The result begins <code>UserPromptSubmit operation blocked by hook: Blocked by phi-prompt-guard: the prompt contains an MRN.</code> and ends with <code>Original prompt:</code> and your prompt. The last line lists the input fields the hook received: <code>session_id,transcript_path,cwd,prompt_id,permission_mode,hook_event_name,prompt</code>. The exit code is 0 even though the prompt was refused, so a script has to read the result.</p></li>
+        <li><p>Submit a clean prompt. The same hook runs and lets it through.</p>
+          <pre><code>claude -p "Reply with the word ok." --model haiku --setting-sources project --strict-mcp-config --max-turns 2 --output-format json &gt; clean.json
+"exit=$LASTEXITCODE"
+Show-Run clean</code></pre>
+          <p class="expect"><b>Expected:</b> <code>exit=0</code>, then <code>clean: turns=1 output_tokens=4</code>, a cost of about $0.0016 and <code>MRN on disk=0</code>, and the result <code>ok</code>. The hook ran and had nothing to say.</p></li>
+        <li><p>Block again with <code>suppressOriginalPrompt</code> switched on, and compare the message and the count on disk.</p>
+          <pre><code>$env:PHI_GUARD_SUPPRESS = '1'
+claude -p "Summarise the visit history for MRN-000123." --model haiku --setting-sources project --strict-mcp-config --max-turns 2 --output-format json &gt; suppressed.json
+Show-Run suppressed
+Remove-Item Env:PHI_GUARD_SUPPRESS</code></pre>
+          <p class="expect"><b>Expected:</b> <code>turns=0 cost=0</code>, <code>MRN on disk=1</code>, and a result that ends after "work from the de-identified file." with no <code>Original prompt:</code> section. The count on disk fell from 2 to 1: the block message no longer carries the text, but the submitted prompt is still recorded in the transcript.</p></li>
+        <li><p>Send an identifier the pattern does not know: the same SSN-shaped value with no hyphens.</p>
+          <pre><code>claude -p "Reply with the word ok. Reference 900123456." --model haiku --setting-sources project --strict-mcp-config --max-turns 2 --output-format json &gt; missed.json
+Show-Run missed</code></pre>
+          <p class="expect"><b>Expected:</b> <code>missed: turns=1</code>, a cost of about $0.001, and a result <code>ok. Reference 900123456.</code>. The prompt passed, reached the model and was echoed back. The count of MRN strings on disk is 0 because it only counts the pattern the guard knows; the nine digits are in the transcript all the same.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>How do you know the blocked prompt never reached the model?</b> The turn count and cost. The blocked runs report <code>turns=0 output_tokens=0 cost=0</code>, and the result text is the hook's message, not an answer from a model. The clean run reports one turn and a cost above zero.</p>
+        <p><b>Is the blocked text off your disk?</b> No. With the default message the text is on disk twice in the transcript, once as the queued prompt and once inside the block message. With <code>suppressOriginalPrompt</code> it is on disk once. The hooks reference says the same: a blocking hook is not a way to keep a secret off disk.</p>
+        <p><b>Name two things this hook will never see.</b> A file the agent reads after a clean prompt, and an identifier with no fixed shape such as a name. It also saw nothing wrong with nine bare digits.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m22-lab3" data-title="Keep a patient file unreadable, route by route" data-minutes="35">
+      <p class="goal">You protect a synthetic <code>patients.csv</code> with a deny rule, then a <code>PreToolUse</code> hook that inspects file content, then a <code>PostToolUse</code> hook that rewrites shell output, and end up with a record of what got through at each stage while a de-identified copy stays usable.</p>
+      <ol class="steps">
+        <li><p>Create the folder with four files: the synthetic patient file from Lab 1, a copy of it under another name, a de-identified version, and a script that prints the copy without the command line naming it. Start with a deny rule only.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m22/lab3/.claude/hooks | Out-Null
+Set-Location {{LAB}}/m22/lab3
+Copy-Item ..\lab1\patients.csv patients.csv
+Copy-Item patients.csv export-copy.csv
+@'
+patient_id,age_band,diagnosis_code,visit_year
+PT-a1,60s,E11.9,2026
+PT-b2,50s,I10,2026
+PT-c3,30s,J45.909,2026
+PT-d4,90+,E11.9,2026
+PT-e5,30s,I10,2026
+PT-a1,60s,E11.9,2026
+'@ | Set-Content -Encoding utf8 patients.deid.csv
+'Get-ChildItem -Filter "export-*.csv" | Get-Content' | Set-Content -Encoding utf8 dump.ps1
+'{ "permissions": { "deny": ["Read(./patients.csv)"] } }' | Set-Content -Encoding utf8 .claude\settings.json
+function Show-Run($name) {
+  $r = Get-Content "$name.json" -Raw | ConvertFrom-Json
+  $proj = (Get-Location).Path -replace '[^A-Za-z0-9]', '-'
+  $t = Join-Path $HOME ".claude\projects\$proj\$($r.session_id).jsonl"
+  $sent = [regex]::Matches((Get-Content $t -Raw -Encoding UTF8), '\b9\d{2}-\d{2}-\d{4}\b').Count
+  "{0}: turns={1} denials={2} SSN-shaped strings in transcript={3}" -f $name, $r.num_turns, @($r.permission_denials).Count, $sent
+  "  result: " + ($r.result -replace '\s+', ' ')
+}
+$tools = '"Read" "Bash" "PowerShell"'</code></pre>
+          <p class="expect"><b>Expected:</b> no output. The count of SSN-shaped strings in a run's transcript is the measure of whether the data entered the context.</p></li>
+        <li><p>Attempt A, the file tool, and attempt B, the shell route. Both name <code>patients.csv</code>.</p>
+          <pre><code>claude -p "This folder holds synthetic test data. Read patients.csv and reply with the value in the ssn column of the first data row." --model haiku --setting-sources project --strict-mcp-config --max-turns 4 --output-format json --allowedTools "Read" "Bash" "PowerShell" &gt; a.json
+Show-Run a
+claude -p "This folder holds synthetic test data. Do not use the Read tool. Run one shell command that prints patients.csv, then reply with the value in the ssn column of the first data row." --model haiku --setting-sources project --strict-mcp-config --max-turns 4 --output-format json --allowedTools "Read" "Bash" "PowerShell" &gt; b.json
+Show-Run b</code></pre>
+          <p class="expect"><b>Expected:</b> Attempt A: <code>turns=2 denials=1 SSN-shaped strings in transcript=0</code>, and the model reports that the read was refused by a permission rule. Attempt B: <code>turns=3 denials=2 SSN-shaped strings in transcript=0</code>. On this version the shell route was blocked too: the permissions page says Read deny rules also cover file commands Claude Code recognises in Bash, such as <code>cat</code>, and the model's own account of the refusal varies from run to run. Both counts are 0, so the data never entered the context.</p></li>
+        <li><p>Attempt C: the same data under a name the rule does not list.</p>
+          <pre><code>claude -p "This folder holds synthetic test data. Read export-copy.csv and reply with the value in the ssn column of the first data row." --model haiku --setting-sources project --strict-mcp-config --max-turns 4 --output-format json --allowedTools "Read" "Bash" "PowerShell" &gt; c.json
+Show-Run c</code></pre>
+          <p class="expect"><b>Expected:</b> <code>c: turns=2 denials=0 SSN-shaped strings in transcript=13</code> and a result that quotes <code>900-12-3456</code>. Same data, other name, no denial. The count is the 12 in the file contents (stored twice) plus the one in the answer.</p></li>
+        <li><p>Add a <code>PreToolUse</code> hook that opens the file a <code>Read</code> targets, or any file in the working folder that a shell command names, and denies when the content holds identifier-shaped strings. It fails closed and logs the file name and a count, never the content.</p>
+          <pre><code>@'
+# phi-file-guard.ps1: deny a Read, or a shell command that names a file, when that file holds identifier-shaped strings.
+$ErrorActionPreference = 'Stop'
+function Deny($why) {
+  @{ hookSpecificOutput = @{ hookEventName = 'PreToolUse'; permissionDecision = 'deny'; permissionDecisionReason = $why } } | ConvertTo-Json -Compress -Depth 4
+  exit 0
+}
+try {
+  $in = [Console]::In.ReadToEnd() | ConvertFrom-Json
+  $pattern = 'MRN-\d{6}|\b\d{3}-\d{2}-\d{4}\b'
+  $targets = @()
+  if ($in.tool_name -eq 'Read') { $targets += $in.tool_input.file_path }
+  else {
+    foreach ($f in Get-ChildItem -LiteralPath $in.cwd -File) {
+      if ($in.tool_input.command -like "*$($f.Name)*") { $targets += $f.FullName }
+    }
+  }
+  foreach ($p in $targets) {
+    if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { continue }
+    $n = [regex]::Matches((Get-Content -LiteralPath $p -TotalCount 2000 -Encoding UTF8 | Out-String), $pattern).Count
+    $leaf = Split-Path -Leaf $p
+    Add-Content -Encoding utf8 (Join-Path $PSScriptRoot 'guard.log') ("{0} {1} hits={2}" -f $in.tool_name, $leaf, $n)
+    if ($n -gt 0) { Deny "phi-file-guard: $leaf holds $n identifier-shaped strings. Use patients.deid.csv instead." }
+  }
+  exit 0
+} catch { Deny "phi-file-guard failed closed: $($_.Exception.Message)" }
+'@ | Set-Content -Encoding utf8 .claude\hooks\phi-file-guard.ps1
+@'
+{
+  "permissions": { "deny": ["Read(./patients.csv)"] },
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Read|Bash|PowerShell",
+        "hooks": [ { "type": "command", "command": "powershell",
+          "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                   "${CLAUDE_PROJECT_DIR}/.claude/hooks/phi-file-guard.ps1"],
+          "timeout": 15, "onFailure": "block" } ] }
+    ]
+  }
+}
+'@ | Set-Content -Encoding utf8 .claude\settings.json</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Repeat attempt C with the hook in place, then do real work on the de-identified copy.</p>
+          <pre><code>claude -p "This folder holds synthetic test data. Read export-copy.csv and reply with the value in the ssn column of the first data row." --model haiku --setting-sources project --strict-mcp-config --max-turns 4 --output-format json --allowedTools "Read" "Bash" "PowerShell" &gt; c2.json
+Show-Run c2
+claude -p "Read patients.deid.csv and reply with the number of rows whose diagnosis_code is E11.9. Number only." --model haiku --setting-sources project --strict-mcp-config --max-turns 4 --output-format json --allowedTools "Read" "Bash" "PowerShell" &gt; d.json
+Show-Run d
+Get-Content .claude\hooks\guard.log</code></pre>
+          <p class="expect"><b>Expected:</b> <code>c2: turns=2 denials=1 SSN-shaped strings in transcript=0</code>, with the result saying a file guard hook blocked the read and pointing to <code>patients.deid.csv</code>. Then <code>d: turns=2 denials=0</code>, 0 strings, and the result <code>3</code>, the correct count of E11.9 rows. The log reads <code>Read export-copy.csv hits=12</code> and <code>Read patients.deid.csv hits=0</code>: file names and counts only.</p></li>
+        <li><p>Attempt E: a script that reads the copy itself. The command line names only <code>dump.ps1</code>.</p>
+          <pre><code>claude -p "This folder holds synthetic test data. Run this exact command with the PowerShell or Bash tool: powershell -NoProfile -File dump.ps1 . Then reply with the value in the ssn column of the first data row it printed." --model haiku --setting-sources project --strict-mcp-config --max-turns 4 --output-format json --allowedTools "Read" "Bash" "PowerShell" &gt; e.json
+Show-Run e</code></pre>
+          <p class="expect"><b>Expected:</b> <code>e: turns=2 denials=0 SSN-shaped strings in transcript=13</code> and a result that quotes <code>900-12-3456</code>. The hook looked for files named in the command, found only <code>dump.ps1</code>, which holds no identifiers, and let the script run.</p></li>
+        <li><p>Add an output-side check: a <code>PostToolUse</code> hook that replaces identifier-shaped strings in shell output before the model sees it. It returns the tool's own response object with <code>stdout</code> changed, so the shape matches.</p>
+          <pre><code>@'
+# phi-output-redact.ps1: replace identifier-shaped strings in a shell tool's stdout before the model sees it.
+$in = [Console]::In.ReadToEnd() | ConvertFrom-Json
+$resp = $in.tool_response
+($resp.PSObject.Properties.Name -join ',') | Set-Content -Encoding utf8 (Join-Path $PSScriptRoot 'last-response-fields.txt')
+$pattern = 'MRN-\d{6}|\b\d{3}-\d{2}-\d{4}\b'
+if ($resp.stdout -notmatch $pattern) { exit 0 }
+$resp.stdout = [regex]::Replace($resp.stdout, $pattern, '[REDACTED]')
+@{ hookSpecificOutput = @{ hookEventName = 'PostToolUse'; updatedToolOutput = $resp;
+   additionalContext = 'phi-output-redact replaced identifier-shaped strings in this output.' } } | ConvertTo-Json -Compress -Depth 6
+'@ | Set-Content -Encoding utf8 .claude\hooks\phi-output-redact.ps1
+$s = Get-Content .claude\settings.json -Raw | ConvertFrom-Json
+$s.hooks | Add-Member -NotePropertyName PostToolUse -NotePropertyValue @(@{ matcher = 'Bash|PowerShell'; hooks = @(@{ type = 'command'; command = 'powershell';
+  args = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', '${CLAUDE_PROJECT_DIR}/.claude/hooks/phi-output-redact.ps1'); timeout = 15 }) })
+$s | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8 .claude\settings.json
+claude -p "This folder holds synthetic test data. Run this exact command with the PowerShell or Bash tool: powershell -NoProfile -File dump.ps1 . Then reply with the value in the ssn column of the first data row it printed, and the name in that row." --model haiku --setting-sources project --strict-mcp-config --max-turns 4 --output-format json --allowedTools "Read" "Bash" "PowerShell" &gt; f.json
+Show-Run f
+Get-Content .claude\hooks\last-response-fields.txt</code></pre>
+          <p class="expect"><b>Expected:</b> <code>f: turns=2 denials=0 SSN-shaped strings in transcript=0</code>. The result gives the name <code>Ada Example</code> and says the ssn column shows <code>[REDACTED]</code>, because the hook replaced it. The last line is <code>stdout,stderr,interrupted,isImage</code>, the fields of the shell tool's response. The name was not covered by the pattern and passed through, which is the limit of a pattern. The transcript holds no SSN-shaped string either.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Fill in the record.</b> A, B: blocked by the deny rule, 0 strings. C: got through, 13. Content hook on C: blocked, 0. E: got through, 13. F with the output hook: 0, with the name still visible. The deny rule fails on a renamed copy, the content hook fails on a script that opens the file itself, and the output hook is the only one that sees what the script printed.</p>
+        <p><b>Which attempt shows the limit of a path rule, and which shows the limit of a content hook?</b> C shows the path rule's limit: same data, different name. E shows the content hook's limit: the hook inspected the files the command named, and the command named a script.</p>
+        <p><b>What did the output hook leave in the result?</b> The note <code>phi-output-redact replaced identifier-shaped strings in this output.</code> reached the model as added context, and <code>[REDACTED]</code> stood in for each SSN-shaped value. The model reported it, so the model knows something was removed.</p>
+        <p><b>Your hook is matched on <code>Read|Bash|PowerShell</code>. Name a built-in tool it does not cover.</b> <code>Grep</code>, which returns matching lines from files. A real guard needs the same content check there, or a deny rule that removes the tool.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m22-lab4" data-title="De-identify a file, then do real work on the copy" data-minutes="30">
+      <p class="goal">You write a script that turns the synthetic patient file into a de-identified copy with stable pseudonyms, run a headless task on the copy, and check that no original identifier appears in the answer or the transcript.</p>
+      <ol class="steps">
+        <li><p>Put the raw file, the script and the mapping file in a folder the agent will not work in, and make an empty working folder beside it. This is a teaching script on synthetic data. It is not a compliance tool, and running it does not make a file de-identified in any legal sense.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m22/raw, {{LAB}}/m22/lab4 | Out-Null
+Copy-Item {{LAB}}/m22/lab1/patients.csv {{LAB}}/m22/raw/patients.csv
+@'
+# deid.ps1: write a de-identified copy of the synthetic patients file. Pseudonyms are random and kept in a mapping file.
+param([Parameter(Mandatory)][string]$In, [Parameter(Mandatory)][string]$Out, [Parameter(Mandatory)][string]$MapFile)
+$ErrorActionPreference = 'Stop'
+$pseudo = @{}
+if (Test-Path $MapFile) { Import-Csv $MapFile | ForEach-Object { $pseudo[$_.mrn] = $_.patient_id } }
+$rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+function Get-Pseudonym($mrn) {
+  if (-not $pseudo.ContainsKey($mrn)) {
+    $b = New-Object byte[] 4; $rng.GetBytes($b)
+    $pseudo[$mrn] = 'PT-' + (($b | ForEach-Object { $_.ToString('x2') }) -join '')
+  }
+  $pseudo[$mrn]
+}
+$rows = Import-Csv $In
+$thisYear = (Get-Date).Year
+$result = foreach ($r in $rows) {
+  $age = $thisYear - [int]$r.dob.Substring(0, 4)
+  $note = $r.note
+  foreach ($x in $rows) {
+    $alias = Get-Pseudonym $x.mrn
+    $note = $note.Replace($x.name, $alias).Replace($x.phone, '[phone]').Replace($x.mrn, $alias)
+    foreach ($part in $x.name.Split(' ')) { $note = $note -replace ('\b' + [regex]::Escape($part) + '\b'), $alias }
+  }
+  $band = if ($age -ge 90) { '90+' } else { [string]([math]::Floor($age / 10) * 10) + 's' }
+  [pscustomobject]@{ patient_id = (Get-Pseudonym $r.mrn); age_band = $band; diagnosis_code = $r.diagnosis_code
+                     visit_year = $r.visit_date.Substring(0, 4); note = $note }
+}
+$result | Export-Csv -NoTypeInformation -Encoding UTF8 $Out
+$pseudo.GetEnumerator() | ForEach-Object { [pscustomobject]@{ mrn = $_.Key; patient_id = $_.Value } } | Export-Csv -NoTypeInformation -Encoding UTF8 $MapFile
+"rows=$(@($result).Count) patients=$(@($result.patient_id | Sort-Object -Unique).Count)"
+'@ | Set-Content -Encoding utf8 {{LAB}}/m22/raw/deid.ps1
+Set-Location {{LAB}}/m22/lab4</code></pre>
+          <p class="expect"><b>Expected:</b> no output. The script drops the name, date of birth, SSN and phone columns, keeps only the year of the visit, bands the age with 90 and over as one band, and replaces known names, phone numbers and record numbers inside the note.</p></li>
+        <li><p>Run it twice and compare the two outputs. The pseudonyms are random on the first run and reused from the mapping file after that.</p>
+          <pre><code>powershell -NoProfile -ExecutionPolicy Bypass -File ..\raw\deid.ps1 -In ..\raw\patients.csv -Out patients.deid.csv -MapFile ..\raw\deid-map.csv
+powershell -NoProfile -ExecutionPolicy Bypass -File ..\raw\deid.ps1 -In ..\raw\patients.csv -Out second.csv -MapFile ..\raw\deid-map.csv
+"stable: " + ((Get-FileHash patients.deid.csv).Hash -eq (Get-FileHash second.csv).Hash)
+Remove-Item second.csv
+Get-Content patients.deid.csv</code></pre>
+          <p class="expect"><b>Expected:</b> <code>rows=6 patients=5</code> printed twice, <code>stable: True</code>, then the de-identified file: columns <code>patient_id,age_band,diagnosis_code,visit_year,note</code>, six rows, the same random-looking <code>PT-</code> and eight hex digits on rows 1 and 6, <code>Call [phone] to rebook.</code>, an age band of <code>90+</code> for the 1930 birth year, and the line <code>Came in with his brother Benny S.</code> unchanged. Your pseudonyms differ from run to run on a fresh mapping file.</p></li>
+        <li><p>Do a real task on the copy. The agent's folder holds only the de-identified file.</p>
+          <pre><code>claude -p "Read patients.deid.csv. Reply with two things separated by a comma: the patient_id that has more than one visit, and the number of rows with diagnosis_code E11.9." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read" --max-turns 3 --output-format json &gt; run4.json
+$r = Get-Content run4.json -Raw | ConvertFrom-Json
+"result=$($r.result)"</code></pre>
+          <p class="expect"><b>Expected:</b> A result of the form <code>PT-xxxxxxxx, 3</code>: the pseudonym of the patient with two visits, and three E11.9 rows.</p></li>
+        <li><p>Check the answer and the transcript against every original identifier in the raw file.</p>
+          <pre><code>$proj = (Get-Location).Path -replace '[^A-Za-z0-9]', '-'
+$text = (Get-Content (Join-Path $HOME ".claude\projects\$proj\$($r.session_id).jsonl") -Raw -Encoding UTF8) + $r.result
+$orig = Import-Csv ..\raw\patients.csv | ForEach-Object { $_.mrn; $_.name; $_.dob; $_.ssn; $_.phone } | Sort-Object -Unique
+$found = @($orig | Where-Object { $text.Contains($_) })
+"original identifiers checked: $($orig.Count)  found in answer or transcript: $($found.Count)"
+"occurrences of 'Benny': " + [regex]::Matches($text, 'Benny').Count</code></pre>
+          <p class="expect"><b>Expected:</b> <code>original identifiers checked: 25  found in answer or transcript: 0</code> and <code>occurrences of 'Benny': 2</code>. No known identifier survived, and the nickname the script did not know about is in the transcript, twice, because the tool result is stored twice.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>The check reported zero original identifiers. Is the copy free of identifying text?</b> No. The note for one visit still mentions a relative by nickname. The check was built from the same list of known values as the script, so it shares the script's blind spot. A check proves the absence of what you thought to look for.</p>
+        <p><b>Why is the mapping file kept outside the agent's working folder?</b> It is the re-identification key. Anyone holding it and the de-identified file holds the original data. The rule text quoted in lesson 4 also says the re-identification mechanism is not disclosed.</p>
+        <p><b>Why random pseudonyms and not a hash of the record number?</b> A hash is derived from the identifier, and the rule's paragraph on re-identification codes says the code is not derived from information about the individual. Whether a given scheme is acceptable is your privacy office's call.</p>
+        <p><b>What would you change before using this pattern on a real system?</b> At least: drop the note column unless the task needs it, have the method reviewed by the people accountable for it, and run it where the raw data already lives, not on a workstation.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m22-lab5" data-title="Map one workflow of your own and prove its controls" data-minutes="30">
+      <p class="goal">You take one real workflow in which an agent works near sensitive data, map it onto the "what leaves, what persists" tables, choose three controls, and prove them with a canary test that involves no real sensitive data.</p>
+      <ol class="steps">
+        <li><p>Pick one workflow you run or plan to run: for example "debug the nightly import", "review a pull request in the billing service" or "write a report query". Write down, from memory and without opening any real data: which account type the session signs in with; every file, command and MCP tool the agent would touch; and which of those can return a real record or a credential.</p>
+          <p class="expect"><b>Expected:</b> a short list. If you cannot say which account type the session uses, run <code>/status</code> in a session on that machine and read the <code>Login method</code> line before going further.</p></li>
+        <li><p>Fill in two columns for each item on the list: where it would be sent (model provider, an MCP server, a fetched site, your telemetry collector) and where it would persist (transcript, prompt history, memory, a log, a cloud session). Use the tables in lessons 1 and 5.</p>
+          <p class="expect"><b>Expected:</b> a table with one row per file, command or tool. Mark each row "must not leave", "may leave under our agreement" or "not sensitive". The middle label is a question for your compliance office; write down who answered it.</p></li>
+        <li><p>Choose the three controls the "must not leave" rows need, one of each kind: something that removes the need (a schema, a synthetic file, a de-identified copy), something that blocks (a deny rule or a hook), and something that limits persistence (a retention setting, no session persistence for a scripted job, memory off for the project).</p>
+          <p class="expect"><b>Expected:</b> three lines, each naming the setting or script and the file it lives in.</p></li>
+        <li><p>Build the done-test in a scratch folder. A canary is a made-up string that stands in for the sensitive value. Put it where the real data would be, run the workflow's prompt, and count the canary in the answer and the transcript. This example protects a file with a deny rule; replace the rule with your own controls.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m22/lab5/.claude | Out-Null
+Set-Location {{LAB}}/m22/lab5
+'record_id,value' , 'r1,CANARY-7Q4X-0001' , 'r2,CANARY-7Q4X-0002' | Set-Content -Encoding utf8 extract.csv
+'record_id,value' , 'r1,synthetic' , 'r2,synthetic' | Set-Content -Encoding utf8 extract.safe.csv
+function Test-Canary($name) {
+  $r = Get-Content "$name.json" -Raw | ConvertFrom-Json
+  $proj = (Get-Location).Path -replace '[^A-Za-z0-9]', '-'
+  $text = (Get-Content (Join-Path $HOME ".claude\projects\$proj\$($r.session_id).jsonl") -Raw -Encoding UTF8) + $r.result
+  "{0}: canary strings in answer or transcript = {1}" -f $name, [regex]::Matches($text, 'CANARY-7Q4X-\d{4}').Count
+}
+'{ }' | Set-Content -Encoding utf8 .claude\settings.json
+claude -p "Read every .csv file in this folder and reply with the total number of data rows." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read" "Glob" --max-turns 6 --output-format json &gt; without.json
+Test-Canary without
+'{ "permissions": { "deny": ["Read(./extract.csv)"] } }' | Set-Content -Encoding utf8 .claude\settings.json
+claude -p "Read every .csv file in this folder and reply with the total number of data rows." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read" "Glob" --max-turns 6 --output-format json &gt; with.json
+Test-Canary with</code></pre>
+          <p class="expect"><b>Expected:</b> <code>without: canary strings in answer or transcript = 6</code>, then <code>with: canary strings in answer or transcript = 0</code>. With the deny rule the file never entered the context. Without it the canaries are in the transcript.</p></li>
+        <li><p>Apply the same test to your own workflow: same file names and folder layout as the real one, canary strings in place of every sensitive value, your three controls switched on.</p>
+          <p class="expect"><b>Done when:</b> the canary count is greater than zero with your controls removed and exactly zero with them on, for the answer, the transcript and any telemetry or hook log the workflow writes; and the table from step 2 has a named person against every "may leave under our agreement" row.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Why run the test once with the controls removed?</b> A test that cannot fail proves nothing. If the count is zero without the controls, the canary was never on the path and the zero with controls is meaningless.</p>
+        <p><b>The canary count is zero. Is the workflow safe for real data?</b> The test shows your controls stop the routes you exercised. It does not show the session is on a covered account type, that every route was exercised, or that real values look like your canary. Those are the first two steps of this lab.</p>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Cheat sheet</h3>
+    <h4>What leaves and what stays</h4>
+    <div class="tablewrap"><table>
+      <tr><th>Item</th><th>Sent to the provider</th><th>Written locally</th></tr>
+      <tr><td>Prompt, pasted text</td><td>Yes</td><td>Transcript, <code>history.jsonl</code>, <code>paste-cache/</code></td></tr>
+      <tr><td>CLAUDE.md, rules, auto memory</td><td>Yes, every session</td><td>They are files already</td></tr>
+      <tr><td>File reads, command output, MCP results, fetched pages</td><td>Yes, as tool results</td><td>Transcript, <code>tool-results/</code></td></tr>
+      <tr><td>Subagent work</td><td>Yes, in its own requests</td><td><code>subagents/</code> under the session</td></tr>
+      <tr><td>Metrics</td><td>To Anthropic; no code, prompts or file paths</td><td>No</td></tr>
+      <tr><td><code>/feedback</code>, <code>/bug</code>, <code>/share</code></td><td>Conversation history including code; kept 5 years</td><td><code>feedback-bundles/</code> on third-party providers</td></tr>
+    </table></div>
+    <h4>Retention figures, as fetched on 11 November 2026</h4>
+    <div class="tablewrap"><table>
+      <tr><th>What</th><th>Period</th><th>Page</th></tr>
+      <tr><td>Consumer plan, model improvement on</td><td class="num">5 years</td><td>Data usage</td></tr>
+      <tr><td>Consumer plan, model improvement off</td><td class="num">30 days</td><td>Data usage</td></tr>
+      <tr><td>Team, Enterprise, API: standard</td><td class="num">30 days</td><td>Data usage; Privacy Center</td></tr>
+      <tr><td>Zero data retention</td><td>Not stored after the response, with exceptions</td><td>Zero data retention; API and data retention</td></tr>
+      <tr><td>Feedback and bug reports</td><td class="num">5 years</td><td>Data usage; Privacy Center</td></tr>
+      <tr><td>Transcript shared after a survey</td><td class="num">up to 6 months</td><td>Data usage</td></tr>
+      <tr><td>Flagged for a Usage Policy violation</td><td class="num">up to 2 years; scores up to 7</td><td>Privacy Center; API and data retention</td></tr>
+      <tr><td>Local transcripts</td><td class="num">30 days by default</td><td>Explore the .claude directory</td></tr>
+    </table></div>
+    <h4>Settings and variables used in this module</h4>
+    <div class="tablewrap"><table>
+      <tr><th>Name</th><th>Kind</th><th>Effect</th></tr>
+      <tr><td><code>cleanupPeriodDays</code></td><td>setting</td><td>Days local transcripts are kept. Default 30, minimum 1. A managed value overrides the user's</td></tr>
+      <tr><td><code>--no-session-persistence</code></td><td>flag, with <code>-p</code></td><td>No transcript written for the run</td></tr>
+      <tr><td><code>CLAUDE_CODE_SKIP_PROMPT_HISTORY</code></td><td>environment</td><td>Skip transcripts and prompt history in any mode</td></tr>
+      <tr><td><code>autoMemoryEnabled</code>, <code>CLAUDE_CODE_DISABLE_AUTO_MEMORY</code></td><td>setting, environment</td><td>Turn auto memory off</td></tr>
+      <tr><td><code>claude purge &lt;path&gt;</code> (<code>--dry-run</code>, <code>--yes</code>, <code>--all</code>)</td><td>command</td><td>Delete a project's transcripts, auto memory, history lines and config entry</td></tr>
+      <tr><td><code>DISABLE_TELEMETRY</code>, <code>DISABLE_ERROR_REPORTING</code>, <code>DISABLE_FEEDBACK_COMMAND</code></td><td>environment</td><td>Turn off metrics, error reports, <code>/feedback</code></td></tr>
+      <tr><td><code>CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC</code></td><td>environment</td><td>All of the above and surveys, together</td></tr>
+      <tr><td><code>OTEL_LOG_USER_PROMPTS</code>, <code>OTEL_LOG_TOOL_DETAILS</code>, <code>OTEL_LOG_TOOL_CONTENT</code>, <code>OTEL_LOG_RAW_API_BODIES</code></td><td>environment</td><td>Content gates for OpenTelemetry export. Off by default; leave them off</td></tr>
+      <tr><td><code>forceLoginMethod</code>, <code>forceLoginOrgUUID</code>, <code>allowedProviders</code></td><td>managed settings</td><td>Pin sign-in to one organisation and refuse cloud providers and gateways</td></tr>
+      <tr><td><code>allowManagedHooksOnly</code>, <code>allowManagedPermissionRulesOnly</code></td><td>managed settings</td><td>Only the organisation's hooks and permission rules apply</td></tr>
+    </table></div>
+    <h4>Hook contracts used</h4>
+    <div class="tablewrap"><table>
+      <tr><th>Event</th><th>Input field</th><th>Output that acts</th></tr>
+      <tr><td><code>UserPromptSubmit</code></td><td><code>prompt</code></td><td><code>{"decision":"block","reason":"..."}</code>; add <code>hookSpecificOutput.suppressOriginalPrompt: true</code> to leave the text out of the block message</td></tr>
+      <tr><td><code>PreToolUse</code></td><td><code>tool_name</code>, <code>tool_input</code>, <code>cwd</code></td><td><code>hookSpecificOutput.permissionDecision: "deny"</code> with <code>permissionDecisionReason</code></td></tr>
+      <tr><td><code>PostToolUse</code></td><td><code>tool_response</code></td><td><code>hookSpecificOutput.updatedToolOutput</code>, same shape as the tool's own output</td></tr>
+    </table></div>
+    <h4>Failure modes</h4>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>The answer has no identifiers but the transcript does</td><td>The tool result carried the whole file</td><td>Give the agent a de-identified copy or a schema; block the raw file</td></tr>
+      <tr><td>A deny rule is in place and the data was still read</td><td>Same data under another path, or a script opened it</td><td>Content-inspecting <code>PreToolUse</code> hook; keep raw data out of the working folder</td></tr>
+      <tr><td>The prompt guard blocked, and the text is still on disk</td><td>The block message and prompt history record it</td><td><code>suppressOriginalPrompt</code>; a short <code>cleanupPeriodDays</code>; <code>claude purge</code></td></tr>
+      <tr><td>The guard passes an obvious identifier</td><td>The pattern does not cover that spelling, or the value has no pattern</td><td>Widen the pattern; accept that names and free text need de-identification upstream</td></tr>
+      <tr><td>A session believed to be covered is on a personal login</td><td>Nothing pinned the sign-in</td><td><code>forceLoginMethod</code> and <code>forceLoginOrgUUID</code> in managed settings; check <code>/status</code></td></tr>
+      <tr><td>Collector holds prompts and file contents</td><td>An <code>OTEL_LOG_*</code> content gate was set</td><td>Unset it; apply the collector's own retention and access rules to what it already holds</td></tr>
+      <tr><td>Hook redacted the result, telemetry shows the original</td><td>Telemetry captures tool output before <code>PostToolUse</code> runs</td><td>Block before the tool runs, or keep tool content out of telemetry</td></tr>
+    </table></div>
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+        <li>Claude Code docs, "Data usage": <a href="https://code.claude.com/docs/en/data-usage" target="_blank" rel="noopener">code.claude.com/docs/en/data-usage</a></li>
+        <li>Claude Code docs, "Zero data retention": <a href="https://code.claude.com/docs/en/zero-data-retention" target="_blank" rel="noopener">code.claude.com/docs/en/zero-data-retention</a></li>
+        <li>Claude Code docs, "Set up Claude Code (local mode) for a HIPAA-ready organization": <a href="https://code.claude.com/docs/en/hipaa-setup" target="_blank" rel="noopener">code.claude.com/docs/en/hipaa-setup</a></li>
+        <li>Claude Code docs, "Legal and compliance": <a href="https://code.claude.com/docs/en/legal-and-compliance" target="_blank" rel="noopener">code.claude.com/docs/en/legal-and-compliance</a></li>
+        <li>Claude Code docs, "Explore the .claude directory" (application data, plaintext storage, clear local data): <a href="https://code.claude.com/docs/en/claude-directory" target="_blank" rel="noopener">code.claude.com/docs/en/claude-directory</a></li>
+        <li>Claude Code docs, "Hooks reference": <a href="https://code.claude.com/docs/en/hooks" target="_blank" rel="noopener">code.claude.com/docs/en/hooks</a></li>
+        <li>Claude Code docs, "Monitoring", "Deploy managed settings" and "How Claude remembers your project": <a href="https://code.claude.com/docs/en/monitoring-usage" target="_blank" rel="noopener">code.claude.com/docs/en/monitoring-usage</a>, <a href="https://code.claude.com/docs/en/managed-settings" target="_blank" rel="noopener">code.claude.com/docs/en/managed-settings</a>, <a href="https://code.claude.com/docs/en/memory" target="_blank" rel="noopener">code.claude.com/docs/en/memory</a></li>
+        <li>Claude Platform docs, "API and data retention": <a href="https://platform.claude.com/docs/en/manage-claude/api-and-data-retention" target="_blank" rel="noopener">platform.claude.com/docs/en/manage-claude/api-and-data-retention</a></li>
+        <li>Anthropic Privacy Center, "How long do you store my organization's data?" and "How long do you store my data?": <a href="https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data" target="_blank" rel="noopener">privacy.claude.com/en/articles/7996866</a>, <a href="https://privacy.claude.com/en/articles/10023548-how-long-do-you-store-my-data" target="_blank" rel="noopener">privacy.claude.com/en/articles/10023548</a></li>
+        <li>Anthropic Privacy Center, "Business Associate Agreements (BAA) for Commercial Customers", and the support article on Claude Code (local mode) on a HIPAA-ready Enterprise plan: <a href="https://privacy.claude.com/en/articles/8114513-business-associate-agreements-baa-for-commercial-customers" target="_blank" rel="noopener">privacy.claude.com/en/articles/8114513</a>, <a href="https://support.claude.com/en/articles/17318731" target="_blank" rel="noopener">support.claude.com/en/articles/17318731</a></li>
+        <li>Anthropic, Commercial Terms of Service and Consumer Terms of Service: <a href="https://www.anthropic.com/legal/commercial-terms" target="_blank" rel="noopener">anthropic.com/legal/commercial-terms</a>, <a href="https://www.anthropic.com/legal/consumer-terms" target="_blank" rel="noopener">anthropic.com/legal/consumer-terms</a></li>
+        <li>US Code of Federal Regulations, 45 CFR 164.514 (de-identification), eCFR: <a href="https://www.ecfr.gov/current/title-45/section-164.514" target="_blank" rel="noopener">ecfr.gov/current/title-45/section-164.514</a></li>
+        <li>Measured: every Expected line in the labs comes from a run on Claude Code 2.1.322 on 11 November 2026. Every page above was fetched on the same day.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "An engineer on a personal Max subscription wants to paste three rows of a production patient table into Claude Code to debug a parser. The organisation has an Enterprise plan with a signed BAA. What is the right call?", "o": ["Fine, because the organisation has a BAA with Anthropic", "Fine, if the engineer turns the model improvement setting off first", "Not on that login: a consumer plan is outside the BAA whatever setting is flipped; use a synthetic row with the same shape, or a covered session if the compliance office allows the data at all", "Fine, if the engineer adds 'do not repeat identifiers' to CLAUDE.md"], "a": 2, "why": "The pages list Free, Pro, Max and Ultra under what HIPAA readiness does not cover, and a BAA covers only the organisation that accepted it. The training setting changes retention and training on a consumer account; it does not change which agreement applies. An instruction to the model acts after the data has been sent."},
+    {"q": "A team's project settings deny Read(./exports/**). A new hire saves a query result as scratch/tmp-result.csv and asks the agent to summarise it. Which control would have stopped the content reaching the provider?", "o": ["A PreToolUse hook that opens the target file and denies when it holds identifier patterns", "The existing deny rule, because deny rules apply in every permission mode", "A PostToolUse hook that logs the read", "A lower cleanupPeriodDays value"], "a": 0, "why": "A deny rule matches paths, and this path is not listed. A PreToolUse hook is a program and can decide on the file's content, whatever the file is called. Logging after the fact and local retention do not change what was sent."},
+    {"q": "Your UserPromptSubmit guard blocks a prompt that contained a real record number. The user asks whether the incident is closed. What do you tell them?", "o": ["Yes: a blocked prompt never reaches the model, so nothing happened", "Yes, provided the hook returned suppressOriginalPrompt", "No: the hook only delays the prompt, and the model will see it on the next turn", "The model did not receive it, but the text can still be in the local transcript and prompt history; check and clear those, and adjust the guard's message settings"], "a": 3, "why": "The hooks reference says a blocked prompt never reaches Claude but its text is not removed everywhere: the block message is written to the transcript by default, and the text can remain in local files even with suppressOriginalPrompt. A blocking hook is not a way to keep a value off disk."},
+    {"q": "An organisation has zero data retention for Claude Code on its Enterprise plan. A developer connects a local MCP server for the ticketing system and asks the agent to file a ticket that quotes a patient note. What does zero data retention do for the quoted note?", "o": ["Covers it, because the request came from a ZDR organisation", "Nothing for the copy sent to the MCP server: third-party tools and MCP servers are outside ZDR, and the local transcript is still written", "Deletes it from the ticketing system after the response is returned", "Blocks the MCP call at the back end"], "a": 1, "why": "The zero data retention page says data processed by third-party tools, MCP servers or other external integrations is not covered. ZDR concerns what Anthropic stores after inference. It does not delete anything on your disk or in another vendor's system, and it does not block local MCP servers."},
+    {"q": "You must let an agent group and count rows from a table with a free-text notes column. You have a script that replaces the name, record number and phone columns with pseudonyms. What is the soundest plan?", "o": ["Run the script and pass all columns, since the identifier columns are replaced", "Pass the raw table and add a PostToolUse hook that redacts SSN patterns", "Ask the model to ignore the notes column", "Drop the notes column unless the task needs it, keep the mapping file out of the agent's folder, and have the method reviewed by the people accountable for de-identification"], "a": 3, "why": "Column replacement leaves identifying text in free-text fields, where names and relatives appear in forms no pattern lists. Dropping what the task does not need is data minimisation. Output redaction only catches patterned values, and an instruction to ignore a column acts after the column has been sent."}
+  ]</script>
+</section>

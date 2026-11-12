@@ -1,0 +1,1241 @@
+<section class="module" id="m23" data-title="MCP: anatomy of the protocol" data-sub="JSON-RPC, capabilities, transports, auth, and a server you build" data-level="practitioner" data-prereq="m1" data-minutes="230">
+  <div class="overview">
+    <p class="lede">The Model Context Protocol is a wire protocol, and it can be read like one: a message format, a version negotiation, a small set of methods, two transports and an authorization scheme. This module walks the specification in that order, shows the bytes Claude Code actually sends, and has you build a working server in plain Node with no SDK so that nothing about it stays a black box. The specification changed shape in its 2026-07-28 revision, so you learn both shapes and see a current Claude Code speak each of them.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Name the three MCP roles and say which side owns tools, resources, prompts, elicitation, sampling and roots, and which of those the current revision deprecates.</li>
+      <li>Read and write the JSON-RPC messages by hand: a request, a result, an error object, a notification, the <code>initialize</code> handshake of the 2025-11-25 revision and the per-request <code>_meta</code> of the 2026-07-28 revision.</li>
+      <li>Tell a protocol error from a tool result with <code>isError</code>, and return the right one from your own server.</li>
+      <li>Explain what goes on stdout and what goes on stderr for a stdio server, and what a Streamable HTTP request must carry in its headers.</li>
+      <li>Describe the OAuth-based authorization flow the specification defines for HTTP, and recognise its discovery requests in a server log.</li>
+      <li>Wire a server into Claude Code by configuration file, grant one MCP tool by name, and read the server status, the tool call and the token usage from a headless run.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key). The labs were run on 2.1.322, on a subscription plan.</li>
+      <li>Node.js 22. Every lab file is plain Node with no packages. Nothing is installed.</li>
+      <li>Windows PowerShell 5.1 or PowerShell 7, and <code>curl.exe</code> for the HTTP lab.</li>
+      <li>A lab folder, <code>{{LAB}}/m23</code>. All five labs work in it and each builds on the files of the one before.</li>
+      <li>About $0.03 of Haiku usage at API list price for the nine headless runs, or the same share of a subscription's 5-hour window.</li>
+    </ul>
+    <div class="recap"><h3>If you skipped the prerequisites</h3><p>The Context module shows that everything the model can use costs room in its context window, tools included: a tool's name, description and input schema are text in the prompt. Claude Code softens this for MCP servers by deferring their tools. Only the tool names and the server's instructions load when the session starts, and the full schema of a tool loads when the model searches for it. In that module's measurement of an empty folder, <code>/context</code> listed about 13.8k tokens of deferred system tools that were not counted in the total, and the list of tools changes whenever you add or remove an MCP server. This module explains where those names, descriptions and schemas come from: they are the body of one protocol message, <code>tools/list</code>, and you will write that message yourself.</p></div>
+  </div>
+
+  <div class="lesson" id="m23-l1" data-title="Roles, primitives and revisions" data-minutes="15">
+    <h3>Three roles</h3>
+    <p>The specification defines three roles. The <b>host</b> is the application the user runs: Claude Code, a desktop chat app, an IDE. The host creates one <b>client</b> for each server it connects to. A <b>server</b> is a program that offers context and actions. The rule that matters for troubleshooting is the cardinality: each client talks to exactly one server, and the host holds the clients. Five configured servers means five clients, five connections and five independent negotiations inside one host.</p>
+<figure class="diagram">
+<pre class="mermaid">flowchart TD
+  h["Host: Claude Code"]:::hot --> c1["MCP client 1"]
+  h --> c2["MCP client 2"]
+  h --> c3["MCP client 3"]
+  c1 -- "stdio" --> s1["Server: local process"]:::info
+  c2 -- "stdio" --> s2["Server: local process"]:::info
+  c3 -- "Streamable HTTP" --> s3["Server: remote service"]:::alt
+</pre>
+  <figcaption>One host, one client per server. Servers never see each other, and the host decides what crosses from one connection to another.</figcaption>
+</figure>
+    <p>The host is where policy lives. Per the architecture page, the host controls connection permissions, enforces consent, and aggregates context across clients. A server sees only what its own client sends it. It does not see the conversation, and it does not see the other servers.</p>
+    <h3>What each side can offer</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Offered by</th><th>Primitive</th><th>What it is</th><th>Who decides when it is used</th><th>Status in 2026-07-28</th></tr>
+      <tr><td>Server</td><td>Tools</td><td>Functions the model can call, each with a name, a description and a JSON Schema for its arguments</td><td>The model ("model-controlled")</td><td>Active</td></tr>
+      <tr><td>Server</td><td>Resources</td><td>Data addressed by URI that the host can read into context</td><td>The application ("application-driven")</td><td>Active</td></tr>
+      <tr><td>Server</td><td>Prompts</td><td>Named message templates with arguments</td><td>The user ("user-controlled")</td><td>Active</td></tr>
+      <tr><td>Client</td><td>Elicitation</td><td>The server asks the user for input through the client, as a form or by sending the user to a URL</td><td>The user answers or declines</td><td>Active</td></tr>
+      <tr><td>Client</td><td>Sampling</td><td>The server asks the client for a model completion</td><td>The host</td><td>Deprecated</td></tr>
+      <tr><td>Client</td><td>Roots</td><td>The server asks which directories it may work in</td><td>The host</td><td>Deprecated</td></tr>
+    </table></div>
+    <p>The quoted terms in the fourth column are the specification's own. They describe intent, and the specification adds that a host is free to expose any primitive through any interface. Around the primitives sit utilities: pagination, caching hints, progress, cancellation, argument completion and logging. Logging is deprecated in the current revision in favour of stderr for stdio servers and OpenTelemetry elsewhere.</p>
+    <h3>Revisions are dates, and there are two eras</h3>
+    <p>An MCP protocol version is a date string. This module was written from the specification pages of revision <b>2026-07-28</b>, the newest one published at modelcontextprotocol.io on 11 November 2026, and from revision <b>2025-11-25</b>, which it replaced. You need both, because the 2026-07-28 revision removed the connection handshake, and the specification itself now speaks of two eras.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Revision</th><th>Era</th><th>What changed on the wire</th></tr>
+      <tr><td><code>2024-11-05</code></td><td>Legacy</td><td>stdio and the HTTP+SSE transport</td></tr>
+      <tr><td><code>2025-03-26</code></td><td>Legacy</td><td>Streamable HTTP replaces HTTP+SSE, which is deprecated from here on</td></tr>
+      <tr><td><code>2025-06-18</code></td><td>Legacy</td><td>The <code>MCP-Protocol-Version</code> HTTP header is defined</td></tr>
+      <tr><td><code>2025-11-25</code></td><td>Legacy</td><td>Last revision with the <code>initialize</code> handshake and HTTP sessions</td></tr>
+      <tr><td><code>2026-07-28</code></td><td>Modern</td><td>Stateless: no handshake, no session. Every request carries its version and capabilities in <code>_meta</code>. <code>server/discover</code> is added. Server-to-client requests are replaced by a retry pattern.</td></tr>
+    </table></div>
+    <p>"Legacy" and "modern" are the specification's terms: legacy revisions establish a session with <code>initialize</code>, modern ones convey version, identity and capabilities as per-request metadata. An implementation that supports both is "dual-era". Most servers in the field today are legacy. Claude Code 2.1.322 is dual-era: in the labs it asked each server whether it spoke 2026-07-28 and fell back to the handshake when the server did not. Lesson 2 shows both exchanges byte for byte.</p>
+    <aside class="rule">When someone says "MCP does X", ask which revision. Sessions, the handshake, <code>ping</code> and server-initiated requests are true of 2025-11-25 and false of 2026-07-28.</aside>
+    <h3>What the current revision deprecates</h3>
+    <p>The 2026-07-28 revision introduced a deprecation registry with a minimum twelve-month window. Listed there: Roots, Sampling and Logging (earliest removal in the first revision on or after 2027-07-28), OAuth Dynamic Client Registration, and the HTTP+SSE transport. Deprecated features still work. New servers should not adopt them.</p>
+    <h3>SDKs exist, and the labs do not use them</h3>
+    <p>The MCP project publishes official SDKs: TypeScript, Python, C#, Go, Rust and Ruby at its tier 1, Java at tier 2, Swift, PHP and Kotlin at tier 3. Its documentation tells you to build servers and clients with them, and notes that each SDK adopts new protocol revisions on its own schedule. For a real server, use one: it gives you schema validation, both transports and the authorization flow. The labs here build without an SDK on purpose, so that every byte on the wire is one you wrote and nothing is installed.</p>
+  </div>
+
+  <div class="lesson" id="m23-l2" data-title="The wire: JSON-RPC, the handshake, per-request metadata" data-minutes="20">
+    <h3>Three message shapes</h3>
+    <p>Every MCP message is a JSON-RPC 2.0 object, UTF-8 encoded. There are three shapes, and the presence of <code>id</code> and <code>method</code> tells you which one you are looking at.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Shape</th><th>Has</th><th>Rules from the specification</th></tr>
+      <tr><td>Request</td><td><code>id</code>, <code>method</code>, optional <code>params</code></td><td>The id is a string or an integer, never <code>null</code>, and must not match another request the sender still has outstanding</td></tr>
+      <tr><td>Response</td><td><code>id</code> and either <code>result</code> or <code>error</code></td><td>Carries the id of the request it answers. An error has an integer <code>code</code>, a <code>message</code> and optional <code>data</code></td></tr>
+      <tr><td>Notification</td><td><code>method</code>, optional <code>params</code>, no <code>id</code></td><td>One-way. The receiver must not reply</td></tr>
+    </table></div>
+    <p>Ids are how replies are matched to requests, exactly like a DNS transaction id. Replies may arrive out of order. In Lab 3 Claude Code sent <code>tools/list</code>, <code>prompts/list</code> and <code>resources/list</code> back to back with ids 1, 2 and 3 and matched the three replies by id.</p>
+    <h3>Error codes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Code</th><th>Name</th><th>Defined by</th><th>Typical cause</th></tr>
+      <tr><td class="num">-32700</td><td>Parse error</td><td>JSON-RPC 2.0</td><td>The line was not valid JSON</td></tr>
+      <tr><td class="num">-32600</td><td>Invalid Request</td><td>JSON-RPC 2.0</td><td>Valid JSON that is not a request object</td></tr>
+      <tr><td class="num">-32601</td><td>Method not found</td><td>JSON-RPC 2.0</td><td>The server does not implement the method</td></tr>
+      <tr><td class="num">-32602</td><td>Invalid params</td><td>JSON-RPC 2.0</td><td>Unknown tool or prompt name, missing required argument, resource not found, missing required <code>_meta</code> field</td></tr>
+      <tr><td class="num">-32603</td><td>Internal error</td><td>JSON-RPC 2.0</td><td>The server failed while handling a valid request</td></tr>
+      <tr><td class="num">-32020</td><td>HeaderMismatch</td><td>MCP 2026-07-28</td><td>An HTTP header disagrees with the request body, or a required header is missing</td></tr>
+      <tr><td class="num">-32021</td><td>MissingRequiredClientCapability</td><td>MCP 2026-07-28</td><td>The request needs a capability the client did not declare</td></tr>
+      <tr><td class="num">-32022</td><td>UnsupportedProtocolVersion</td><td>MCP 2026-07-28</td><td>The server does not implement the requested version. <code>data.supported</code> lists the ones it does</td></tr>
+    </table></div>
+    <p>JSON-RPC reserves -32000 to -32099 for implementation-defined server errors. The 2026-07-28 revision splits that range: -32000 to -32019 is left to what existing implementations already use, and -32020 to -32099 belongs to the specification. Two older codes are retired and must not be emitted by a modern server: -32002 (resource not found in 2025-11-25 and earlier, now -32602) and -32042 (URL elicitation required, 2025-11-25 only).</p>
+    <h3>The legacy lifecycle: initialize, initialized, operate, shut down</h3>
+    <p>In revisions up to 2025-11-25 a connection has three phases. Initialization must be the first exchange. The client sends <code>initialize</code> with the protocol version it wants, its capabilities and its name and version. The server answers with the version it will speak, its own capabilities, its name and version and optional <code>instructions</code>. The client then sends the <code>notifications/initialized</code> notification, and normal operation starts. This is the handshake Claude Code 2.1.322 sent to a handshake-only server in Lab 3, unedited apart from line breaks:</p>
+    <pre data-cap="output"><code>&lt;&lt; {"method":"initialize","params":{"protocolVersion":"2025-11-25",
+     "capabilities":{"roots":{"listChanged":true},"elicitation":{"form":{},"url":{}}},
+     "clientInfo":{"name":"claude-code","title":"Claude Code","version":"2.1.322",
+       "description":"Anthropic's agentic coding tool","websiteUrl":"https://claude.com/claude-code"}},
+     "jsonrpc":"2.0","id":0}
+&gt;&gt; {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-11-25",
+     "capabilities":{"tools":{}},"serverInfo":{"name":"lab-inventory","version":"0.1.0"}}}
+&lt;&lt; {"jsonrpc":"2.0","method":"notifications/initialized"}
+&lt;&lt; {"method":"tools/list","jsonrpc":"2.0","id":1}</code></pre>
+    <p><b>Version negotiation</b> is one round. The client sends a version it supports, which should be its latest. If the server supports that version it must answer with the same string. Otherwise it answers with another version it supports, which should be its latest, and a client that cannot speak that one should disconnect. There is no further bargaining.</p>
+    <p><b>Capability negotiation</b> is a declaration by each side, and each side may only use what the other declared. The client above declares <code>roots</code> and <code>elicitation</code> with both modes. The server declares only <code>tools</code>, so the client never asked it for prompts or resources. A sub-flag refines a capability: <code>listChanged</code> means "I will notify you when this list changes", and <code>subscribe</code> on <code>resources</code> means individual resources can be watched.</p>
+    <p><b>Shutdown</b> has no message. The transport ends the connection: on stdio the client closes the server's stdin and waits for it to exit, and on HTTP it closes the connection. Claude Code's documentation states what it does to a stdio server: on Windows it closes stdin and ends the process tree if the server is still running 300 milliseconds later. On macOS and Linux it sends SIGINT, then SIGTERM 100 milliseconds later, then SIGKILL after a further 400 milliseconds. A server that needs to flush state has that long.</p>
+    <h3>The modern shape: every request is self-contained</h3>
+    <p>Revision 2026-07-28 removes <code>initialize</code> and <code>notifications/initialized</code>. The protocol is declared stateless: a server must not rely on an earlier request on the same connection for the version, the capabilities or the identity of the client. Each request carries them in <code>params._meta</code> under reserved keys:</p>
+    <div class="tablewrap"><table>
+      <tr><th><code>_meta</code> key</th><th>Required</th><th>Meaning</th></tr>
+      <tr><td><code>io.modelcontextprotocol/protocolVersion</code></td><td>Yes</td><td>The version this request is written in</td></tr>
+      <tr><td><code>io.modelcontextprotocol/clientCapabilities</code></td><td>Yes</td><td>The client capabilities relevant to this request</td></tr>
+      <tr><td><code>io.modelcontextprotocol/clientInfo</code></td><td>No, but clients should send it</td><td>Client name and version, for display and logs only</td></tr>
+      <tr><td><code>io.modelcontextprotocol/logLevel</code></td><td>No</td><td>Opts this request into log notifications at that level</td></tr>
+      <tr><td><code>progressToken</code></td><td>No</td><td>Opts this request into progress notifications</td></tr>
+    </table></div>
+    <p>A request without a required key is malformed and gets -32602. A version the server does not implement gets -32022 with the list of versions it does implement, and the client retries with one of those. Every result carries a required <code>resultType</code>, <code>"complete"</code> for an ordinary result, and the server should name itself in the result's <code>_meta</code> under <code>io.modelcontextprotocol/serverInfo</code>. A new method, <code>server/discover</code>, returns the supported versions, capabilities and instructions in one reply. Servers must implement it. Clients may call it or skip it. This is Claude Code 2.1.322 talking to the dual-era server you build in Lab 2. There is no handshake anywhere in the capture:</p>
+    <pre data-cap="output"><code>&lt;&lt; {"jsonrpc":"2.0","id":"server-discover-probe-1","method":"server/discover","params":{"_meta":{
+     "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+     "io.modelcontextprotocol/clientInfo":{"name":"claude-code","title":"Claude Code","version":"2.1.322", ...},
+     "io.modelcontextprotocol/clientCapabilities":{"roots":{"listChanged":true},
+       "elicitation":{"form":{},"url":{}},"extensions":{"io.modelcontextprotocol/tasks":{}}}}}}
+&gt;&gt; {"jsonrpc":"2.0","id":"server-discover-probe-1","result":{"supportedVersions":["2026-07-28"],
+     "capabilities":{"tools":{},"resources":{},"prompts":{}},"instructions":"Lab inventory of three hosts. ...",
+     "resultType":"complete","_meta":{"io.modelcontextprotocol/serverInfo":{"name":"lab-inventory","version":"0.2.0"}},
+     "ttlMs":60000,"cacheScope":"private"}}
+&lt;&lt; {"method":"tools/call","params":{"name":"ping_host","arguments":{"host":"db-01"},"_meta":{
+     "io.modelcontextprotocol/protocolVersion":"2026-07-28", "io.modelcontextprotocol/clientInfo":{...},
+     "io.modelcontextprotocol/clientCapabilities":{"roots":{"listChanged":true},"elicitation":{"form":{},"url":{}}},
+     "claudecode/toolUseId":"toolu_01M8D5...","progressToken":3}},"jsonrpc":"2.0","id":3}
+&gt;&gt; {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"db-01 is down"}],
+     "resultType":"complete","_meta":{"io.modelcontextprotocol/serverInfo":{"name":"lab-inventory","version":"0.2.0"}}}}</code></pre>
+    <p>Three things to read off it. The metadata repeats on every request, 442 characters on the call above, which is the price of statelessness. A client may add its own <code>_meta</code> keys under its own prefix, as Claude Code does with <code>claudecode/toolUseId</code>. And <code>clientInfo</code> and <code>serverInfo</code> are self-reported: the specification says not to change behaviour or make a security decision on either.</p>
+    <h3>How a client finds out which era a server speaks</h3>
+<figure class="diagram">
+<pre class="mermaid">sequenceDiagram
+  participant C as Client
+  participant S as Server
+  C->>S: server/discover with _meta
+  alt Modern or dual-era server
+    S-->>C: supportedVersions, capabilities
+    C->>S: tools/list with _meta
+    S-->>C: result, resultType complete
+  else Handshake-only server
+    S-->>C: error -32601
+    C->>S: initialize
+    S-->>C: version, capabilities
+    C-)S: notifications/initialized
+    C->>S: tools/list
+    S-->>C: result
+  end
+</pre>
+  <figcaption>The stdio probe. A discover result or a recognised modern error keeps the client modern. Any other error, or silence, sends it back to the handshake.</figcaption>
+</figure>
+    <p>On stdio the specification tells a dual-era client to send <code>server/discover</code> first. A discover result means modern. A recognised modern error such as -32022 also means modern, with a different version. Any other error, or no answer within a reasonable time, means legacy, and the client falls back to <code>initialize</code>. The fallback must not depend on one specific error code, because legacy servers answer an unknown first request with whatever they like, or not at all. On HTTP the client sends a modern request and inspects the body of a 400 before falling back.</p>
+    <p>Claude Code's documentation describes two client runtimes. The newer one, built on version 2 of the MCP TypeScript SDK, adds revision 2026-07-28 and is the default in current versions. It asks stdio, HTTP and claude.ai connector servers whether they support the newer revision and uses it with those that do. Two environment variables control this: <code>MCP_SDK_GENERATION</code> (<code>v1</code> or <code>v2</code>) pins the runtime, and <code>MCP_PROTOCOL_NEGOTIATION</code> (<code>legacy</code> or <code>auto</code>) turns the probe off or on. With the second one unset, Claude Code can skip the probe for a stdio server for 7 days, for example after the server exited when it was asked.</p>
+    <aside class="trap">A hand-written legacy server that answers every unknown method with a success, or that hangs on one, breaks the probe: the client either believes it is modern or waits out a timeout on every start. Answer what you do not implement with error -32601, promptly. Lab 1's 38-line server does, and Claude Code fell back to the handshake in one round trip.</aside>
+    <aside class="rule">Write new servers dual-era for now: answer <code>initialize</code> for legacy clients, and serve any request that carries <code>io.modelcontextprotocol/protocolVersion</code> statelessly. Lab 2 does it in under 100 lines.</aside>
+  </div>
+
+  <div class="lesson" id="m23-l3" data-title="Tools, resources and prompts in depth" data-minutes="20">
+    <h3>tools/list: the message that fills the context window</h3>
+    <p>A server that declares the <code>tools</code> capability must answer <code>tools/list</code>. The reply is an array of tool definitions. This is the complete definition of one tool from the lab server, as it travelled:</p>
+    <pre data-cap="output"><code>{"name":"list_hosts",
+ "description":"List lab inventory hosts, optionally filtered by state and site. Read-only.",
+ "inputSchema":{"type":"object","additionalProperties":false,
+   "properties":{
+     "state":{"type":"string","enum":["up","down"],"description":"Only hosts in this state"},
+     "site":{"type":"string","description":"Only hosts at this site, for example east"},
+     "limit":{"type":"integer","minimum":1,"maximum":50,"description":"Maximum rows to return"}}},
+ "annotations":{"readOnlyHint":true}}</code></pre>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Required</th><th>What the specification says</th></tr>
+      <tr><td><code>name</code></td><td>Yes</td><td>Unique within the server. Should be 1 to 128 characters from letters, digits, underscore, hyphen and dot. Case-sensitive</td></tr>
+      <tr><td><code>title</code></td><td>No</td><td>A display name for humans</td></tr>
+      <tr><td><code>description</code></td><td>Expected</td><td>What the tool does. This is the text the model chooses by</td></tr>
+      <tr><td><code>inputSchema</code></td><td>Yes</td><td>A JSON Schema object, 2020-12 dialect unless <code>$schema</code> says otherwise. Never <code>null</code>. For a tool with no parameters, <code>{"type":"object","additionalProperties":false}</code> is the recommended form</td></tr>
+      <tr><td><code>outputSchema</code></td><td>No</td><td>A JSON Schema for <code>structuredContent</code>. If present, the server must return structured results that conform to it</td></tr>
+      <tr><td><code>annotations</code></td><td>No</td><td>Behaviour hints: <code>readOnlyHint</code>, <code>destructiveHint</code>, <code>idempotentHint</code>, <code>openWorldHint</code>. Clients must treat them as untrusted unless the server is trusted</td></tr>
+      <tr><td><code>icons</code>, <code>_meta</code></td><td>No</td><td>Display icons, and a free metadata object for extensions</td></tr>
+    </table></div>
+    <p>The name, the description and the schema with its per-property descriptions are everything the model knows about your tool. The schema is also the contract the model fills in: <code>enum</code>, <code>required</code>, <code>minimum</code> and a one-line description per property do more for call accuracy than a long tool description. The specification asks servers to return tools in a deterministic order, so that a client can cache the list and the model provider's prompt cache keeps hitting.</p>
+    <p>Claude Code reads a few extra keys from a tool's <code>_meta</code> and <code>annotations</code>, documented on its MCP page:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Key in the <code>tools/list</code> entry</th><th>Effect in Claude Code</th></tr>
+      <tr><td><code>annotations.readOnlyHint: true</code></td><td>The call may run in parallel with other read-only calls, and may be repeated once if an HTTP connection closed before the answer arrived</td></tr>
+      <tr><td><code>annotations.idempotentHint: true</code></td><td>The call may be repeated once after a dropped connection</td></tr>
+      <tr><td><code>_meta["anthropic/alwaysLoad"]: true</code></td><td>The tool's full definition loads at session start instead of being deferred</td></tr>
+      <tr><td><code>_meta["anthropic/maxResultSizeChars"]</code></td><td>Raises the size at which a text result is saved to a file instead of entering the conversation, up to 500,000 characters</td></tr>
+      <tr><td><code>_meta["anthropic/requiresUserInteraction"]: true</code></td><td>A permission prompt on every call, in every permission mode. Allow rules do not skip it</td></tr>
+    </table></div>
+    <p>Claude Code also cuts long text: server instructions and the description of a tool that loads at session start are cut at 4,096 characters, and the description of a tool loaded through tool search at 16,384. Put the words that matter first.</p>
+    <h3>tools/call and what comes back</h3>
+    <p>The request names the tool and passes an <code>arguments</code> object. The result has a <code>content</code> array of typed items, and optionally <code>structuredContent</code> and <code>isError</code>.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Content <code>type</code></th><th>Carries</th></tr>
+      <tr><td><code>text</code></td><td><code>text</code>: a string</td></tr>
+      <tr><td><code>image</code></td><td><code>data</code> (base64) and <code>mimeType</code></td></tr>
+      <tr><td><code>audio</code></td><td><code>data</code> (base64) and <code>mimeType</code></td></tr>
+      <tr><td><code>resource_link</code></td><td><code>uri</code>, <code>name</code>, optional <code>description</code> and <code>mimeType</code>: a pointer the client may read later</td></tr>
+      <tr><td><code>resource</code></td><td>An embedded resource: <code>uri</code>, <code>mimeType</code> and <code>text</code> or <code>blob</code></td></tr>
+    </table></div>
+    <p><code>structuredContent</code> is any JSON value and is meant for programs. A tool that returns it should also put the same data, serialised, in a <code>text</code> item, for clients that only read <code>content</code>. Every content item may carry <code>annotations</code> with <code>audience</code>, <code>priority</code> and <code>lastModified</code>.</p>
+    <h3>Two kinds of failure, and why the difference matters</h3>
+<figure class="diagram">
+<pre class="mermaid">flowchart LR
+  a["tools/call arrives"] --> b{"Well formed, tool exists?"}
+  b -- "no" --> c["JSON-RPC error -32602"]:::bad
+  b -- "yes" --> d{"Tool ran and succeeded?"}
+  d -- "no" --> e["Result, isError true"]:::hot
+  d -- "yes" --> f["Result with content"]:::good
+</pre>
+  <figcaption>A failure the model can fix by changing its arguments is a result. A failure of the request itself is a protocol error.</figcaption>
+</figure>
+    <p>The specification separates <b>protocol errors</b> from <b>tool execution errors</b>. An unknown tool name, a request that does not match the call schema, or a server fault is a JSON-RPC <code>error</code>. An API failure, an input validation failure or a business-rule failure is an ordinary <code>result</code> with <code>isError: true</code> and a text that says what was wrong. The reason is the reader: clients should pass tool execution errors to the model so it can correct itself, and may or may not pass protocol errors on. These are the two replies from Lab 2, for a host that does not exist and for a tool that does not exist:</p>
+    <pre data-cap="output"><code>{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text",
+  "text":"No host named mail-09. Known hosts: web-01, web-02, db-01."}],"isError":true}}
+{"jsonrpc":"2.0","id":2,"error":{"code":-32602,"message":"Unknown tool: reboot_host"}}</code></pre>
+    <aside class="rule">Write the <code>isError</code> text for the model: say which argument was wrong and what a valid value looks like. The first reply above gives the model the three valid host names, and its next call can be right.</aside>
+    <aside class="trap">Returning a JSON-RPC error for a bad argument value hides the detail from the model in clients that do not forward protocol errors, and the model retries blind. Returning a successful result with the text "error: ..." and no <code>isError</code> is worse: the client and the model both count it as a success.</aside>
+    <h3>List changes, pagination and caching</h3>
+    <p>A server that declared <code>tools: {"listChanged": true}</code> may announce a change with the notification <code>notifications/tools/list_changed</code>, and the client then calls <code>tools/list</code> again. In the legacy era the server sends it on the open connection. In 2026-07-28 nothing is sent unasked: the client opens a long-lived <code>subscriptions/listen</code> request and opts in to <code>toolsListChanged</code>, and change notifications arrive on that request's stream. Resources and prompts have the same notification under their own names. Claude Code refetches the list when the notification arrives, and in a <code>-p</code> run it refreshes only the tool list.</p>
+    <p>All list methods paginate the same way. A reply may carry <code>nextCursor</code>, an opaque string. The client repeats the request with <code>params.cursor</code> set to it until a reply has no <code>nextCursor</code>. The server chooses the page size and the client must not assume one. In 2026-07-28 list replies and <code>resources/read</code> also carry <code>ttlMs</code>, a freshness hint in milliseconds, and <code>cacheScope</code>, <code>"public"</code> or <code>"private"</code>, which says whether a shared intermediary may cache the reply.</p>
+    <h3>Resources</h3>
+    <p>A resource is data with a URI. <code>resources/list</code> returns entries with <code>uri</code>, <code>name</code>, and optional <code>title</code>, <code>description</code> and <code>mimeType</code>. <code>resources/read</code> takes a <code>uri</code> and returns <code>contents</code>, an array whose items carry the <code>uri</code>, a <code>mimeType</code> and either <code>text</code> or base64 <code>blob</code>. <code>resources/templates/list</code> returns URI templates such as <code>file:///{path}</code> for resources that are parameterised. A resource that does not exist is error -32602 in 2026-07-28 (-32002 in earlier revisions, which clients should still accept), never an empty <code>contents</code> array. Watching a resource for changes was <code>resources/subscribe</code> in the legacy era and is a <code>resourceSubscriptions</code> filter on <code>subscriptions/listen</code> now. The server then sends <code>notifications/resources/updated</code> with the URI.</p>
+    <h3>Prompts</h3>
+    <p>A prompt is a named template. <code>prompts/list</code> returns entries with <code>name</code>, optional <code>title</code> and <code>description</code>, and <code>arguments</code>, each with <code>name</code>, <code>description</code> and <code>required</code>. <code>prompts/get</code> takes the name and an <code>arguments</code> object and returns <code>messages</code>, each with a <code>role</code> and a content item. An unknown prompt name or a missing required argument is error -32602.</p>
+    <h3>Who controls what, and where it shows up in Claude Code</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Primitive</th><th>Controlled by</th><th>In Claude Code</th></tr>
+      <tr><td>Tool</td><td>The model</td><td>Appears as <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>. The model calls it when it judges it useful, subject to your permission rules</td></tr>
+      <tr><td>Resource</td><td>The application</td><td>You reference one with <code>@server:uri</code> in a prompt and it is attached. Claude Code also gives the model tools to list and read resources when a server offers them</td></tr>
+      <tr><td>Prompt</td><td>The user</td><td>Appears as a command, <code>/mcp__&lt;server&gt;__&lt;prompt&gt;</code>, with arguments separated by spaces</td></tr>
+    </table></div>
+    <p>The practical consequence: only tools cost context without anyone asking, and only tools run without the user typing something. A resource or a prompt enters the conversation when a person chose it.</p>
+  </div>
+
+  <div class="lesson" id="m23-l4" data-title="Transports: stdio and Streamable HTTP" data-minutes="15">
+    <h3>A transport is a binding</h3>
+    <p>The messages mean the same thing on every transport. A transport only defines how a message is framed and delivered, where request metadata travels, and how cancellation and shutdown are signalled. The specification defines two standard ones and allows custom ones.</p>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>stdio</th><th>Streamable HTTP</th></tr>
+      <tr><td>Who starts the server</td><td>The client launches it as a subprocess</td><td>It runs on its own and serves many clients</td></tr>
+      <tr><td>Framing</td><td>One JSON-RPC message per line. No embedded newlines</td><td>One JSON-RPC message per HTTP POST body</td></tr>
+      <tr><td>Reply</td><td>A line on stdout, matched by id</td><td>A JSON body, or a Server-Sent Events stream scoped to that request</td></tr>
+      <tr><td>Metadata</td><td>In the message body only</td><td>In the body, and mirrored into HTTP headers</td></tr>
+      <tr><td>Cancel a request</td><td>Send <code>notifications/cancelled</code> with the request id</td><td>Close the response stream (2026-07-28)</td></tr>
+      <tr><td>Shutdown</td><td>Client closes stdin, then waits, then kills</td><td>Close the connection</td></tr>
+      <tr><td>Credentials</td><td>From the environment of the process</td><td><code>Authorization</code> header on every request</td></tr>
+    </table></div>
+    <h3>stdio: stdout is the wire</h3>
+    <p>The rules are short. The server reads messages from stdin and writes messages to stdout, one per line, and a message must not contain a newline. The server must not write anything to stdout that is not a valid MCP message. It may write anything it likes to stderr, and the client may capture, forward or ignore that, and should not treat stderr output as a sign of failure. The client must not write anything to stdin that is not a valid message.</p>
+    <p>So stdout belongs to the protocol and stderr is the log. Every stray <code>console.log</code>, a startup banner, a progress line from a library, or a shell profile that prints a greeting lands in the middle of the message stream. What happens next depends on the client. The test client you write in Lab 2 parses every line as JSON and stops on the first one that is not. Claude Code 2.1.322 was more forgiving in Lab 3: a server that printed one banner line before its first reply still connected and worked. That tolerance is not in the specification, so do not build on it.</p>
+    <aside class="trap">In Node, <code>console.log</code> writes to stdout and <code>console.error</code> writes to stderr. In a stdio server use only <code>console.error</code> or <code>process.stderr.write</code> for diagnostics, and check any library you import for a habit of printing to stdout.</aside>
+    <p><code>JSON.stringify</code> without an indent argument never emits a raw newline, because newlines inside strings are escaped as <code>\n</code>. Pretty-printed JSON breaks the framing: each line of it is read as a separate, invalid message.</p>
+    <p>Claude Code sets <code>CLAUDE_PROJECT_DIR</code> in the environment of a stdio server it starts, so the server can find the project root without trusting its working directory. In 2026-07-28 a stdio process is explicitly not a session: the client may interleave unrelated requests on it, and may restart the process and retry.</p>
+    <h3>Streamable HTTP, 2026-07-28 shape</h3>
+    <p>The server exposes one path, the MCP endpoint, for example <code>https://example.com/mcp</code>, and it accepts POST. The rules for the client:</p>
+    <ul>
+      <li>Every message is its own POST. The body is one JSON-RPC request or notification.</li>
+      <li>The <code>Accept</code> header lists both <code>application/json</code> and <code>text/event-stream</code>, because the server chooses per request which one to answer with and the client must handle both.</li>
+      <li><code>MCP-Protocol-Version</code> is required on every POST and must equal the version in the body's <code>_meta</code>.</li>
+      <li><code>Mcp-Method</code> is required and mirrors <code>method</code>. <code>Mcp-Name</code> is required on <code>tools/call</code>, <code>resources/read</code> and <code>prompts/get</code> and mirrors <code>params.name</code> or <code>params.uri</code>.</li>
+    </ul>
+    <p>The headers exist so that a load balancer or gateway can route and rate-limit without parsing JSON. Because two sources of truth invite abuse, the server must compare them with the body and reject a mismatch.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Situation</th><th>HTTP status</th><th>Body</th></tr>
+      <tr><td>Request handled</td><td class="num">200</td><td>The JSON-RPC response, or an SSE stream that ends with it</td></tr>
+      <tr><td>Notification accepted</td><td class="num">202</td><td>Empty</td></tr>
+      <tr><td>Header missing or different from the body</td><td class="num">400</td><td>Error -32020</td></tr>
+      <tr><td>Version not implemented</td><td class="num">400</td><td>Error -32022 with <code>data.supported</code></td></tr>
+      <tr><td>Method not implemented</td><td class="num">404</td><td>Error -32601</td></tr>
+      <tr><td><code>Origin</code> header present and not allowed</td><td class="num">403</td><td>Optional</td></tr>
+      <tr><td>GET or DELETE on the endpoint</td><td class="num">405</td><td>Empty</td></tr>
+    </table></div>
+    <p>When the server answers with an SSE stream, it may send notifications that relate to that request, such as progress, before the final response, and the response ends the stream. It must not send requests of its own. A broken stream loses the request in flight, and the client sends it again as a new request with a new id. This is the request Claude Code sent to the lab listener in Lab 4, as the listener logged it, and a hand-made one with a wrong header:</p>
+    <pre data-cap="output"><code>[http] POST /mcp auth=present version=2026-07-28 method=tools/call session=-
+
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+
+{"jsonrpc":"2.0","id":2,"error":{"code":-32020,"message":"Header mismatch: MCP-Protocol-Version and Mcp-Method must match the body"}}</code></pre>
+    <h3>What the legacy shape did differently</h3>
+    <p>Revisions 2025-03-26 to 2025-11-25 used the same single endpoint with more machinery, all of it removed in 2026-07-28. You will still meet it in servers and in packet captures.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Mechanism (2025-11-25)</th><th>How it worked</th><th>In 2026-07-28</th></tr>
+      <tr><td>Session</td><td>The server could return an <code>MCP-Session-Id</code> header with the <code>initialize</code> result. The client then sent it on every request, and HTTP DELETE ended the session</td><td>Removed. A server ignores the header and answers DELETE with 405</td></tr>
+      <tr><td>Standalone stream</td><td>The client could open an SSE stream with GET, for messages the server started</td><td>Removed. GET gets 405. Change notifications come from <code>subscriptions/listen</code></td></tr>
+      <tr><td>Server-to-client requests</td><td>The server could send sampling, elicitation and roots requests on a stream</td><td>Replaced: the server returns a result with <code>resultType: "input_required"</code> and the client retries the request with the answers</td></tr>
+      <tr><td>Resumability</td><td>SSE event ids and <code>Last-Event-ID</code> let a client resume a broken stream</td><td>Removed</td></tr>
+      <tr><td>Version header</td><td><code>MCP-Protocol-Version</code> on every request after the handshake</td><td>Kept, and now checked against the body</td></tr>
+    </table></div>
+    <h3>The older HTTP+SSE transport</h3>
+    <p>The transport of revision 2024-11-05 used two endpoints, one SSE stream and one POST target. It has been deprecated since 2025-03-26 and the current registry lists it for removal. Claude Code still connects to such servers: its documentation calls the SSE transport deprecated, and from version 2.1.265 a server added with <code>--transport http</code> is tried over Streamable HTTP first and switched to SSE when it does not accept that. Claude Code's configuration also accepts a WebSocket server type, which is outside the two standard transports.</p>
+    <h3>Running an HTTP server on your own machine</h3>
+    <p>The specification's security rules for Streamable HTTP are three, and they are the same ones you would apply to any local admin listener. Validate the <code>Origin</code> header and answer 403 when it is present and not one you expect, because a web page in the user's browser can otherwise reach a local port by DNS rebinding. Bind to 127.0.0.1 and not to all interfaces when the server is local. Require authentication on every connection. Lab 4's listener does all three in 40 lines.</p>
+  </div>
+
+  <div class="lesson" id="m23-l5" data-title="Authorization" data-minutes="15">
+    <h3>What the specification requires</h3>
+    <p>Authorization is optional in MCP and defined at the transport level. Where it is used, an HTTP transport should follow the specification's OAuth-based scheme. A stdio transport should not: the server takes its credentials from its environment. That one sentence is the whole stdio story, and it is why a stdio server's configuration entry has an <code>env</code> block.</p>
+    <p>For HTTP the specification assigns OAuth 2.1 roles. The MCP server is a <b>resource server</b>: it accepts access tokens and checks them. The MCP client is an <b>OAuth client</b> acting for the user. The <b>authorization server</b> issues the tokens and may be a different system altogether, such as your identity provider.</p>
+<figure class="diagram">
+<pre class="mermaid">sequenceDiagram
+  participant C as MCP client
+  participant M as MCP server
+  participant A as Authorization server
+  C->>M: MCP request, no token
+  M-->>C: 401 with WWW-Authenticate
+  C->>M: GET protected resource metadata
+  M-->>C: authorization server address
+  C->>A: GET server metadata
+  A-->>C: endpoints
+  C->>A: authorize, PKCE and resource
+  A-->>C: code, then access token
+  C->>M: MCP request with Bearer token
+  M-->>C: result
+</pre>
+  <figcaption>Discovery starts from a 401. The client learns where to authorise from the MCP server's own metadata, never from configuration it has to be given.</figcaption>
+</figure>
+    <div class="tablewrap"><table>
+      <tr><th>Step</th><th>Standard</th><th>Requirement in revision 2026-07-28</th></tr>
+      <tr><td>Find the authorization server</td><td>OAuth 2.0 Protected Resource Metadata (RFC 9728)</td><td>MCP servers must implement it and clients must use it. The 401's <code>WWW-Authenticate</code> header points to the metadata document</td></tr>
+      <tr><td>Read its endpoints</td><td>Authorization Server Metadata (RFC 8414) or OpenID Connect Discovery</td><td>The authorization server must provide at least one. Clients must support both</td></tr>
+      <tr><td>Get a client id</td><td>Client ID Metadata Documents, pre-registration, or Dynamic Client Registration (RFC 7591)</td><td>Metadata documents are preferred. Dynamic registration is deprecated and kept for older authorization servers</td></tr>
+      <tr><td>Authorise</td><td>OAuth 2.1 authorization code flow with PKCE</td><td>The client records the issuer it expects and must check the <code>iss</code> value in the response when one is present (RFC 9207)</td></tr>
+      <tr><td>Name the target</td><td>Resource Indicators (RFC 8707)</td><td>The client must send <code>resource</code>, the canonical URI of the MCP server, in both the authorization request and the token request</td></tr>
+      <tr><td>Use the token</td><td>Bearer token usage (RFC 6750)</td><td><code>Authorization: Bearer ...</code> on every HTTP request. Never in the query string</td></tr>
+    </table></div>
+    <p>Two server-side rules close the loop. The MCP server must check that a token was issued for it as the audience, which is what the <code>resource</code> parameter makes possible, and must answer an invalid or expired token with 401. And it must not pass the token it received on to another service: a server that calls an upstream API needs its own credential for that. The first rule stops a token minted for one server being replayed at another. The second stops your MCP server from becoming a proxy that launders tokens.</p>
+    <h3>The discovery sequence, observed</h3>
+    <p>In Lab 4 the lab listener requires a static bearer token and implements none of the OAuth scheme. When Claude Code 2.1.322 was pointed at it with no <code>Authorization</code> header configured, it received the 401 and went looking for the metadata. This is the listener's log of what it asked for:</p>
+    <pre data-cap="output"><code>[http] POST /mcp auth=absent version=2026-07-28 method=server/discover session=-
+[http] GET /.well-known/oauth-authorization-server auth=absent ...
+[http] GET /.well-known/openid-configuration auth=absent ...
+[http] GET /.well-known/oauth-protected-resource/mcp auth=absent ...
+[http] GET /.well-known/oauth-protected-resource auth=absent ...
+[http] POST /register auth=absent ...</code></pre>
+    <p>Read it against the table: protected resource metadata at the path-specific location and at the root, both forms of authorization server metadata, then an attempt at dynamic registration. The order of the four GET requests differed between two runs, so do not read a sequence into it. Every one of them got a 404 from the lab listener and the server ended up with status <code>failed</code>. A real protected server answers the first request with a JSON document that names its authorization server.</p>
+    <h3>How Claude Code handles each case</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Server expects</th><th>What you configure</th><th>Notes from the Claude Code MCP page</th></tr>
+      <tr><td>OAuth</td><td>Nothing beyond the URL. Sign in with <code>/mcp</code> in a session, or <code>claude mcp login &lt;name&gt;</code> in a shell. <code>claude mcp logout &lt;name&gt;</code> clears the stored credentials</td><td>Tokens are stored and refreshed automatically. <code>--client-id</code>, <code>--client-secret</code> and <code>--callback-port</code> on <code>claude mcp add</code> cover servers that need a pre-registered client</td></tr>
+      <tr><td>A static token or API key in a header</td><td><code>--header "Authorization: Bearer ..."</code> on <code>claude mcp add</code>, or a <code>headers</code> object in the JSON entry</td><td>If the server rejects a configured <code>Authorization</code> header, Claude Code reports the connection as failed and does not fall back to OAuth</td></tr>
+      <tr><td>A header computed at connect time</td><td><code>headersHelper</code>: a command whose output is merged into the headers</td><td>For short-lived tokens, Kerberos or internal single sign-on</td></tr>
+      <tr><td>A stdio server needing a secret</td><td><code>--env KEY=value</code>, or an <code>env</code> object in the JSON entry</td><td>A stdio server inherits your shell environment unless <code>CLAUDE_CODE_MCP_ALLOWLIST_ENV=1</code> limits it to a safe baseline plus its configured <code>env</code></td></tr>
+    </table></div>
+    <p>Configuration values may reference environment variables as <code>${VAR}</code> or <code>${VAR:-default}</code> in <code>command</code>, <code>args</code>, <code>env</code>, <code>url</code> and <code>headers</code>, which keeps a token out of a file you commit. One guard is worth knowing before it surprises you: in a remote server's <code>url</code> and <code>headers</code>, Claude Code reads its own and your cloud provider's credential variables as empty, for example <code>ANTHROPIC_API_KEY</code>, so that a project's <code>.mcp.json</code> cannot send them to a server it names. Use a variable name of your own for an MCP token.</p>
+    <aside class="trap">A <code>claude -p</code> run has no <code>/mcp</code> panel and cannot run the OAuth flow. A server that needs sign-in is simply unavailable in a headless job until someone has signed in from an interactive session or with <code>claude mcp login</code> on that machine, under that user.</aside>
+    <aside class="rule">A static bearer token in a header is a shared secret with no audience, no expiry and no user. It is fine for a listener on 127.0.0.1 in a lab. For anything other people reach over a network, put the server behind the OAuth scheme, which an SDK implements for you.</aside>
+  </div>
+
+  <div class="lesson" id="m23-l6" data-title="MCP in Claude Code" data-minutes="20">
+    <h3>Where a server is configured</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Scope</th><th>Stored in</th><th>Loads in</th><th>Shared</th></tr>
+      <tr><td>Local (the default)</td><td><code>~/.claude.json</code>, under the project's path</td><td>That project only</td><td>No</td></tr>
+      <tr><td>Project</td><td><code>.mcp.json</code> in the project root</td><td>That project only</td><td>Yes, through version control</td></tr>
+      <tr><td>User</td><td><code>~/.claude.json</code></td><td>All your projects</td><td>No</td></tr>
+    </table></div>
+    <p>When the same server name is defined in more than one place, Claude Code connects once and uses the whole entry from the highest-precedence source, in this order: local, project, user, then servers provided by plugins, then claude.ai connectors. Fields are not merged across scopes. A server an organisation provides through managed settings ranks above all of them.</p>
+    <p>A project <code>.mcp.json</code> is code from the repository that starts processes on your machine, so an interactive session asks for approval before it uses those servers. A <code>claude -p</code> run cannot show that prompt and loads them without asking.</p>
+    <aside class="trap">Running <code>claude -p</code> in a repository you have not read starts every stdio server its <code>.mcp.json</code> names, as you. Pass <code>--strict-mcp-config</code>, which makes Claude Code use only the servers you give it with <code>--mcp-config</code>, or exclude project settings with <code>--setting-sources</code>. Every lab in this module passes both.</aside>
+    <h3>The entry format</h3>
+    <pre data-file=".mcp.json"><code>{
+  "mcpServers": {
+    "inventory": {
+      "command": "node",
+      "args": ["stdio.mjs"],
+      "env": { "INVENTORY_FILE": "hosts.csv" }
+    },
+    "inventory-http": {
+      "type": "http",
+      "url": "http://127.0.0.1:8765/mcp",
+      "headers": { "Authorization": "Bearer ${LAB_MCP_TOKEN}" }
+    }
+  }
+}</code></pre>
+    <p>An entry with no <code>type</code> is a stdio server. An entry with a <code>url</code> needs <code>"type": "http"</code> (or <code>sse</code> or <code>ws</code>), and <code>streamable-http</code> is accepted as an alias for <code>http</code>. A <code>url</code> with no <code>type</code> is a configuration error and the server is skipped. Optional per-server fields include <code>timeout</code> in milliseconds for tool calls and <code>alwaysLoad</code>. The same JSON shape is what <code>--mcp-config</code> takes, as a file path or a string.</p>
+    <h3>The claude mcp subcommands</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Command</th><th>Does</th></tr>
+      <tr><td><code>claude mcp add [-s scope] [-t transport] [-e KEY=value] [-H header] &lt;name&gt; &lt;commandOrUrl&gt; [args...]</code></td><td>Adds a server. Transport is <code>stdio</code>, <code>sse</code> or <code>http</code> and defaults to stdio. Scope is <code>local</code>, <code>user</code> or <code>project</code> and defaults to local. Put <code>--</code> before a stdio server's own command line</td></tr>
+      <tr><td><code>claude mcp add-json &lt;name&gt; &lt;json&gt;</code></td><td>Adds a server from a JSON entry</td></tr>
+      <tr><td><code>claude mcp list</code>, <code>claude mcp get &lt;name&gt;</code></td><td>Lists servers with a health check, or shows one</td></tr>
+      <tr><td><code>claude mcp remove &lt;name&gt;</code></td><td>Removes a server</td></tr>
+      <tr><td><code>claude mcp login &lt;name&gt;</code>, <code>claude mcp logout &lt;name&gt;</code></td><td>Runs or clears OAuth sign-in for a remote server</td></tr>
+      <tr><td><code>claude mcp reset-project-choices</code></td><td>Forgets which <code>.mcp.json</code> servers you approved or rejected in this project</td></tr>
+      <tr><td><code>claude mcp add-from-claude-desktop</code></td><td>Imports servers from Claude Desktop (Mac and WSL only)</td></tr>
+      <tr><td><code>claude mcp serve</code></td><td>Runs Claude Code itself as a stdio MCP server for another client</td></tr>
+    </table></div>
+    <p>Inside a session, <code>/mcp</code> shows each server's status and is where you sign in, reconnect or disable one. The labs never use <code>claude mcp add</code>, because at local or user scope it writes to <code>~/.claude.json</code>, outside the lab folder. They pass a config file instead.</p>
+    <h3>Tool names and permission rules</h3>
+    <p>Claude Code exposes every MCP tool to the model as <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>, where the server part is the name from your configuration, not the name the server reports about itself. Characters such as a dot or a space in the server name become underscores. This is the specification's advice in practice: tool names are only unique within one server, so an aggregating client should prefix them and should not rely on <code>serverInfo.name</code>.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Rule</th><th>Matches</th></tr>
+      <tr><td><code>mcp__inventory__ping_host</code></td><td>One tool</td></tr>
+      <tr><td><code>mcp__inventory__*</code> or <code>mcp__inventory</code></td><td>Every tool of the <code>inventory</code> server</td></tr>
+      <tr><td><code>mcp__inventory__list_*</code></td><td>That server's tools whose names start with <code>list_</code></td></tr>
+      <tr><td><code>mcp__*</code> as a deny or ask rule</td><td>Every MCP tool of every server. As an allow rule it is skipped: an allow glob needs a literal <code>mcp__&lt;server&gt;__</code> prefix</td></tr>
+    </table></div>
+    <p>An MCP tool that no allow rule covers needs a permission prompt. In a headless run there is nobody to answer it, so the call is denied and listed in the result's <code>permission_denials</code>. Grant exactly the tools a job needs with <code>--allowedTools</code>. Rules in a settings file cannot match on an MCP tool's arguments: Claude Code skips any <code>mcp__</code> rule written with parentheses.</p>
+    <h3>How the definitions reach the model: tool search</h3>
+    <p>By default Claude Code does not put MCP tool definitions into the context at all. With tool search on, only the tool names and each server's <code>instructions</code> load at session start. When the model wants a tool it calls the built-in <code>ToolSearch</code> tool, and the definition is loaded then. In Lab 3 the model's first action was <code>ToolSearch</code> with the query <code>select:mcp__inventory__ping_host</code>, the result was a <code>tool_reference</code> block, and the real call followed on the next turn.</p>
+    <div class="tablewrap"><table>
+      <tr><th><code>ENABLE_TOOL_SEARCH</code></th><th>Behaviour</th></tr>
+      <tr><td>unset, or <code>true</code></td><td>MCP tools are deferred and loaded on demand</td></tr>
+      <tr><td><code>auto</code>, <code>auto:N</code></td><td>Tools load upfront while their definitions total under 10% (or N%) of the context window, and are deferred above that</td></tr>
+      <tr><td><code>false</code></td><td>All MCP tools load upfront</td></tr>
+    </table></div>
+    <p>Per server, <code>"alwaysLoad": true</code> in the configuration entry exempts that server's tools from deferral, and a server author can ask the same for one tool with <code>_meta["anthropic/alwaysLoad"]</code>. Deferral makes the server's <code>instructions</code> string and the first words of each description more important than they look: they are what the model searches by.</p>
+    <p>The cost question, whether a tool definition in the context on every request is worth more than a command-line program the model runs through the shell, gets a module of its own. "MCP server or CLI tool" measures both sides with the server you build here.</p>
+    <h3>Limits on what a tool may return</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Limit</th><th>Default</th><th>Setting</th></tr>
+      <tr><td>Warning on a large tool output</td><td class="num">10,000 tokens</td><td>Fixed</td></tr>
+      <tr><td>Maximum tool output</td><td class="num">25,000 tokens</td><td><code>MAX_MCP_OUTPUT_TOKENS</code></td></tr>
+      <tr><td>Text result saved to a file and replaced by its path</td><td class="num">over 50,000 characters</td><td>Per tool: <code>_meta["anthropic/maxResultSizeChars"]</code>, ceiling 500,000</td></tr>
+      <tr><td>Error text (<code>isError: true</code>)</td><td class="num">first and last 5,000 characters kept beyond about 11,000</td><td>Fixed</td></tr>
+      <tr><td>One HTTP or SSE response</td><td class="num">16 MiB</td><td>Fixed. The request fails</td></tr>
+      <tr><td>Server startup</td><td class="num">30 seconds</td><td><code>MCP_TIMEOUT</code></td></tr>
+      <tr><td>One tool call, idle</td><td class="num">30 minutes stdio, 5 minutes remote</td><td><code>CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT</code></td></tr>
+      <tr><td>One tool call, total</td><td class="num">about 28 hours</td><td><code>MCP_TOOL_TIMEOUT</code>, or <code>timeout</code> per server</td></tr>
+    </table></div>
+    <p>The first three are the ones a server author should design for. A tool that can return a whole table should take a <code>limit</code> argument and paginate, because a result over the limit does not reach the model as content.</p>
+    <h3>What a headless run tells you</h3>
+    <p>With <code>--output-format stream-json --verbose</code> the first line of output is the <code>system</code>/<code>init</code> event. Its <code>mcp_servers</code> array has one entry per server with <code>name</code> and <code>status</code>, and its <code>tools</code> array lists the MCP tools by their prefixed names. In the labs the entries looked like this, connected and after a rejected token:</p>
+    <pre data-cap="output"><code>{"name":"inventory","status":"connected","source":"dynamic"}
+{"name":"inventory","status":"failed","source":"dynamic"}</code></pre>
+    <p>A server skipped for a configuration error does not appear in <code>mcp_servers</code>. It is listed in <code>mcp_server_errors</code> with a <code>name</code>, a <code>type</code> and a <code>message</code>, and that key is absent when there are no errors, so a scheduled job can fail on a non-empty array. With <code>--mcp-config</code> and <code>-p</code>, Claude Code waits for servers that are still connecting before the first turn, up to the <code>MCP_TIMEOUT</code> startup limit.</p>
+    <h3>Trust, in two sentences</h3>
+    <p>A stdio MCP server is a program running as you with your environment, and everything any server returns is text the model reads and may act on, including instructions someone planted in the data. The "Security" module covers what follows from that: which servers to allow, how tool results carry prompt injection, and how permission rules and hooks contain it.</p>
+    <h3>Subscription and API</h3>
+    <p>Nothing in the protocol differs between a plan and an API key. What differs is the meter: on an API key the tool definitions, the tool results and the extra turns a tool call takes are billed per token, and on a subscription they draw down the 5-hour window and the weekly limit. Separately, the Claude API has an MCP connector that lets a Messages API request name remote MCP servers directly, with no client of your own. It is a beta feature behind a beta header, supports tool calls only, and reaches only servers exposed over HTTP. It needs an API key and is not part of Claude Code.</p>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m23-lab1" data-title="Speak the protocol by hand" data-minutes="20">
+      <p class="goal">You write a 38-line MCP server with one tool, pipe four JSON-RPC lines into it from PowerShell, and read every byte it sends back.</p>
+      <ol class="steps">
+        <li><p>Create the lab folder and check Node. All five labs work in this one folder.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m23 | Set-Location
+node --version</code></pre>
+          <p class="expect"><b>Expected:</b> a version starting with <code>v22</code>. The lab machine printed <code>v22.23.2</code>.</p></li>
+        <li><p>Write the server. Read it before you run it: one function writes to stdout, one writes to stderr, and the handler answers three methods and refuses the rest.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path server1.mjs -Value @'
+// server1.mjs: the smallest useful MCP server. stdio transport, one tool, handshake era.
+import { createInterface } from 'node:readline';
+
+const send = (msg) =&gt; process.stdout.write(JSON.stringify(msg) + '\n');   // stdout: one JSON-RPC message per line
+const log = (text) =&gt; process.stderr.write('[server1] ' + text + '\n');   // stderr: everything else
+
+const inventory = { 'web-01': 'up', 'web-02': 'up', 'db-01': 'down' };
+const tools = [{
+  name: 'ping_host',
+  description: 'Report whether one host in the lab inventory is up. Read-only.',
+  inputSchema: {
+    type: 'object',
+    properties: { host: { type: 'string', description: 'Host name, for example web-01' } },
+    required: ['host']
+  }
+}];
+
+createInterface({ input: process.stdin }).on('line', (line) =&gt; {
+  if (!line.trim()) return;
+  const msg = JSON.parse(line);
+  log('recv ' + msg.method + (msg.id === undefined ? ' (notification)' : ' id=' + msg.id));
+  if (msg.id === undefined) return;                       // a notification is never answered
+  const reply = (body) =&gt; send({ jsonrpc: '2.0', id: msg.id, ...body });
+
+  if (msg.method === 'initialize') {
+    return reply({ result: {
+      protocolVersion: '2025-11-25',
+      capabilities: { tools: {} },
+      serverInfo: { name: 'lab-inventory', version: '0.1.0' }
+    } });
+  }
+  if (msg.method === 'tools/list') return reply({ result: { tools } });
+  if (msg.method === 'tools/call') {
+    const host = msg.params.arguments.host;
+    return reply({ result: { content: [{ type: 'text', text: host + ' is ' + (inventory[host] || 'unknown') }] } });
+  }
+  reply({ error: { code: -32601, message: 'Method not found: ' + msg.method } });
+});
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output. <code>server1.mjs</code> exists.</p></li>
+        <li><p>Send the legacy lifecycle by hand: <code>initialize</code>, the <code>notifications/initialized</code> notification, <code>tools/list</code>, <code>tools/call</code>. PowerShell writes each string as one line to the server's stdin and closes stdin at the end, which is the shutdown signal. <code>2&gt;$null</code> discards stderr so you see the wire only.</p>
+          <pre><code>$msgs = @(
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"by-hand","version":"0"}}}',
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}',
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}',
+  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ping_host","arguments":{"host":"db-01"}}}'
+)
+$msgs | node server1.mjs 2&gt;$null</code></pre>
+          <p class="expect"><b>Expected:</b> three lines, for ids 1, 2 and 3. Four messages went in and three came out: the notification has no id and gets no reply.</p>
+          <pre data-cap="output"><code>{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"lab-inventory","version":"0.1.0"}}}
+{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"ping_host","description":"Report whether one host in the lab inventory is up. Read-only.","inputSchema":{"type":"object","properties":{"host":{"type":"string","description":"Host name, for example web-01"}},"required":["host"]}}]}}
+{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"db-01 is down"}]}}</code></pre></li>
+        <li><p>Run it again and keep the two streams apart. <code>cmd /c</code> does the redirection so that PowerShell does not decorate the stderr lines.</p>
+          <pre><code>$msgs | cmd /c "node server1.mjs 2&gt;server1.err.txt" | Set-Content server1.out.txt
+Get-Content server1.err.txt
+"stdout lines: " + @(Get-Content server1.out.txt).Count</code></pre>
+          <p class="expect"><b>Expected:</b> four log lines from stderr, one per message received, then <code>stdout lines: 3</code>.</p>
+          <pre data-cap="output"><code>[server1] recv initialize id=1
+[server1] recv notifications/initialized (notification)
+[server1] recv tools/list id=2
+[server1] recv tools/call id=3
+stdout lines: 3</code></pre></li>
+        <li><p>Ask for a method the server does not have. This is the first message a dual-era client sends.</p>
+          <pre><code>'{"jsonrpc":"2.0","id":9,"method":"server/discover"}' | node server1.mjs 2&gt;$null</code></pre>
+          <p class="expect"><b>Expected:</b> <code>{"jsonrpc":"2.0","id":9,"error":{"code":-32601,"message":"Method not found: server/discover"}}</code>. An error is still a reply: it carries the id of the request.</p></li>
+        <li><p>Send a line that is not JSON. This server has no error handling for that.</p>
+          <pre><code>'this is not json' | node server1.mjs 2&gt;$null
+"exit code: $LASTEXITCODE"</code></pre>
+          <p class="expect"><b>Expected:</b> no reply and <code>exit code: 1</code>. The server died on <code>JSON.parse</code>. Lab 2 answers this case with error -32700 and stays up.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Which line of <code>server1.mjs</code> makes it a legacy-era server?</b> The <code>initialize</code> branch that returns <code>protocolVersion</code>. It never looks at <code>_meta</code>.</p>
+        <p><b>Step 5 sent a request with no <code>initialize</code> before it and got a proper reply. Would <code>tools/call</code> have worked the same way?</b> Yes. Nothing in the file checks that <code>initialize</code> came first. The specification notes that some legacy servers do not validate this, which is why it recommends that even a modern-only client probe with <code>server/discover</code> first.</p>
+        <p><b>Where would a <code>console.log("ready")</code> at the top of the file end up?</b> On stdout, as the first line the client reads, ahead of the first JSON message.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m23-lab2" data-title="Grow the server and test it" data-minutes="25">
+      <p class="goal">You split the server into a protocol core and a transport, add a second tool, a resource, a prompt, both error paths and the 2026-07-28 per-request shape, and hold a test client that asserts 13 properties of it.</p>
+      <ol class="steps">
+        <li><p>Write the core. It has no I/O in it: <code>handle(message)</code> returns the reply object, or <code>null</code> for a notification. Find three things as you read: the <code>methods</code> table, the place where a bad argument becomes a result with <code>isError</code>, and the branch that makes a reply modern when the request carried a protocol version in <code>_meta</code>.</p>
+          <pre><code>Set-Location {{LAB}}/m23
+Set-Content -Encoding utf8 -Path core.mjs -Value @'
+// core.mjs: the protocol with no transport in it. handle(message) returns the reply object, or null for a notification.
+const LEGACY = ['2025-11-25', '2025-06-18', '2025-03-26'];   // handshake revisions this server answers
+const MODERN = ['2026-07-28'];                               // per-request-metadata revisions
+const SERVER = { name: 'lab-inventory', version: '0.2.0' };
+const CAPS = { tools: {}, resources: {}, prompts: {} };
+const HELP = 'Lab inventory of three hosts. Use it for questions about host state or site.';
+const K = 'io.modelcontextprotocol/';
+
+const inventory = {
+  'web-01': { state: 'up', site: 'east' },
+  'web-02': { state: 'up', site: 'west' },
+  'db-01': { state: 'down', site: 'east' }
+};
+const rows = () =&gt; Object.entries(inventory).map(([host, v]) =&gt; ({ host, ...v }));
+
+const tools = [
+  { name: 'ping_host',
+    description: 'Report whether one host in the lab inventory is up. Read-only.',
+    inputSchema: { type: 'object', additionalProperties: false, required: ['host'],
+      properties: { host: { type: 'string', description: 'Host name, for example web-01' } } },
+    annotations: { readOnlyHint: true } },
+  { name: 'list_hosts',
+    description: 'List lab inventory hosts, optionally filtered by state and site. Read-only.',
+    inputSchema: { type: 'object', additionalProperties: false,
+      properties: {
+        state: { type: 'string', enum: ['up', 'down'], description: 'Only hosts in this state' },
+        site: { type: 'string', description: 'Only hosts at this site, for example east' },
+        limit: { type: 'integer', minimum: 1, maximum: 50, description: 'Maximum rows to return' } } },
+    annotations: { readOnlyHint: true } }
+];
+const resources = [{ uri: 'inventory://hosts.csv', name: 'hosts.csv', description: 'The whole lab inventory as CSV', mimeType: 'text/csv' }];
+const prompts = [{ name: 'outage_summary', description: 'Draft an outage note for one site',
+  arguments: [{ name: 'site', description: 'Site name, for example east', required: true }] }];
+
+const text = (t, isError) =&gt; ({ content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) });
+const fail = (code, message, data) =&gt; Object.assign(new Error(message), { code, data });
+
+function callTool(name, args = {}) {
+  if (name === 'ping_host') {
+    if (typeof args.host !== 'string') return text('Argument "host" must be a string, for example web-01.', true);
+    const row = inventory[args.host];
+    if (!row) return text(`No host named ${args.host}. Known hosts: ${Object.keys(inventory).join(', ')}.`, true);
+    return text(`${args.host} is ${row.state}`);
+  }
+  if (name === 'list_hosts') {
+    if (args.state !== undefined &amp;&amp; !['up', 'down'].includes(args.state)) return text('Argument "state" must be "up" or "down".', true);
+    const hosts = rows().filter((r) =&gt; (!args.state || r.state === args.state) &amp;&amp; (!args.site || r.site === args.site)).slice(0, args.limit || 50);
+    return { ...text(hosts.map((r) =&gt; `${r.host} ${r.state} ${r.site}`).join('\n') || 'no hosts match'), structuredContent: { hosts } };
+  }
+  throw fail(-32602, 'Unknown tool: ' + name);                // a protocol error, not a tool result
+}
+
+const methods = {
+  'initialize': (p) =&gt; ({ protocolVersion: LEGACY.includes(p.protocolVersion) ? p.protocolVersion : LEGACY[0],
+    capabilities: CAPS, serverInfo: SERVER, instructions: HELP }),
+  'ping': () =&gt; ({}),
+  'server/discover': () =&gt; ({ supportedVersions: MODERN, capabilities: CAPS, instructions: HELP }),
+  'tools/list': () =&gt; ({ tools }),
+  'tools/call': (p) =&gt; callTool(p.name, p.arguments),
+  'resources/list': () =&gt; ({ resources }),
+  'resources/templates/list': () =&gt; ({ resourceTemplates: [] }),
+  'resources/read': (p) =&gt; {
+    if (p.uri !== resources[0].uri) throw fail(-32602, 'Resource not found', { uri: p.uri });
+    return { contents: [{ uri: p.uri, mimeType: 'text/csv', text: 'host,state,site\n' + rows().map((r) =&gt; `${r.host},${r.state},${r.site}`).join('\n') }] };
+  },
+  'prompts/list': () =&gt; ({ prompts }),
+  'prompts/get': (p) =&gt; {
+    if (p.name !== 'outage_summary') throw fail(-32602, 'Unknown prompt: ' + p.name);
+    if (!p.arguments || !p.arguments.site) throw fail(-32602, 'Missing required argument: site');
+    return { description: prompts[0].description, messages: [{ role: 'user', content: { type: 'text',
+      text: `Write a three-line outage note for site ${p.arguments.site}. Use the list_hosts tool with state "down" first.` } }] };
+  }
+};
+const CACHEABLE = ['server/discover', 'tools/list', 'resources/list', 'resources/templates/list', 'resources/read', 'prompts/list'];
+
+export function handle(msg) {
+  if (msg.id === undefined || msg.id === null) return null;   // a notification is never answered
+  const params = msg.params || {};
+  const meta = params._meta || {};
+  const version = meta[K + 'protocolVersion'];                // present only on a modern (2026-07-28) request
+  const modern = version !== undefined;
+  try {
+    if (modern &amp;&amp; !MODERN.includes(version)) throw fail(-32022, 'Unsupported protocol version', { supported: MODERN, requested: version });
+    if (modern &amp;&amp; meta[K + 'clientCapabilities'] === undefined) throw fail(-32602, 'Missing _meta field ' + K + 'clientCapabilities', { badRequest: true });
+    const legacyOnly = msg.method === 'initialize' || msg.method === 'ping';
+    const fn = methods[msg.method];
+    if (!fn || (modern &amp;&amp; legacyOnly)) throw fail(-32601, 'Method not found: ' + msg.method);
+    const result = fn(params);
+    if (modern) {
+      Object.assign(result, { resultType: 'complete', _meta: { [K + 'serverInfo']: SERVER } });
+      if (CACHEABLE.includes(msg.method)) Object.assign(result, { ttlMs: 60000, cacheScope: 'private' });
+    }
+    return { jsonrpc: '2.0', id: msg.id, result };
+  } catch (e) {
+    return { jsonrpc: '2.0', id: msg.id, error: { code: e.code || -32603, message: e.message, ...(e.data ? { data: e.data } : {}) } };
+  }
+}
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output. <code>core.mjs</code> is 97 lines.</p></li>
+        <li><p>Write the stdio transport. It is the framing and nothing else.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path stdio.mjs -Value @'
+// stdio.mjs: the stdio transport. One JSON-RPC message per line in on stdin, one per line out on stdout.
+import { createInterface } from 'node:readline';
+import { handle } from './core.mjs';
+
+createInterface({ input: process.stdin }).on('line', (line) =&gt; {
+  if (!line.trim()) return;
+  process.stderr.write('[stdio] recv ' + line.slice(0, 100) + '\n');   // logging goes to stderr, never stdout
+  let reply;
+  try { reply = handle(JSON.parse(line)); }
+  catch { reply = { jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' } }; }   // no id: it could not be read
+  if (reply !== null) process.stdout.write(JSON.stringify(reply) + '\n');   // JSON.stringify never emits a raw newline
+});
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Write the test client. It is a minimal MCP client: it spawns the server, writes one request per line, matches replies by id and asserts on each.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path test-client.mjs -Value @'
+// test-client.mjs: a minimal MCP client over stdio. Spawns the server, sends one message per line, asserts each reply.
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
+import assert from 'node:assert/strict';
+
+const child = spawn('node', [process.argv[2] || 'stdio.mjs'], { stdio: ['pipe', 'pipe', 'ignore'] });
+const waiting = new Map();
+let nextId = 1, replies = 0;
+createInterface({ input: child.stdout }).on('line', (line) =&gt; {
+  let msg;
+  try { msg = JSON.parse(line); }                           // a strict client: stdout must be messages and nothing else
+  catch { console.log('FAIL the server wrote a non-JSON line to stdout: ' + line); process.exit(1); }
+  replies++;
+  waiting.get(msg.id)(msg);
+});
+const request = (method, params) =&gt; new Promise((resolve) =&gt; {
+  const id = nextId++;
+  waiting.set(id, resolve);
+  child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, ...(params ? { params } : {}) }) + '\n');
+});
+const notify = (method) =&gt; child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method }) + '\n');
+const modern = (version, extra = {}) =&gt; ({ ...extra, _meta: {
+  'io.modelcontextprotocol/protocolVersion': version,
+  'io.modelcontextprotocol/clientInfo': { name: 'test-client', version: '0' },
+  'io.modelcontextprotocol/clientCapabilities': {} } });
+
+let passed = 0;
+const check = (name, fn) =&gt; { fn(); passed++; console.log('ok   ' + name); };
+
+// Handshake era (2025-11-25)
+let r = await request('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'test-client', version: '0' } });
+check('initialize echoes the version and declares three capabilities', () =&gt; {
+  assert.equal(r.result.protocolVersion, '2025-11-25');
+  assert.deepEqual(Object.keys(r.result.capabilities), ['tools', 'resources', 'prompts']);
+});
+notify('notifications/initialized');
+r = await request('tools/list');
+check('tools/list returns two tools, the second with an enum in its schema', () =&gt; {
+  assert.deepEqual(r.result.tools.map((t) =&gt; t.name), ['ping_host', 'list_hosts']);
+  assert.deepEqual(r.result.tools[1].inputSchema.properties.state.enum, ['up', 'down']);
+});
+r = await request('tools/call', { name: 'list_hosts', arguments: { state: 'down' } });
+check('tools/call returns text content and structuredContent', () =&gt; {
+  assert.equal(r.result.content[0].text, 'db-01 down east');
+  assert.equal(r.result.structuredContent.hosts[0].host, 'db-01');
+  assert.equal(r.result.isError, undefined);
+});
+r = await request('tools/call', { name: 'ping_host', arguments: { host: 'mail-09' } });
+check('a bad argument is a RESULT with isError, not a JSON-RPC error', () =&gt; {
+  assert.equal(r.error, undefined);
+  assert.equal(r.result.isError, true);
+  assert.match(r.result.content[0].text, /Known hosts: web-01, web-02, db-01/);
+});
+r = await request('tools/call', { name: 'reboot_host', arguments: {} });
+check('an unknown tool is a JSON-RPC error -32602', () =&gt; assert.equal(r.error.code, -32602));
+r = await request('hosts/reboot');
+check('an unknown method is a JSON-RPC error -32601', () =&gt; assert.equal(r.error.code, -32601));
+r = await request('resources/read', { uri: (await request('resources/list')).result.resources[0].uri });
+check('resources/list then resources/read returns the CSV', () =&gt; {
+  assert.equal(r.result.contents[0].mimeType, 'text/csv');
+  assert.equal(r.result.contents[0].text.split('\n').length, 4);
+});
+r = await request('prompts/get', { name: (await request('prompts/list')).result.prompts[0].name, arguments: { site: 'east' } });
+check('prompts/list then prompts/get returns one user message', () =&gt; {
+  assert.equal(r.result.messages[0].role, 'user');
+  assert.match(r.result.messages[0].content.text, /site east/);
+});
+
+// Per-request-metadata era (2026-07-28): no handshake, every request carries _meta
+r = await request('server/discover', modern('2026-07-28'));
+check('server/discover lists supported versions and capabilities', () =&gt; {
+  assert.deepEqual(r.result.supportedVersions, ['2026-07-28']);
+  assert.equal(r.result.resultType, 'complete');
+});
+r = await request('tools/list', modern('2026-07-28'));
+check('a modern tools/list carries resultType, ttlMs, cacheScope and serverInfo', () =&gt; {
+  assert.equal(r.result.resultType, 'complete');
+  assert.equal(r.result.ttlMs, 60000);
+  assert.equal(r.result._meta['io.modelcontextprotocol/serverInfo'].name, 'lab-inventory');
+});
+r = await request('tools/list', modern('1900-01-01'));
+check('an unsupported version is error -32022 with the supported list', () =&gt; {
+  assert.equal(r.error.code, -32022);
+  assert.deepEqual(r.error.data.supported, ['2026-07-28']);
+});
+check('the notification got no reply: replies equals requests', () =&gt; assert.equal(replies, nextId - 1));
+
+child.stdin.end();                                          // closing stdin is the shutdown signal
+const code = await new Promise((resolve) =&gt; child.on('exit', resolve));
+check('the server exits 0 when stdin closes', () =&gt; assert.equal(code, 0));
+console.log(`PASS ${passed}/13`);
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Run the tests.</p>
+          <pre><code>node test-client.mjs
+"exit code: $LASTEXITCODE"</code></pre>
+          <p class="expect"><b>Expected:</b> thirteen <code>ok</code> lines, then <code>PASS 13/13</code> and <code>exit code: 0</code>.</p></li>
+        <li><p>Look at the three failure replies on the wire: a bad argument value, an unknown tool, and a line that is not JSON.</p>
+          <pre><code>$bad = @(
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping_host","arguments":{"host":"mail-09"}}}',
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"reboot_host","arguments":{}}}',
+  'this is not json'
+)
+$bad | node stdio.mjs 2&gt;$null</code></pre>
+          <p class="expect"><b>Expected:</b> three lines. The first is a <code>result</code> with <code>isError</code>, the second an <code>error</code> with code -32602, the third an <code>error</code> with code -32700 and no <code>id</code>, because none could be read.</p>
+          <pre data-cap="output"><code>{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"No host named mail-09. Known hosts: web-01, web-02, db-01."}],"isError":true}}
+{"jsonrpc":"2.0","id":2,"error":{"code":-32602,"message":"Unknown tool: reboot_host"}}
+{"jsonrpc":"2.0","error":{"code":-32700,"message":"Parse error"}}</code></pre></li>
+        <li><p>Speak the 2026-07-28 shape by hand. No handshake: each request carries its version and capabilities. The third request asks for a version the server does not have, and the fourth sends <code>initialize</code> as a modern request.</p>
+          <pre><code>$meta = '"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}'
+$modern = @(
+  ('{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{' + $meta + '}}'),
+  ('{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"ping_host","arguments":{"host":"web-02"},' + $meta + '}}'),
+  ('{"jsonrpc":"2.0","id":3,"method":"tools/list","params":{' + $meta.Replace('2026-07-28', '2027-01-01') + '}}'),
+  ('{"jsonrpc":"2.0","id":4,"method":"initialize","params":{' + $meta + '}}')
+)
+$modern | node stdio.mjs 2&gt;$null</code></pre>
+          <p class="expect"><b>Expected:</b> four lines: the discover result with <code>supportedVersions</code>, a tool result with <code>"resultType":"complete"</code> and the server's name in <code>_meta</code>, error -32022 with <code>data.supported</code>, and error -32601 because a modern server has no <code>initialize</code>.</p>
+          <pre data-cap="output"><code>{"jsonrpc":"2.0","id":1,"result":{"supportedVersions":["2026-07-28"],"capabilities":{"tools":{},"resources":{},"prompts":{}},"instructions":"Lab inventory of three hosts. Use it for questions about host state or site.","resultType":"complete","_meta":{"io.modelcontextprotocol/serverInfo":{"name":"lab-inventory","version":"0.2.0"}},"ttlMs":60000,"cacheScope":"private"}}
+{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"web-02 is up"}],"resultType":"complete","_meta":{"io.modelcontextprotocol/serverInfo":{"name":"lab-inventory","version":"0.2.0"}}}}
+{"jsonrpc":"2.0","id":3,"error":{"code":-32022,"message":"Unsupported protocol version","data":{"supported":["2026-07-28"],"requested":"2027-01-01"}}}
+{"jsonrpc":"2.0","id":4,"error":{"code":-32601,"message":"Method not found: initialize"}}</code></pre></li>
+        <li><p>Break the framing on purpose. <code>chatty.mjs</code> is the same server with one banner line printed to stdout first. Point the test client at it.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path chatty.mjs -Value @'
+console.log('lab-inventory starting up');   // the bug: a banner on stdout
+await import('./stdio.mjs');
+'@
+node test-client.mjs chatty.mjs
+"exit code: $LASTEXITCODE"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>FAIL the server wrote a non-JSON line to stdout: lab-inventory starting up</code> and <code>exit code: 1</code>. Not one test ran. Lab 3 shows what Claude Code does with the same server.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>The model asks for host <code>mail-09</code>. Which side of the diagram in lesson 3 does the reply come from, and why?</b> The <code>isError</code> result. The request was well formed and the tool exists. The tool ran and could not satisfy it, and the text tells the model the valid names.</p>
+        <p><b>What tells <code>handle()</code> that a request is modern?</b> The key <code>io.modelcontextprotocol/protocolVersion</code> in <code>params._meta</code>. Nothing about the connection does, which is the point of the stateless design.</p>
+        <p><b>Why does the stdio transport not need to change for the modern era?</b> On stdio all request metadata travels in the message body. There is no header layer.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m23-lab3" data-title="Wire the server into Claude Code and tap the wire" data-minutes="25">
+      <p class="goal">You connect the server to Claude Code with a config file, grant one tool, and read three things from each headless run: the server status in the init line, the tool call, and every message Claude Code put on the wire.</p>
+      <ol class="steps">
+        <li><p>Write a wire tap. It starts any stdio server as a child, passes both directions through, and logs every line to a file. It works with any stdio MCP server, not only this one.</p>
+          <pre><code>Set-Location {{LAB}}/m23
+Set-Content -Encoding utf8 -Path tap.mjs -Value @'
+// tap.mjs: a wire tap for any stdio MCP server. Usage: node tap.mjs &lt;logfile&gt; &lt;command&gt; [args...]
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
+import { appendFileSync } from 'node:fs';
+
+const [logFile, command, ...args] = process.argv.slice(2);
+const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'inherit'] });
+const tap = (from, to, mark) =&gt; createInterface({ input: from }).on('line', (line) =&gt; {
+  appendFileSync(logFile, mark + ' ' + line + '\n');
+  to.write(line + '\n');
+});
+tap(process.stdin, child.stdin, '&lt;&lt;');                      // client to server
+tap(child.stdout, process.stdout, '&gt;&gt;');                    // server to client
+process.stdin.on('end', () =&gt; child.stdin.end());           // pass the shutdown signal through
+child.on('exit', (code) =&gt; process.exit(code ?? 0));
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Write the config file and two small readers. The config names the server <code>inventory</code>, so its tools will be <code>mcp__inventory__...</code>. The command is the tap, which in turn starts <code>stdio.mjs</code>. The readers are kept in a file because Lab 4 and Lab 5 use them too.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path mcp.json -Value @'
+{ "mcpServers": { "inventory": { "command": "node", "args": ["tap.mjs", "wire.log", "node", "stdio.mjs"] } } }
+'@
+Set-Content -Encoding utf8 -Path show.ps1 -Value @'
+# show.ps1: two readers. Show-Run summarises a stream-json run file, Show-Wire summarises wire.log.
+function Show-Run($file) {
+  $lines = Get-Content $file | ForEach-Object { $_ | ConvertFrom-Json }
+  $init = $lines | Where-Object { $_.type -eq 'system' -and $_.subtype -eq 'init' } | Select-Object -First 1
+  'mcp_servers: ' + ($init.mcp_servers | ConvertTo-Json -Compress)
+  'mcp tools:   ' + (($init.tools | Where-Object { $_ -like 'mcp__*' }) -join ', ')
+  foreach ($l in $lines) {
+    if ($l.type -eq 'assistant') { $l.message.content | Where-Object { $_.type -eq 'tool_use' } | ForEach-Object { 'tool_use:    ' + $_.name + ' ' + ($_.input | ConvertTo-Json -Compress) } }
+    if ($l.type -eq 'user') { $l.message.content | Where-Object { $_.type -eq 'tool_result' } | ForEach-Object { 'tool_result: ' + ($_.content | ConvertTo-Json -Compress -Depth 5) } }
+  }
+  $r = $lines | Where-Object { $_.type -eq 'result' } | Select-Object -First 1
+  $u = $r.usage
+  'result:      ' + $r.result
+  'usage:       turns ' + $r.num_turns + ', input ' + $u.input_tokens + ', cache write ' + $u.cache_creation_input_tokens + ', cache read ' + $u.cache_read_input_tokens + ', output ' + $u.output_tokens + ', cost $' + [math]::Round($r.total_cost_usd, 4)
+  'denied:      ' + (($r.permission_denials | ForEach-Object { $_.tool_name }) -join ', ')
+}
+function Show-Wire {
+  Get-Content wire.log | ForEach-Object {
+    $dir = $_.Substring(0, 2); $body = $_.Substring(3)
+    try { $m = $body | ConvertFrom-Json } catch { return "$dir NOT JSON: $body" }
+    $v = $m.params._meta.'io.modelcontextprotocol/protocolVersion'
+    if ($m.method) { "$dir " + $m.method + $(if ($null -ne $m.id) { ' id=' + $m.id } else { ' (notification)' }) + $(if ($v) { " version=$v" }) }
+    elseif ($m.error) { "$dir error " + $m.error.code + ' id=' + $m.id }
+    else { "$dir result id=" + $m.id + $(if ($m.result.resultType) { ' resultType=' + $m.result.resultType }) }
+  }
+}
+'@
+Get-Content show.ps1 -Raw | Invoke-Expression</code></pre>
+          <p class="expect"><b>Expected:</b> no output. <code>Show-Run</code> and <code>Show-Wire</code> are now defined in this PowerShell session.</p></li>
+        <li><p>Run one headless prompt that needs the tool. Four flags do the isolation and the grant. <code>--setting-sources project</code> loads settings only from this folder, so your personal settings and hooks stay out. <code>--strict-mcp-config</code> makes Claude Code use only the servers in <code>--mcp-config</code>, so your own MCP servers stay out. <code>--allowedTools</code> grants exactly one MCP tool by its full name. <code>--model haiku</code> keeps it cheap.</p>
+          <pre><code>claude -p "Use the ping_host tool to check db-01 and answer in one line." --model haiku --setting-sources project --strict-mcp-config --mcp-config mcp.json --allowedTools "mcp__inventory__ping_host" --output-format stream-json --verbose --max-turns 6 &gt; run1.jsonl
+Show-Run run1.jsonl</code></pre>
+          <p class="expect"><b>Expected:</b> the server is <code>connected</code>, both tools are listed with the <code>mcp__inventory__</code> prefix, the model first calls <code>ToolSearch</code> to load the deferred definition and then the tool itself, and nothing is denied. Three turns, and about $0.002 at API list price. The split between cache write and cache read moves from run to run with what is already cached.</p>
+          <pre data-cap="output"><code>mcp_servers: {"name":"inventory","status":"connected","source":"dynamic"}
+mcp tools:   mcp__inventory__list_hosts, mcp__inventory__ping_host
+tool_use:    ToolSearch {"query":"select:mcp__inventory__ping_host","max_results":1}
+tool_result: {"type":"tool_reference","tool_name":"mcp__inventory__ping_host"}
+tool_use:    mcp__inventory__ping_host {"host":"db-01"}
+tool_result: {"type":"text","text":"db-01 is down"}
+result:      db-01 is down.
+usage:       turns 3, input 6, cache write 7693, cache read 58500, output 153, cost $0.0022
+denied:      </code></pre></li>
+        <li><p>Read what Claude Code sent. <code>&lt;&lt;</code> is client to server, <code>&gt;&gt;</code> is server to client.</p>
+          <pre><code>Show-Wire
+$call = Get-Content wire.log | Where-Object { $_ -like '&lt;&lt; *"tools/call"*' } | Select-Object -First 1
+'_meta characters on tools/call: ' + (($call.Substring(3) | ConvertFrom-Json).params._meta | ConvertTo-Json -Compress -Depth 6).Length</code></pre>
+          <p class="expect"><b>Expected:</b> a <code>server/discover</code> probe, then <code>prompts/list</code>, <code>resources/list</code>, <code>tools/list</code> and <code>tools/call</code>, every request with <code>version=2026-07-28</code> and every result with <code>resultType=complete</code>. No <code>initialize</code> anywhere. The last line reads <code>_meta characters on tools/call: 442</code>: that much metadata rides on every request.</p>
+          <pre data-cap="output"><code>&lt;&lt; server/discover id=server-discover-probe-1 version=2026-07-28
+&gt;&gt; result id=server-discover-probe-1 resultType=complete
+&lt;&lt; prompts/list id=0 version=2026-07-28
+&gt;&gt; result id=0 resultType=complete
+&lt;&lt; resources/list id=1 version=2026-07-28
+&lt;&lt; tools/list id=2 version=2026-07-28
+&gt;&gt; result id=1 resultType=complete
+&gt;&gt; result id=2 resultType=complete
+&lt;&lt; tools/call id=3 version=2026-07-28
+&gt;&gt; result id=3 resultType=complete</code></pre></li>
+        <li><p>Point the same run at Lab 1's handshake-only server and compare the wire.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path mcp-s1.json -Value @'
+{ "mcpServers": { "inventory": { "command": "node", "args": ["tap.mjs", "wire.log", "node", "server1.mjs"] } } }
+'@
+Remove-Item wire.log
+claude -p "Use the ping_host tool to check db-01 and answer in one line." --model haiku --setting-sources project --strict-mcp-config --mcp-config mcp-s1.json --allowedTools "mcp__inventory__ping_host" --output-format stream-json --verbose --max-turns 6 &gt; run2.jsonl
+Show-Run run2.jsonl
+Show-Wire</code></pre>
+          <p class="expect"><b>Expected:</b> the same answer, one tool listed. On the wire the probe gets error -32601, and Claude Code falls back to <code>initialize</code> and the <code>notifications/initialized</code> notification. It asks only for <code>tools/list</code>, because this server declared only the <code>tools</code> capability.</p>
+          <pre data-cap="output"><code>&lt;&lt; server/discover id=server-discover-probe-1 version=2026-07-28
+&gt;&gt; error -32601 id=server-discover-probe-1
+&lt;&lt; initialize id=0
+&gt;&gt; result id=0
+&lt;&lt; notifications/initialized (notification)
+&lt;&lt; tools/list id=1
+&gt;&gt; result id=1
+&lt;&lt; tools/call id=2
+&gt;&gt; result id=2</code></pre></li>
+        <li><p>Run without the grant. A headless run cannot show a permission prompt.</p>
+          <pre><code>Remove-Item wire.log
+claude -p "Use the ping_host tool to check db-01 and answer in one line." --model haiku --setting-sources project --strict-mcp-config --mcp-config mcp.json --output-format stream-json --verbose --max-turns 6 &gt; run3.jsonl
+Show-Run run3.jsonl
+'tools/call on the wire: ' + @(Get-Content wire.log | Where-Object { $_ -like '*"tools/call"*' }).Count</code></pre>
+          <p class="expect"><b>Expected:</b> the model loads the tool and tries it, the tool result reads "Claude requested permissions to use mcp__inventory__ping_host, but you haven't granted it yet.", <code>denied:</code> lists <code>mcp__inventory__ping_host</code>, and <code>tools/call on the wire: 0</code>. The denial happened inside Claude Code. The server never saw a call.</p></li>
+        <li><p>Turn tool search off for one run and compare the turn count and the prompt size with step 3.</p>
+          <pre><code>$env:ENABLE_TOOL_SEARCH = 'false'
+claude -p "Use the ping_host tool to check db-01 and answer in one line." --model haiku --setting-sources project --strict-mcp-config --mcp-config mcp.json --allowedTools "mcp__inventory__ping_host" --output-format stream-json --verbose --max-turns 6 &gt; run4.jsonl
+Remove-Item Env:ENABLE_TOOL_SEARCH
+Show-Run run4.jsonl</code></pre>
+          <p class="expect"><b>Expected:</b> no <code>ToolSearch</code> call and 2 turns instead of 3, because the definition was already in the prompt. The prompt side per request (input plus cache write plus cache read, divided by turns) was about 38,600 tokens here against about 22,100 in step 3. That difference is not your two small tools: with tool search off, every deferred tool loads upfront, the built-in ones included. "MCP server or CLI tool" takes this measurement apart.</p></li>
+        <li><p>Connect the server with the stdout banner from Lab 2.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path mcp-chatty.json -Value @'
+{ "mcpServers": { "inventory": { "command": "node", "args": ["tap.mjs", "wire.log", "node", "chatty.mjs"] } } }
+'@
+Remove-Item wire.log
+claude -p "Use the ping_host tool to check db-01 and answer in one line." --model haiku --setting-sources project --strict-mcp-config --mcp-config mcp-chatty.json --allowedTools "mcp__inventory__ping_host" --output-format stream-json --verbose --max-turns 6 &gt; run5.jsonl
+Show-Run run5.jsonl
+Show-Wire | Select-Object -First 3</code></pre>
+          <p class="expect"><b>Expected:</b> status <code>connected</code> and a correct answer. The wire shows the probe, then <code>&gt;&gt; NOT JSON: lab-inventory starting up</code>, then the discover result. Claude Code 2.1.322 skipped the stray line. Your own test client in Lab 2 did not, and the specification forbids the line.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>The server calls itself <code>lab-inventory</code> in <code>serverInfo</code>. Why are the tools named <code>mcp__inventory__...</code>?</b> Claude Code prefixes with the name from your configuration. <code>serverInfo.name</code> is self-reported and the specification says not to rely on it.</p>
+        <p><b>In step 4, replies 1 and 2 arrive after request 2 was sent. Is that a problem?</b> No. Requests may be outstanding at the same time and replies are matched by id.</p>
+        <p><b>If your wire.log in step 4 starts with <code>initialize</code> and has no probe, what happened?</b> Claude Code skipped the probe for this server. Its documentation says it can do that for a stdio server for 7 days, for example after the server exited when asked. Set <code>MCP_PROTOCOL_NEGOTIATION=auto</code> to have it ask again.</p>
+        <p><b>On a subscription, what did these five runs cost?</b> No money beyond the plan. The <code>cost</code> figure is the API list-price equivalent. The usage drew down the 5-hour window and the weekly limit instead.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m23-lab4" data-title="Serve it over Streamable HTTP with a bearer token" data-minutes="25">
+      <p class="goal">You put the same core behind an HTTP listener on 127.0.0.1 that requires a bearer token, prove with raw requests what it accepts and refuses, connect Claude Code to it, and stop it.</p>
+      <ol class="steps">
+        <li><p>Write the HTTP transport. Read the order of the checks: path, <code>Origin</code>, token, method, then the body.</p>
+          <pre><code>Set-Location {{LAB}}/m23
+Set-Content -Encoding utf8 -Path http.mjs -Value @'
+// http.mjs: the same core behind Streamable HTTP. One endpoint, POST only, 127.0.0.1 only, bearer token required.
+import { createServer } from 'node:http';
+import { handle } from './core.mjs';
+
+const PORT = Number(process.env.LAB_MCP_PORT || 8765);
+const TOKEN = process.env.LAB_MCP_TOKEN;
+if (!TOKEN) { console.error('[http] set LAB_MCP_TOKEN first'); process.exit(1); }
+
+const send = (res, status, body, headers = {}) =&gt; {
+  res.writeHead(status, { 'Content-Type': 'application/json', ...headers });
+  res.end(body === undefined ? '' : JSON.stringify(body));
+};
+const rpcError = (id, code, message) =&gt; ({ jsonrpc: '2.0', ...(id === undefined ? {} : { id }), error: { code, message } });
+
+createServer((req, res) =&gt; {
+  const h = req.headers;
+  console.error(`[http] ${req.method} ${req.url} auth=${h.authorization ? 'present' : 'absent'} version=${h['mcp-protocol-version'] || '-'} method=${h['mcp-method'] || '-'} session=${h['mcp-session-id'] || '-'}`);
+  if (req.url !== '/mcp') return send(res, 404, { error: 'no such path' });
+  if (h.origin &amp;&amp; !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(h.origin)) return send(res, 403);   // DNS rebinding guard
+  if (h.authorization !== 'Bearer ' + TOKEN) return send(res, 401, { error: 'missing or wrong bearer token' }, { 'WWW-Authenticate': 'Bearer' });
+  if (req.method !== 'POST') return send(res, 405, undefined, { Allow: 'POST' });   // no GET stream, no DELETE
+
+  let body = '';
+  req.on('data', (chunk) =&gt; { body += chunk; });
+  req.on('end', () =&gt; {
+    let msg;
+    try { msg = JSON.parse(body); } catch { return send(res, 400, rpcError(undefined, -32700, 'Parse error')); }
+    const version = msg.params?._meta?.['io.modelcontextprotocol/protocolVersion'];
+    if (version !== undefined &amp;&amp; (h['mcp-protocol-version'] !== version || h['mcp-method'] !== msg.method)) {
+      return send(res, 400, rpcError(msg.id, -32020, 'Header mismatch: MCP-Protocol-Version and Mcp-Method must match the body'));
+    }
+    const reply = handle(msg);
+    if (reply === null) return send(res, 202);              // a notification: accepted, no body
+    const code = reply.error?.code;
+    const status = version === undefined || !reply.error ? 200          // handshake era: errors travel in a 200
+      : code === -32601 ? 404                                           // modern era: method not found
+      : [-32020, -32021, -32022].includes(code) || reply.error.data?.badRequest ? 400 : 200;
+    send(res, status, reply);
+  });
+}).listen(PORT, '127.0.0.1', () =&gt; console.error(`[http] listening on http://127.0.0.1:${PORT}/mcp`));
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Make a random token for this session and start the listener hidden, with its log in a file. The token lives only in an environment variable of this PowerShell session.</p>
+          <pre><code>$env:LAB_MCP_TOKEN = [guid]::NewGuid().ToString('N')
+$srv = Start-Process node -ArgumentList 'http.mjs' -PassThru -WindowStyle Hidden -RedirectStandardError http.log
+Start-Sleep -Seconds 2
+Get-Content http.log</code></pre>
+          <p class="expect"><b>Expected:</b> <code>[http] listening on http://127.0.0.1:8765/mcp</code></p></li>
+        <li><p>Write three request bodies and send the first with no token. <code>curl.exe -i</code> prints the status line and the response headers ahead of the body.</p>
+          <pre><code>Set-Content -Encoding ascii -Path req-init.json -Value '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"by-hand","version":"0"}}}'
+Set-Content -Encoding ascii -Path req-notify.json -Value '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+Set-Content -Encoding ascii -Path req-modern.json -Value '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"ping_host","arguments":{"host":"web-02"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
+$common = @('-s', 'http://127.0.0.1:8765/mcp', '-H', 'Content-Type: application/json', '-H', 'Accept: application/json, text/event-stream')
+curl.exe -i @common --data-binary '@req-init.json'
+""</code></pre>
+          <p class="expect"><b>Expected:</b> <code>HTTP/1.1 401 Unauthorized</code>, a <code>WWW-Authenticate: Bearer</code> header, and the body <code>{"error":"missing or wrong bearer token"}</code>. The request never reached the protocol core.</p></li>
+        <li><p>Send the same body with the token, then the notification, then a GET.</p>
+          <pre><code>$auth = @('-H', "Authorization: Bearer $env:LAB_MCP_TOKEN")
+curl.exe -i @common @auth --data-binary '@req-init.json'
+""
+curl.exe -o NUL -w 'notification: %{http_code}\n' @common @auth --data-binary '@req-notify.json'
+curl.exe -o NUL -w 'GET: %{http_code}\n' @common @auth</code></pre>
+          <p class="expect"><b>Expected:</b> <code>HTTP/1.1 200 OK</code> with <code>Content-Type: application/json</code> and the <code>initialize</code> result as the body, then <code>notification: 202</code> and <code>GET: 405</code>.</p></li>
+        <li><p>Send a 2026-07-28 request with its mirrored headers, then the same body with a header that disagrees with it.</p>
+          <pre><code>$modern = @('-H', 'MCP-Protocol-Version: 2026-07-28', '-H', 'Mcp-Name: ping_host')
+curl.exe @common @auth @modern -H 'Mcp-Method: tools/call' --data-binary '@req-modern.json'
+""
+curl.exe -i @common @auth @modern -H 'Mcp-Method: tools/list' --data-binary '@req-modern.json'
+""</code></pre>
+          <p class="expect"><b>Expected:</b> first the tool result <code>web-02 is up</code> with <code>"resultType":"complete"</code>. Then <code>HTTP/1.1 400 Bad Request</code> with error -32020: the header said <code>tools/list</code> and the body said <code>tools/call</code>.</p></li>
+        <li><p>Connect Claude Code. The config references the token by variable name, so the file holds no secret.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path mcp-http.json -Value @'
+{ "mcpServers": { "inventory": { "type": "http", "url": "http://127.0.0.1:8765/mcp", "headers": { "Authorization": "Bearer ${LAB_MCP_TOKEN}" } } } }
+'@
+Get-Content show.ps1 -Raw | Invoke-Expression
+claude -p "Use the ping_host tool to check web-02 and answer in one line." --model haiku --setting-sources project --strict-mcp-config --mcp-config mcp-http.json --allowedTools "mcp__inventory__ping_host" --output-format stream-json --verbose --max-turns 6 &gt; run6.jsonl
+Show-Run run6.jsonl
+Get-Content http.log | Select-Object -Last 5</code></pre>
+          <p class="expect"><b>Expected:</b> status <code>connected</code>, the answer <code>web-02 is up</code>, and five log lines for Claude Code's requests, each with <code>auth=present version=2026-07-28</code> and the method in the <code>Mcp-Method</code> header: <code>server/discover</code>, <code>prompts/list</code>, <code>resources/list</code>, <code>tools/list</code>, <code>tools/call</code>. No session id.</p></li>
+        <li><p>Give Claude Code a wrong token.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path mcp-http-bad.json -Value @'
+{ "mcpServers": { "inventory": { "type": "http", "url": "http://127.0.0.1:8765/mcp", "headers": { "Authorization": "Bearer wrong-token" } } } }
+'@
+claude -p "Use the ping_host tool to check web-02 and answer in one line." --model haiku --setting-sources project --strict-mcp-config --mcp-config mcp-http-bad.json --allowedTools "mcp__inventory__ping_host" --output-format stream-json --verbose --max-turns 6 &gt; run7.jsonl
+Show-Run run7.jsonl</code></pre>
+          <p class="expect"><b>Expected:</b> status <code>failed</code>, no MCP tools listed, and an answer that says the tool is not available because the server failed to connect with a 401. The <code>tool_result</code> of the model's <code>ToolSearch</code> call carries Claude Code's own diagnosis, <code>AUTH_HEADER_REJECTED</code>, with the note that OAuth fallback is disabled when <code>headers.Authorization</code> is set.</p></li>
+        <li><p>Give it no header at all, and read what it asked the listener for.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path mcp-http-none.json -Value @'
+{ "mcpServers": { "inventory": { "type": "http", "url": "http://127.0.0.1:8765/mcp" } } }
+'@
+claude -p "Use the ping_host tool to check web-02 and answer in one line." --model haiku --setting-sources project --strict-mcp-config --mcp-config mcp-http-none.json --allowedTools "mcp__inventory__ping_host" --output-format stream-json --verbose --max-turns 6 &gt; run8.jsonl
+Show-Run run8.jsonl
+Get-Content http.log | Where-Object { $_ -like '*well-known*' -or $_ -like '*register*' } | ForEach-Object { ($_ -split ' ')[1..2] -join ' ' } | Sort-Object -Unique</code></pre>
+          <p class="expect"><b>Expected:</b> status <code>failed</code> again, and this time the reason in the <code>ToolSearch</code> result is "Dynamic Client Registration rejected (HTTP 404)". The log shows the OAuth discovery requests from lesson 5, sorted here by name: authorization server metadata in both forms, protected resource metadata at two paths, and a dynamic registration attempt. In the full log each appears twice, once after the modern attempt and once after the handshake fallback.</p>
+          <pre data-cap="output"><code>GET /.well-known/oauth-authorization-server
+GET /.well-known/oauth-protected-resource
+GET /.well-known/oauth-protected-resource/mcp
+GET /.well-known/openid-configuration
+POST /register</code></pre></li>
+        <li><p>Stop the listener and prove the port is closed.</p>
+          <pre><code>Stop-Process -Id $srv.Id
+Start-Sleep -Seconds 1
+curl.exe -s -o NUL http://127.0.0.1:8765/mcp
+"curl exit code: $LASTEXITCODE"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>curl exit code: 7</code>, which is curl's code for "could not connect".</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Which line of <code>http.mjs</code> changed in <code>core.mjs</code> to add HTTP?</b> None. The transport imports <code>handle</code> and adds framing, headers and status codes around it. That is what "a transport is a binding" means.</p>
+        <p><b>Why does the listener check the token before it parses the body?</b> An unauthenticated caller should not get to exercise the JSON parser or the protocol core at all.</p>
+        <p><b>The wrong-token run and the no-header run both end in <code>failed</code>. How do you tell them apart from the server side?</b> The log. With a configured header there is one rejected POST and nothing else. With no header there is a rejected POST followed by the <code>/.well-known/</code> requests.</p>
+        <p><b>Would this listener be acceptable on a shared network?</b> No. A static shared token has no user, no expiry and no audience, and the listener speaks plain HTTP. Lesson 5's scheme and TLS are the minimum there.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m23-lab5" data-title="Wrap a read-only data source of your own" data-minutes="30">
+      <p class="goal">You wrap one read-only data source as one tool, first with a synthetic file so that the mechanics are proven, then with a source of your own, and you hold a done-test for it.</p>
+      <ol class="steps">
+        <li><p>Start from a working skeleton. <code>own.mjs</code> is a 36-line handshake-era server with three numbered parts to replace: where the data lives, how the model sees the tool, and the lookup. The data here is a synthetic ticket export.</p>
+          <pre><code>Set-Location {{LAB}}/m23
+Set-Content -Encoding ascii -Path tickets.csv -Value @'
+id,host,severity,opened
+1001,web-01,low,2026-11-02
+1002,db-01,high,2026-11-03
+1003,db-01,medium,2026-11-05
+1004,web-02,low,2026-11-06
+1005,db-01,low,2026-11-09
+'@
+Set-Content -Encoding utf8 -Path own.mjs -Value @'
+// own.mjs: one read-only data source wrapped as one tool. Replace the three numbered parts with your own.
+import { createInterface } from 'node:readline';
+import { readFileSync } from 'node:fs';
+
+const FILE = process.env.TICKETS_FILE || 'tickets.csv';      // 1. where the data lives (opened read-only, per call)
+const tool = {                                               // 2. how the model sees it
+  name: 'tickets_for_host',
+  description: 'List the tickets recorded for one host in the ticket export. Read-only.',
+  inputSchema: { type: 'object', additionalProperties: false, required: ['host'],
+    properties: { host: { type: 'string', description: 'Host name, for example web-01' } } },
+  annotations: { readOnlyHint: true }
+};
+function run(args) {                                         // 3. the lookup. Throw for a problem the model can fix
+  if (typeof args.host !== 'string') throw new Error('Argument "host" must be a string, for example web-01.');
+  const rows = readFileSync(FILE, 'utf8').trim().split(/\r?\n/).slice(1).map((line) =&gt; line.split(','));
+  const hits = rows.filter((r) =&gt; r[1] === args.host);
+  return hits.length ? hits.map((r) =&gt; `#${r[0]} ${r[2]} opened ${r[3]}`).join('\n') : `No tickets for ${args.host}.`;
+}
+
+const text = (t, isError) =&gt; ({ content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) });
+createInterface({ input: process.stdin }).on('line', (line) =&gt; {
+  let msg;
+  try { msg = JSON.parse(line); } catch { return; }
+  if (msg.id === undefined) return;                          // a notification is never answered
+  const reply = (body) =&gt; process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, ...body }) + '\n');
+  if (msg.method === 'initialize') {
+    return reply({ result: { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'own', version: '0.1.0' } } });
+  }
+  if (msg.method === 'tools/list') return reply({ result: { tools: [tool] } });
+  if (msg.method === 'tools/call' &amp;&amp; msg.params.name === tool.name) {
+    try { return reply({ result: text(run(msg.params.arguments || {})) }); }
+    catch (e) { return reply({ result: text(e.message, true) }); }   // a tool execution error: a result, with isError
+  }
+  if (msg.method === 'tools/call') return reply({ error: { code: -32602, message: 'Unknown tool: ' + msg.params.name } });
+  reply({ error: { code: -32601, message: 'Method not found: ' + msg.method } });
+});
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Done-test, part one: call the tool by hand and compare the content with the source read another way.</p>
+          <pre><code>$call = @(
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"by-hand","version":"0"}}}',
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}',
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tickets_for_host","arguments":{"host":"db-01"}}}'
+)
+$reply = $call | node own.mjs | Select-Object -Last 1 | ConvertFrom-Json
+$reply.result.content[0].text
+'rows in the source for db-01: ' + @(Import-Csv tickets.csv | Where-Object { $_.host -eq 'db-01' }).Count</code></pre>
+          <p class="expect"><b>Expected:</b> three ticket lines and <code>rows in the source for db-01: 3</code>.</p>
+          <pre data-cap="output"><code>#1002 high opened 2026-11-03
+#1003 medium opened 2026-11-05
+#1005 low opened 2026-11-09
+rows in the source for db-01: 3</code></pre></li>
+        <li><p>Done-test, part two: one headless run that can only answer by using the tool.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path mcp-own.json -Value @'
+{ "mcpServers": { "own": { "command": "node", "args": ["own.mjs"] } } }
+'@
+Get-Content show.ps1 -Raw | Invoke-Expression
+claude -p "How many tickets does db-01 have, and what is the highest severity among them? Use the tickets tool." --model haiku --setting-sources project --strict-mcp-config --mcp-config mcp-own.json --allowedTools "mcp__own__tickets_for_host" --output-format stream-json --verbose --max-turns 6 &gt; run9.jsonl
+Show-Run run9.jsonl</code></pre>
+          <p class="expect"><b>Expected:</b> status <code>connected</code>, a <code>tool_use</code> of <code>mcp__own__tickets_for_host</code> with <code>{"host":"db-01"}</code>, an answer of 3 tickets with highest severity high, and an empty <code>denied:</code> line.</p></li>
+        <li><p>Now make it yours. Pick one source you are allowed to read and that changes nothing when read: an export file, a log folder, the output of a status command saved to a file, a read-only API you already have a token for. Replace part 1 (the source), part 2 (name, description, schema) and part 3 (the lookup) in <code>own.mjs</code>. Keep these properties:</p>
+          <ul>
+            <li>The tool reads and never writes. Say "Read-only" in the description and keep <code>readOnlyHint</code>.</li>
+            <li>Every argument has a type and a one-line description, and the schema has <code>additionalProperties: false</code>.</li>
+            <li>The result is bounded. If the source can return more than a screenful, add a <code>limit</code> argument with a <code>maximum</code>.</li>
+            <li>A bad argument value comes back as a result with <code>isError</code> and a text that names a valid value. Only an unknown tool or method is a JSON-RPC error.</li>
+            <li>A credential, if you need one, comes from an environment variable set in the config entry's <code>env</code>, never from a literal in the file.</li>
+            <li>Nothing is printed to stdout except replies.</li>
+          </ul>
+          <p class="expect"><b>Done when:</b> the by-hand <code>tools/call</code> of step 2, with your tool name and arguments, prints content that matches the source read another way. A by-hand call with a deliberately wrong argument prints a result with <code>isError</code>. One headless run with <code>--strict-mcp-config</code>, your config file and an <code>--allowedTools</code> grant for exactly your tool shows status <code>connected</code>, one <code>tool_use</code> of your tool, a correct answer and an empty <code>denied:</code> line.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b><code>own.mjs</code> is handshake-only. Did Claude Code 2.1.322 still use it?</b> Yes. It probed with <code>server/discover</code>, got -32601 and fell back to <code>initialize</code>, as in Lab 3 step 5. To serve the 2026-07-28 shape as well, put your tool into <code>core.mjs</code> instead, or use an SDK.</p>
+        <p><b>Your source has 40,000 rows. What happens if the tool returns them all?</b> A text result over 50,000 characters is saved to a file and the model gets a path, and anything over the token limit does not reach the model as content. Bound the result in the tool and let the model ask for the next page.</p>
+        <p><b>Where do the finished files live?</b> In <code>{{LAB}}/m23</code>: <code>server1.mjs</code>, <code>core.mjs</code>, <code>stdio.mjs</code>, <code>http.mjs</code>, <code>tap.mjs</code>, <code>test-client.mjs</code>, <code>own.mjs</code>, <code>show.ps1</code> and the config files. "MCP server or CLI tool" reuses them.</p>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Message shapes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Shape</th><th>Example</th></tr>
+      <tr><td>Request</td><td><code>{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{...}}</code></td></tr>
+      <tr><td>Result</td><td><code>{"jsonrpc":"2.0","id":3,"result":{...}}</code></td></tr>
+      <tr><td>Error</td><td><code>{"jsonrpc":"2.0","id":3,"error":{"code":-32602,"message":"...","data":{...}}}</code></td></tr>
+      <tr><td>Notification</td><td><code>{"jsonrpc":"2.0","method":"notifications/initialized"}</code></td></tr>
+    </table></div>
+    <h3>Methods used in this module</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Method</th><th>Direction</th><th>Era</th><th>Key fields</th></tr>
+      <tr><td><code>initialize</code></td><td>client to server</td><td>Legacy</td><td>Request: <code>protocolVersion</code>, <code>capabilities</code>, <code>clientInfo</code>. Result: <code>protocolVersion</code>, <code>capabilities</code>, <code>serverInfo</code>, <code>instructions</code></td></tr>
+      <tr><td><code>notifications/initialized</code></td><td>client to server</td><td>Legacy</td><td>Notification, no reply</td></tr>
+      <tr><td><code>server/discover</code></td><td>client to server</td><td>Modern</td><td>Result: <code>supportedVersions</code>, <code>capabilities</code>, <code>instructions</code></td></tr>
+      <tr><td><code>tools/list</code></td><td>client to server</td><td>Both</td><td>Result: <code>tools[]</code> with <code>name</code>, <code>description</code>, <code>inputSchema</code>, optional <code>title</code>, <code>outputSchema</code>, <code>annotations</code>, <code>_meta</code>. <code>nextCursor</code></td></tr>
+      <tr><td><code>tools/call</code></td><td>client to server</td><td>Both</td><td>Request: <code>name</code>, <code>arguments</code>. Result: <code>content[]</code>, optional <code>structuredContent</code>, <code>isError</code></td></tr>
+      <tr><td><code>resources/list</code>, <code>resources/templates/list</code>, <code>resources/read</code></td><td>client to server</td><td>Both</td><td><code>resources[]</code> with <code>uri</code>, <code>name</code>, <code>mimeType</code>. Read takes <code>uri</code>, returns <code>contents[]</code> with <code>text</code> or <code>blob</code></td></tr>
+      <tr><td><code>prompts/list</code>, <code>prompts/get</code></td><td>client to server</td><td>Both</td><td><code>prompts[]</code> with <code>name</code>, <code>arguments[]</code>. Get takes <code>name</code>, <code>arguments</code>, returns <code>messages[]</code></td></tr>
+      <tr><td><code>notifications/tools/list_changed</code></td><td>server to client</td><td>Both</td><td>Legacy: sent on the connection. Modern: only on a <code>subscriptions/listen</code> stream</td></tr>
+      <tr><td><code>notifications/cancelled</code></td><td>client to server</td><td>Both (stdio)</td><td>The id of the request to cancel</td></tr>
+    </table></div>
+    <h3>Per-request metadata and HTTP headers (2026-07-28)</h3>
+    <div class="tablewrap"><table>
+      <tr><th>In <code>params._meta</code></th><th>Mirrored HTTP header</th><th>Required</th></tr>
+      <tr><td><code>io.modelcontextprotocol/protocolVersion</code></td><td><code>MCP-Protocol-Version</code></td><td>Yes</td></tr>
+      <tr><td><code>io.modelcontextprotocol/clientCapabilities</code></td><td>none</td><td>Yes</td></tr>
+      <tr><td><code>io.modelcontextprotocol/clientInfo</code></td><td>none</td><td>Should</td></tr>
+      <tr><td>(the <code>method</code> field)</td><td><code>Mcp-Method</code></td><td>Yes</td></tr>
+      <tr><td>(<code>params.name</code> or <code>params.uri</code>)</td><td><code>Mcp-Name</code></td><td>On <code>tools/call</code>, <code>resources/read</code>, <code>prompts/get</code></td></tr>
+      <tr><td>Results: <code>resultType</code>, <code>_meta["io.modelcontextprotocol/serverInfo"]</code>, and on lists <code>ttlMs</code>, <code>cacheScope</code></td><td>none</td><td><code>resultType</code>, <code>ttlMs</code> and <code>cacheScope</code> yes. <code>serverInfo</code> should</td></tr>
+    </table></div>
+    <h3>Error codes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Code</th><th>Meaning</th><th>HTTP status in 2026-07-28</th></tr>
+      <tr><td class="num">-32700</td><td>Parse error</td><td></td></tr>
+      <tr><td class="num">-32601</td><td>Method not found</td><td class="num">404</td></tr>
+      <tr><td class="num">-32602</td><td>Invalid params: unknown tool or prompt, resource not found, missing required <code>_meta</code> field</td><td class="num">400 for a missing <code>_meta</code> field</td></tr>
+      <tr><td class="num">-32603</td><td>Internal error</td><td></td></tr>
+      <tr><td class="num">-32020</td><td>HeaderMismatch</td><td class="num">400</td></tr>
+      <tr><td class="num">-32021</td><td>MissingRequiredClientCapability</td><td class="num">400</td></tr>
+      <tr><td class="num">-32022</td><td>UnsupportedProtocolVersion, with <code>data.supported</code></td><td class="num">400</td></tr>
+    </table></div>
+    <h3>Claude Code: flags, variables and config fields</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Item</th><th>What it does</th></tr>
+      <tr><td><code>--mcp-config &lt;file or JSON&gt;</code></td><td>Loads MCP servers from JSON files or strings. With <code>-p</code>, waits for them to connect before the first turn, up to <code>MCP_TIMEOUT</code></td></tr>
+      <tr><td><code>--strict-mcp-config</code></td><td>Uses only the servers from <code>--mcp-config</code> and ignores every other MCP configuration</td></tr>
+      <tr><td><code>--allowedTools "mcp__server__tool"</code></td><td>Grants an MCP tool without a prompt. <code>mcp__server__*</code> grants a whole server</td></tr>
+      <tr><td><code>.mcp.json</code></td><td>Project-scope servers, in the project root, under the key <code>mcpServers</code></td></tr>
+      <tr><td>Entry fields</td><td><code>command</code>, <code>args</code>, <code>env</code> for stdio. <code>type</code>, <code>url</code>, <code>headers</code>, <code>headersHelper</code> for remote. <code>timeout</code>, <code>alwaysLoad</code> for either</td></tr>
+      <tr><td><code>${VAR}</code>, <code>${VAR:-default}</code></td><td>Environment variable expansion in <code>command</code>, <code>args</code>, <code>env</code>, <code>url</code>, <code>headers</code></td></tr>
+      <tr><td><code>ENABLE_TOOL_SEARCH</code></td><td>unset or <code>true</code>: MCP tools deferred. <code>auto</code>, <code>auto:N</code>: deferred above a share of the window. <code>false</code>: loaded upfront</td></tr>
+      <tr><td><code>MAX_MCP_OUTPUT_TOKENS</code></td><td>Maximum tokens in one MCP tool output. Default 25,000</td></tr>
+      <tr><td><code>MCP_TIMEOUT</code>, <code>MCP_TOOL_TIMEOUT</code></td><td>Server startup timeout (default 30 s) and tool execution timeout (default about 28 hours), in milliseconds</td></tr>
+      <tr><td><code>MCP_PROTOCOL_NEGOTIATION</code></td><td><code>legacy</code>: never probe for 2026-07-28. <code>auto</code>: always probe the server kinds that support it</td></tr>
+      <tr><td><code>MCP_SDK_GENERATION</code></td><td><code>v1</code> or <code>v2</code>: pins the MCP client runtime</td></tr>
+      <tr><td><code>CLAUDE_PROJECT_DIR</code></td><td>Set by Claude Code in a stdio server's environment to the project root</td></tr>
+      <tr><td>Init line <code>mcp_servers</code>, <code>mcp_server_errors</code></td><td>Per-server <code>name</code> and <code>status</code>, and config entries that were skipped</td></tr>
+    </table></div>
+    <h3>Lab files</h3>
+    <div class="tablewrap"><table>
+      <tr><th>File</th><th>Lines</th><th>What it is</th></tr>
+      <tr><td><code>server1.mjs</code></td><td class="num">38</td><td>Smallest server: stdio, one tool, handshake era</td></tr>
+      <tr><td><code>core.mjs</code></td><td class="num">97</td><td>Protocol core: two tools, one resource, one prompt, both eras</td></tr>
+      <tr><td><code>stdio.mjs</code></td><td class="num">12</td><td>stdio transport around the core</td></tr>
+      <tr><td><code>http.mjs</code></td><td class="num">40</td><td>Streamable HTTP transport around the core, bearer token, 127.0.0.1</td></tr>
+      <tr><td><code>test-client.mjs</code></td><td class="num">91</td><td>Minimal stdio client with 13 assertions</td></tr>
+      <tr><td><code>tap.mjs</code></td><td class="num">15</td><td>Wire tap for any stdio server</td></tr>
+      <tr><td><code>own.mjs</code></td><td class="num">36</td><td>Skeleton for wrapping one data source as one tool</td></tr>
+    </table></div>
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>A client reports a parse error or drops a stdio server at connect</td><td>The server, a library or a shell profile printed to stdout</td><td>Log to stderr only. Run the server by hand and look at the first line it prints</td></tr>
+      <tr><td>Replies never arrive for a stdio server you wrote</td><td>Pretty-printed JSON, or no newline after the message</td><td>One message per line: <code>JSON.stringify(msg) + "\n"</code></td></tr>
+      <tr><td>The model calls a tool again with the same wrong argument</td><td>The failure came back as a JSON-RPC error, or as a success with error text</td><td>Return a result with <code>isError: true</code> and a text that names a valid value</td></tr>
+      <tr><td>Headless run: the tool is listed, the call is refused</td><td>No allow rule covers the MCP tool and nobody can answer a prompt</td><td><code>--allowedTools "mcp__server__tool"</code>. Check <code>permission_denials</code></td></tr>
+      <tr><td>Status <code>failed</code> for an HTTP server with a configured header</td><td>The server rejected the header. Claude Code does not fall back to OAuth</td><td>Fix the token. If it comes from <code>${VAR}</code>, check the variable is set and is not a name Claude Code reads as empty</td></tr>
+      <tr><td>Status <code>failed</code> for a remote server in a <code>-p</code> run that works interactively</td><td>The server needs OAuth sign-in and a headless run cannot do it</td><td>Sign in once with <code>claude mcp login &lt;name&gt;</code> or <code>/mcp</code></td></tr>
+      <tr><td>A <code>url</code> entry is skipped</td><td>No <code>type</code>: an entry without one is read as stdio</td><td>Add <code>"type": "http"</code>. Read <code>mcp_server_errors</code> in the init line</td></tr>
+      <tr><td>HTTP 400 with error -32020 from a modern server</td><td><code>MCP-Protocol-Version</code>, <code>Mcp-Method</code> or <code>Mcp-Name</code> missing or different from the body</td><td>Send all three, equal to the body. Check any proxy that rewrites headers</td></tr>
+      <tr><td>A legacy client cannot connect to a new server</td><td>The server is modern-only. A legacy client has no way to move forward</td><td>Make the server dual-era, or upgrade the client</td></tr>
+      <tr><td>A tool result reaches the model as a file path</td><td>The text was over 50,000 characters</td><td>Bound the output with a <code>limit</code> argument, or declare <code>anthropic/maxResultSizeChars</code></td></tr>
+    </table></div>
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+        <li>MCP specification, revision 2026-07-28, "Key Changes": <a href="https://modelcontextprotocol.io/specification/2026-07-28/changelog" target="_blank" rel="noopener">modelcontextprotocol.io/specification/2026-07-28/changelog</a></li>
+        <li>MCP specification 2026-07-28, base protocol overview (messages, error codes, <code>_meta</code>) and "Versioning and Compatibility": <a href="https://modelcontextprotocol.io/specification/2026-07-28/basic" target="_blank" rel="noopener">modelcontextprotocol.io/specification/2026-07-28/basic</a>, <a href="https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning" target="_blank" rel="noopener">.../basic/versioning</a></li>
+        <li>MCP specification 2026-07-28, transports "stdio" and "Streamable HTTP": <a href="https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/stdio" target="_blank" rel="noopener">.../basic/transports/stdio</a>, <a href="https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http" target="_blank" rel="noopener">.../basic/transports/streamable-http</a></li>
+        <li>MCP specification 2026-07-28, "Authorization": <a href="https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization" target="_blank" rel="noopener">modelcontextprotocol.io/specification/2026-07-28/basic/authorization</a></li>
+        <li>MCP specification 2026-07-28, server features "Discovery", "Tools", "Resources", "Prompts", "Pagination": <a href="https://modelcontextprotocol.io/specification/2026-07-28/server/tools" target="_blank" rel="noopener">modelcontextprotocol.io/specification/2026-07-28/server/tools</a> and its sibling pages</li>
+        <li>MCP specification 2026-07-28, "Architecture", "Deprecated Features" and the schema reference: <a href="https://modelcontextprotocol.io/specification/2026-07-28/architecture" target="_blank" rel="noopener">.../architecture</a>, <a href="https://modelcontextprotocol.io/specification/2026-07-28/deprecated" target="_blank" rel="noopener">.../deprecated</a></li>
+        <li>MCP specification, revision 2025-11-25, "Lifecycle" and "Transports": <a href="https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle" target="_blank" rel="noopener">modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle</a>, <a href="https://modelcontextprotocol.io/specification/2025-11-25/basic/transports" target="_blank" rel="noopener">.../basic/transports</a></li>
+        <li>MCP documentation, "SDKs": <a href="https://modelcontextprotocol.io/docs/2026-07-28/sdk" target="_blank" rel="noopener">modelcontextprotocol.io/docs/2026-07-28/sdk</a></li>
+        <li>JSON-RPC 2.0 specification (error object and codes): <a href="https://www.jsonrpc.org/specification" target="_blank" rel="noopener">jsonrpc.org/specification</a></li>
+        <li>Claude Code docs, "Connect Claude Code to tools via MCP": <a href="https://code.claude.com/docs/en/mcp" target="_blank" rel="noopener">code.claude.com/docs/en/mcp</a></li>
+        <li>Claude Code docs, "Permissions", "Environment variables", "CLI reference" and "Run Claude Code programmatically": <a href="https://code.claude.com/docs/en/permissions" target="_blank" rel="noopener">code.claude.com/docs/en/permissions</a>, <a href="https://code.claude.com/docs/en/env-vars" target="_blank" rel="noopener">.../env-vars</a>, <a href="https://code.claude.com/docs/en/cli-reference" target="_blank" rel="noopener">.../cli-reference</a>, <a href="https://code.claude.com/docs/en/headless" target="_blank" rel="noopener">.../headless</a></li>
+        <li>Claude API docs, "MCP connector": <a href="https://platform.claude.com/docs/en/agents-and-tools/mcp-connector" target="_blank" rel="noopener">platform.claude.com/docs/en/agents-and-tools/mcp-connector</a></li>
+        <li>Measured: every Expected line in the labs and every wire capture in the lessons comes from a run on Claude Code 2.1.322 with Node 22 on 11 November 2026, plus <code>claude mcp --help</code> on that version.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "A colleague's stdio MCP server passes its own unit tests, but one MCP client drops it at connect with a JSON parse error and another client connects fine. The server's entry point starts with console.log(\"inventory server ready\"). What do you tell them?", "o": ["The first client is too old for the server's protocol version. Have it send server/discover first.", "The server must send notifications/initialized before anything else, and the banner is delaying it.", "On stdio, stdout carries protocol messages only. The banner is a non-message line in the stream. Move it to stderr. That one client tolerates it does not make it valid.", "Banners are fine as long as they end with a newline. The failing client has a framing bug that should be reported."], "a": 2, "why": "The stdio binding says the server must not write anything to stdout that is not a valid MCP message, and may log freely to stderr. Clients differ in how strictly they enforce it: the lab's test client stopped at the first non-JSON line, while Claude Code 2.1.322 skipped it. A server that depends on a lenient client is broken."},
+    {"q": "Your tool takes a date argument. The model sends \"next Tuesday\", which your tool cannot parse. What should the server send back?", "o": ["A result with isError true and a text such as: date must be YYYY-MM-DD, for example 2026-11-17.", "A JSON-RPC error with code -32602 (Invalid params) and the message \"bad date\".", "A normal result whose text is \"error: bad date\", so that the call is not counted as a failure.", "Nothing. Drop the request so the client times out and the model picks another tool."], "a": 0, "why": "Input validation failures are tool execution errors in the specification: they go in a result with isError true, because clients should pass those to the model so it can correct itself. JSON-RPC errors are for a malformed request or an unknown tool and may not reach the model. A success with error text is counted as a success by the client and the model."},
+    {"q": "You maintain a small stdio server written a year ago. It implements initialize, tools/list and tools/call, and answers anything else with error -32601. Someone asks whether it must be rewritten before the team moves to Claude Code 2.1.322, which speaks protocol revision 2026-07-28.", "o": ["Yes. A client on 2026-07-28 sends no initialize, so the server can no longer be reached.", "Yes. It must at least implement server/discover, which is mandatory for every server.", "No, but it needs a session id header to keep working.", "No. Claude Code probes with server/discover, gets -32601, and falls back to the initialize handshake. Plan the dual-era upgrade, but nothing breaks today."], "a": 3, "why": "A dual-era client on stdio probes with server/discover and falls back to initialize on any error that is not a recognised modern error. The lab showed exactly this exchange against a handshake-only server. server/discover is mandatory for servers of the 2026-07-28 revision, not for a legacy server, and session ids were an HTTP mechanism that the new revision removed."},
+    {"q": "A nightly job runs claude -p inside repositories cloned from other teams. It needs exactly one MCP tool, mcp__tickets__search, from a server you run. Which invocation fits?", "o": ["claude -p ... and add your server at user scope with claude mcp add, so every repository gets it.", "claude -p ... --mcp-config tickets.json --strict-mcp-config --allowedTools \"mcp__tickets__search\"", "claude -p ... --mcp-config tickets.json --allowedTools \"mcp__*\"", "claude -p ... --mcp-config tickets.json --permission-mode bypassPermissions"], "a": 1, "why": "A headless run loads a repository's .mcp.json servers without asking, so a job in someone else's repository needs --strict-mcp-config to use only the servers it was given. Granting the single tool by its full name is the narrowest grant. An allow rule of mcp__* is skipped by Claude Code, and bypassing permissions grants every tool of every server the repository names."},
+    {"q": "A team wants everyone to get an internal HTTP MCP server from the project's .mcp.json. The server takes a static bearer token. Which setup do you approve?", "o": ["Commit the token in the headers object. The repository is private.", "Reference ${ANTHROPIC_API_KEY} in the header, since every developer already has that variable set.", "Commit \"Authorization\": \"Bearer ${TICKETS_MCP_TOKEN}\" and have each developer set that variable. Longer term, move the server to the OAuth scheme.", "Leave the header out and let Claude Code discover the token through the server's well-known metadata."], "a": 2, "why": "Claude Code expands ${VAR} in headers, so the committed file can carry a variable name and no secret. It deliberately reads its own credential variables such as ANTHROPIC_API_KEY as empty in a remote server's url and headers, so that choice sends an empty token. Well-known metadata is for OAuth discovery and does not hand out static tokens. A static shared token has no user, expiry or audience, which is why OAuth is the direction for anything shared."}
+  ]</script>
+</section>
