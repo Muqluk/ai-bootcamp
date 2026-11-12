@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>html,body{height:100%}body{margin:0}img{max-width:100%}</style>
+<title>AI/LLM Bootcamp</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&family=Nunito:wght@700;800&display=swap">
+<style>
+/* AI/LLM Bootcamp. One stylesheet for the catalogue page and every module page.
+   Layout: a top bar (brand, where you are, theme picker), a part rail on the left (a strip in some themes and on phones),
+   one reading column that swaps parts on the hash.
+   The four token types keep one colour each everywhere, the way a utility meter keeps one colour per tariff.
+   Five themes: data-style a..e on the root (a = Meter is the base). data-mode light|dark is resolved in script. */
+:root {
+  --bg: #f1f3f6; --surface: #ffffff; --sunk: #e8ebf0; --fg: #17202b; --muted: #566273; --line: #d3d9e2;
+  --accent: #a4460d; --accent-ink: #ffffff; --accent-soft: #fbeadf;
+  --t-in: #2a66b3; --t-out: #b8500f; --t-cw: #7446bd; --t-cr: #25784c;
+  --good: #25784c; --good-soft: #e0f1e7; --bad: #a8372f; --bad-soft: #f8e3e1; --home: #7446bd; --home-soft: #efe8fa;
+  --font-display: "Archivo", "Segoe UI Semibold", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, "SF Mono", monospace;
+  --top-h: 46px;
+}
+:root[data-mode="dark"] {
+  --bg: #11151b; --surface: #19202a; --sunk: #0d1116; --fg: #e5e9ef; --muted: #98a4b3; --line: #2b3542;
+  --accent: #f09460; --accent-ink: #1d0f05; --accent-soft: #3a2415;
+  --t-in: #6ea9ee; --t-out: #f09460; --t-cw: #b396f0; --t-cr: #6cc795;
+  --good: #6cc795; --good-soft: #17301f; --bad: #e6837b; --bad-soft: #3a1f1d; --home: #b396f0; --home-soft: #261f38; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+script, pre.mermaid { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.6; margin: 0; }
+a { color: var(--accent); }
+h1, h2, h3, h4 { font-family: var(--font-display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(1.9rem, 4.6vw, 2.7rem); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.6rem; font-weight: 700; }
+h3 { font-size: 1.15rem; font-weight: 700; margin-top: 1.7em; }
+h4 { font-size: 1rem; font-weight: 700; margin-top: 1.2em; }
+p { margin: 0.7em 0; }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--sunk); padding: 0.08em 0.32em; border-radius: 4px; overflow-wrap: anywhere; }
+.codebox { margin: 0.7em 0; border: 1px solid var(--line); border-radius: 8px; background: var(--sunk); min-width: 0; }
+.codebox .cap { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--line); font: 600 0.72rem var(--font-mono); color: var(--muted); }
+.codebox pre { margin: 0; padding: 11px 13px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.5; }
+.codebox pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: normal; }
+.copy { font: 600 0.72rem var(--font-body); padding: 3px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
+.copy:hover { color: var(--fg); }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* top bar */
+.top { position: sticky; top: 0; z-index: 12; height: var(--top-h); display: flex; align-items: center; gap: 14px; background: var(--surface); border-bottom: 1px solid var(--line); padding: 0 max(14px, env(safe-area-inset-right, 0px)) 0 max(14px, env(safe-area-inset-left, 0px)); }
+.brand { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; text-decoration: none; color: var(--fg); white-space: nowrap; }
+.crumb { font-size: 0.86rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.themepick { margin-left: auto; display: flex; align-items: center; gap: 6px; font: 600 0.8rem var(--font-body); color: var(--muted); white-space: nowrap; }
+.themepick select { font: 600 0.8rem var(--font-body); padding: 4px 6px; }
+
+/* frame */
+.app { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: calc(100vh - var(--top-h)); }
+.app.solo { grid-template-columns: minmax(0, 1fr); }
+.side { position: sticky; top: var(--top-h); align-self: start; height: calc(100vh - var(--top-h)); overflow-y: auto; background: var(--surface); border-right: 1px solid var(--line); padding: 16px 12px 18px max(12px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 14px; }
+#nav { display: flex; flex-direction: column; gap: 2px; }
+.navlink { display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; align-items: center; text-decoration: none; color: var(--fg); font-size: 0.9rem; padding: 6px 8px; border-radius: 7px; line-height: 1.3; }
+.navlink:hover { background: var(--sunk); }
+.navlink.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.navlink .n { font: 600 0.74rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.navlink .p { font: 600 0.68rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.navlink .p.full { color: var(--good); }
+.side-foot { margin-top: auto; display: grid; gap: 6px; font-size: 0.85rem; padding: 0 8px; }
+.side-foot label { display: flex; gap: 8px; align-items: center; color: var(--muted); cursor: pointer; }
+main { min-width: 0; padding-block: 30px 72px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.view, section.module, .pager { max-width: 780px; margin: 0 auto; min-width: 0; }
+.view, section.module { display: grid; gap: 20px; }
+.view.wide { max-width: 1040px; }
+.view > *, section.module > * { min-width: 0; }
+@media (max-width: 860px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { z-index: 9; height: auto; flex-direction: row; align-items: center; gap: 10px; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px max(14px, env(safe-area-inset-right, 0px)) 6px max(14px, env(safe-area-inset-left, 0px)); overflow: visible; }
+  .side-foot { display: none; }
+  #nav { flex-direction: row; overflow-x: auto; scrollbar-width: none; min-width: 0; flex: 1; }
+  #nav::-webkit-scrollbar { display: none; }
+  .navlink { grid-template-columns: auto auto; flex: 0 0 auto; white-space: nowrap; padding: 5px 9px; }
+  .navlink .p { display: none; }
+  main { padding-block: 22px 56px; }
+  .crumb { display: none; }
+}
+
+/* shared pieces */
+.kicker { font: 600 0.72rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); }
+.muted { color: var(--muted); }
+.lede { font-size: 1.08rem; color: var(--muted); max-width: 66ch; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; min-width: 0; }
+.panel > h3:first-child { margin-top: 0; }
+.btn { font: 600 0.9rem var(--font-body); padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; text-decoration: none; display: inline-block; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+input[type="text"], input[type="number"], textarea, select { font: inherit; font-size: 0.92rem; color: var(--fg); background: var(--sunk); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; min-width: 0; }
+textarea { width: 100%; min-height: 96px; resize: vertical; font-family: var(--font-mono); font-size: 0.8rem; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 0.74rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 0.84rem; }
+.tok { font: 600 0.78rem var(--font-mono); white-space: nowrap; }
+.tok::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; background: currentColor; }
+.tok.in { color: var(--t-in); } .tok.out { color: var(--t-out); } .tok.cw { color: var(--t-cw); } .tok.cr { color: var(--t-cr); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.chip { font: 600 0.7rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; text-decoration: none; }
+a.chip:hover { border-color: var(--accent); color: var(--accent); }
+.chip.lv-foundation { color: var(--t-cr); border-color: var(--t-cr); }
+.chip.lv-practitioner { color: var(--t-in); border-color: var(--t-in); }
+.chip.lv-advanced { color: var(--t-cw); border-color: var(--t-cw); }
+
+/* catalogue */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+.mcard { display: grid; gap: 6px; align-content: start; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; text-decoration: none; color: inherit; }
+a.mcard:hover { border-color: var(--accent); }
+.mcard .n { font: 600 0.72rem var(--font-mono); color: var(--accent); }
+.mcard .t { font-family: var(--font-display); font-weight: 700; font-size: 1.08rem; }
+.mcard .s { font-size: 0.86rem; color: var(--muted); }
+.mcard .pre { font-size: 0.8rem; color: var(--muted); }
+.meter { height: 6px; background: var(--sunk); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.meter span { display: block; height: 100%; width: 0; background: var(--good); }
+.howto { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 18px; }
+.howto b { display: block; font-family: var(--font-display); font-size: 1rem; }
+.howto div { font-size: 0.92rem; color: var(--muted); }
+.paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.paths .panel { padding: 14px 16px; }
+.paths b { font-family: var(--font-display); }
+.paths ol { margin: 6px 0 0; padding-left: 1.3em; font-size: 0.9rem; }
+
+/* module */
+.mhead { display: grid; gap: 8px; }
+.mhead .meta { color: var(--muted); font-size: 0.92rem; }
+.partlist { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; }
+.partlist a { display: grid; grid-template-columns: 34px 1fr auto; gap: 8px; padding: 7px 8px; border-radius: 7px; text-decoration: none; color: var(--fg); }
+.partlist a:hover { background: var(--sunk); }
+.partlist .n { font: 600 0.74rem var(--font-mono); color: var(--accent); padding-top: 3px; }
+.partlist .m { font: 600 0.72rem var(--font-mono); color: var(--muted); padding-top: 3px; }
+.overview p, .overview li, .lesson p, .lesson li, .lab p, .lab li, .reference p, .reference li { max-width: 70ch; }
+.overview ul, .lesson ul, .lesson ol, .lab ul, .reference ul { padding-left: 1.2em; }
+.overview li, .lesson li, .lab li { margin: 0.3em 0; }
+.overview > h3:first-of-type { margin-top: 0.6em; }
+.recap { background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 14px 18px; margin-top: 1.2em; }
+.recap h3 { margin-top: 0; font-size: 1rem; }
+.sources { font-size: 0.88rem; color: var(--muted); }
+.sources h3 { color: var(--fg); }
+.sources li { margin: 0.25em 0; overflow-wrap: anywhere; }
+aside.rule { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; margin: 1.1em 0; max-width: 70ch; font-weight: 600; }
+aside.trap { background: var(--bad-soft); border-radius: 8px; padding: 10px 14px; margin: 1em 0; max-width: 70ch; font-size: 0.94rem; }
+aside.trap::before { content: "Trap"; display: block; font: 600 0.68rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--bad); }
+aside.home { background: var(--home-soft); border-radius: 8px; padding: 10px 14px; margin: 1em 0; max-width: 70ch; font-size: 0.94rem; }
+aside.home::before { content: "At home"; display: block; font: 600 0.68rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--home); }
+body.hide-home aside.home { display: none; }
+.labs { display: grid; gap: 18px; }
+.lab { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; min-width: 0; }
+.lab.done { border-color: var(--good); }
+.labhead { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.labhead h3 { margin: 0; }
+.labhead .meta { font: 600 0.72rem var(--font-mono); color: var(--muted); }
+.goal { color: var(--muted); }
+ol.steps { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 14px; counter-reset: step; }
+ol.steps > li { counter-increment: step; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 0 10px; margin: 0; max-width: none; }
+ol.steps > li > .tick { grid-row: 1 / span 30; }
+ol.steps > li > :not(.tick) { grid-column: 2; margin-top: 0; margin-bottom: 8px; min-width: 0; }
+ol.steps > li > :last-child { margin-bottom: 0; }
+.tick { appearance: none; -webkit-appearance: none; width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--sunk); cursor: pointer; display: grid; place-items: center; margin: 0; }
+.tick::before { content: counter(step); font: 600 0.78rem var(--font-mono); color: var(--muted); }
+.tick:checked { background: var(--good); border-color: var(--good); }
+.tick:checked::before { content: "\2713"; color: var(--surface); }
+p.expect { font-size: 0.92rem; border-left: 3px solid var(--t-cr); padding-left: 12px; color: var(--muted); }
+p.expect b { color: var(--fg); }
+details.check { border: 1px dashed var(--line); border-radius: 8px; padding: 10px 14px; margin-top: 12px; }
+details.check summary { cursor: pointer; font-weight: 600; }
+details.check[open] summary { margin-bottom: 6px; }
+.labfoot { display: flex; justify-content: flex-end; margin-top: 14px; }
+.lab.done .labfoot .btn { background: var(--good-soft); color: var(--good); border-color: var(--good); }
+.pager { display: flex; justify-content: space-between; gap: 10px; margin-top: 28px; }
+.pager .btn { max-width: 48%; }
+.pager .next { margin-left: auto; }
+
+/* calls */
+.drill { display: grid; gap: 14px; }
+.q { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 10px; }
+.q .qt { font-weight: 600; max-width: 70ch; }
+.opts { display: grid; gap: 7px; }
+.opt { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: transparent; color: var(--fg); font: inherit; font-size: 0.94rem; text-align: left; line-height: 1.45; }
+.opt:hover { border-color: var(--accent); }
+.opt .k { flex: 0 0 22px; font: 600 0.76rem var(--font-mono); color: var(--muted); padding-top: 2px; }
+.opt.right { border-color: var(--good); background: var(--good-soft); }
+.opt.wrong { border-color: var(--bad); background: var(--bad-soft); }
+.why { font-size: 0.92rem; color: var(--muted); border-left: 3px solid var(--line); padding-left: 12px; max-width: 70ch; }
+
+/* instruments */
+.tool { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin: 1em 0; display: grid; gap: 12px; min-width: 0; }
+.tool h4 { margin: 0; }
+.tool .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.tool label { display: grid; gap: 3px; font-size: 0.78rem; color: var(--muted); font-weight: 600; }
+.tool label input, .tool label select { width: 100%; }
+.bar { display: flex; height: 22px; border-radius: 5px; overflow: hidden; background: var(--sunk); }
+.bar span { display: block; height: 100%; min-width: 0; }
+.bar .in { background: var(--t-in); } .bar .out { background: var(--t-out); } .bar .cw { background: var(--t-cw); } .bar .cr { background: var(--t-cr); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; }
+.big { font: 700 1.5rem var(--font-display); font-variant-numeric: tabular-nums; }
+.verdict { font-weight: 600; }
+.note { font-size: 0.82rem; color: var(--muted); }
+
+/* diagrams: inline SVG drawn in the boxes-and-arrows style; every colour comes from the theme */
+figure.diagram { margin: 1.2em 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 10px; overflow-x: auto; }
+figure.diagram svg { display: block; width: 100%; height: auto; min-width: 520px; max-width: 760px; margin: 0 auto; font-family: var(--font-body); }
+figure.diagram figcaption { font-size: 0.84rem; color: var(--muted); margin-top: 8px; text-align: center; }
+.dg-box { fill: var(--sunk); stroke: var(--muted); stroke-width: 1.5; }
+.dg-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.dg-good { fill: var(--good-soft); stroke: var(--good); stroke-width: 1.5; }
+.dg-bad { fill: var(--bad-soft); stroke: var(--bad); stroke-width: 1.5; }
+.dg-ghost { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 6 4; }
+.dg-in { fill: var(--t-in); } .dg-out { fill: var(--t-out); } .dg-cw { fill: var(--t-cw); } .dg-cr { fill: var(--t-cr); }
+.dg-line { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.dg-line.dash { stroke-dasharray: 5 4; }
+.dg-line.hot { stroke: var(--accent); }
+.dg-head { fill: var(--muted); stroke: none; }
+.dg-head.hot { fill: var(--accent); }
+.dg-text { fill: var(--fg); font-size: 13px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+.dg-sub { fill: var(--muted); font-size: 11px; text-anchor: middle; dominant-baseline: middle; }
+.dg-label { fill: var(--muted); font-size: 11px; font-family: var(--font-mono); text-anchor: middle; dominant-baseline: middle; }
+.dg-on { fill: var(--surface); font-size: 12px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+.dg-left { text-anchor: start; } .dg-right { text-anchor: end; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+
+/* ---------- themes b to e: token overrides and a few shapes ---------- */
+/* a strip under the top bar instead of the left rail (b, d, e) */
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .app { grid-template-columns: minmax(0, 1fr); }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .side { z-index: 9; height: auto; flex-direction: row; align-items: center; gap: 12px; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px max(14px, env(safe-area-inset-right, 0px)) 6px max(14px, env(safe-area-inset-left, 0px)); overflow: visible; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) :is(.side-foot, .navlink .p) { display: none; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) #nav { flex-direction: row; overflow-x: auto; min-width: 0; flex: 1; scrollbar-width: none; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .navlink { grid-template-columns: auto auto; flex: 0 0 auto; white-space: nowrap; }
+:root:is([data-style="b"], [data-style="c"], [data-style="e"]) :is(.panel, .lab, .q, .tool, .codebox, .mcard, .btn, .opt, .copy, .bar, .navlink, input, textarea, select, details.check, aside.trap, aside.home, code, .recap, figure.diagram, .chip, .partlist a) { border-radius: var(--r, 2px); }
+
+/* b: Workbench. Editor greys, one cobalt accent, 2px corners, dense system type. */
+:root[data-style="b"] { --r: 2px; --bg: #f4f4f5; --surface: #ffffff; --sunk: #ececee; --fg: #1e1e1e; --muted: #5a5f66; --line: #d0d0d4; --accent: #2f6fe0; --accent-ink: #ffffff; --accent-soft: rgba(47, 111, 224, 0.1);
+  --t-in: #2f6fe0; --t-out: #a5641f; --t-cw: #8a4a81; --t-cr: #2f7a55; --good: #2f7a55; --good-soft: #e3f1ea; --bad: #b8404c; --bad-soft: #f8e4e6;
+  --font-display: "Segoe UI", system-ui, -apple-system, sans-serif; --font-body: "Segoe UI", system-ui, -apple-system, sans-serif; --font-mono: "Cascadia Code", Consolas, "Courier New", monospace; }
+:root[data-style="b"][data-mode="dark"] { --bg: #1e1e1e; --surface: #252526; --sunk: #181818; --fg: #d4d4d4; --muted: #a8adb4; --line: #3c3c3c; --accent: #4c8dff; --accent-ink: #ffffff; --accent-soft: rgba(76, 141, 255, 0.14);
+  --t-in: #4c8dff; --t-out: #c0813f; --t-cw: #a8689f; --t-cr: #6fae8c; --good: #6fae8c; --good-soft: rgba(111, 174, 140, 0.12); --bad: #e0707c; --bad-soft: rgba(224, 112, 124, 0.1); }
+:root[data-style="b"] body { font-size: 14px; line-height: 1.5; }
+:root[data-style="b"] .side { background: var(--sunk); padding-block: 4px; }
+:root[data-style="b"] .navlink.active { background: transparent; box-shadow: inset 0 -2px 0 var(--accent); border-radius: 0; }
+:root[data-style="b"] :is(h1, h2, h3, h4) { font-weight: 600; letter-spacing: 0; }
+:root[data-style="b"] h2 { font-size: 1.35rem; } :root[data-style="b"] h3 { font-size: 1.05rem; }
+:root[data-style="b"] .lab { border-left: 3px solid var(--accent); }
+:root[data-style="b"] .lab.done { border-left-color: var(--good); }
+:root[data-style="b"] .tick { border-radius: 2px; width: 24px; height: 24px; }
+:root[data-style="b"] .bar { height: 14px; }
+
+/* c: Blueprint. Drafting-sheet blues on a faint grid, mono headings, dashed frames, square corners. */
+:root[data-style="c"] { --r: 0px; --bg: #eaf1f8; --surface: #f7fafd; --sunk: #dbe6f2; --fg: #0f2a47; --muted: #476483; --line: #b3c7dc; --accent: #0b5cad; --accent-ink: #ffffff; --accent-soft: #d5e5f6;
+  --t-in: #0b5cad; --t-out: #b0560c; --t-cw: #6b3fb0; --t-cr: #1d7a55; --good: #1d7a55; --good-soft: #d9efe4; --bad: #a8372f; --bad-soft: #f6dedb;
+  --font-display: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; }
+:root[data-style="c"][data-mode="dark"] { --bg: #0f2540; --surface: #143052; --sunk: #0b1c31; --fg: #e8f1fb; --muted: #9db8d6; --line: #2d5484; --accent: #7fd4ff; --accent-ink: #06213a; --accent-soft: #1b426e;
+  --t-in: #7fd4ff; --t-out: #ffb86b; --t-cw: #d7a6ff; --t-cr: #8fe3b0; --good: #8fe3b0; --good-soft: #17463f; --bad: #ff9d94; --bad-soft: #4a2a3a; }
+:root[data-style="c"] body { background-image: linear-gradient(color-mix(in srgb, var(--line) 30%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--line) 30%, transparent) 1px, transparent 1px); background-size: 28px 28px; }
+:root[data-style="c"] :is(h1, h2, h3, h4) { text-transform: uppercase; letter-spacing: 0.03em; font-weight: 600; }
+:root[data-style="c"] h1 { font-size: clamp(1.5rem, 3.6vw, 2.1rem); }
+:root[data-style="c"] h2 { font-size: 1.35rem; } :root[data-style="c"] h3 { font-size: 0.98rem; }
+:root[data-style="c"] :is(.lab, .tool, .panel, .q, .mcard, figure.diagram) { border-style: dashed; border-color: var(--accent); }
+:root[data-style="c"] .side { background: var(--bg); border-right-style: dashed; }
+:root[data-style="c"] .tick { border-radius: 0; transform: rotate(45deg) scale(0.8); } :root[data-style="c"] .tick::before { transform: rotate(-45deg); }
+
+/* d: Classroom. Big friendly type, a coloured module banner, soft round cards, raspberry accent. */
+:root[data-style="d"] { --bg: #ffffff; --surface: #f5f6fa; --sunk: #e9ecf4; --fg: #151a2d; --muted: #565d78; --line: #dfe3ee; --accent: #c2255c; --accent-ink: #ffffff; --accent-soft: #fde8f0;
+  --t-in: #2a66b3; --t-out: #c2255c; --t-cw: #7446bd; --t-cr: #25784c;
+  --font-display: "Nunito", "Segoe UI", system-ui, sans-serif; }
+:root[data-style="d"][data-mode="dark"] { --bg: #16141c; --surface: #201d29; --sunk: #110f16; --fg: #f1eef7; --muted: #a8a2b8; --line: #342f42; --accent: #ff7aa8; --accent-ink: #2a0a17; --accent-soft: #3d1c2b;
+  --t-in: #6ea9ee; --t-out: #ff7aa8; --t-cw: #b396f0; --t-cr: #6cc795; }
+:root[data-style="d"] body { font-size: 17px; }
+:root[data-style="d"] :is(h1, h2, h3, h4) { font-weight: 800; }
+:root[data-style="d"] h2 { font-size: 2rem; }
+:root[data-style="d"] .mhead { background: var(--accent); color: var(--accent-ink); padding: 26px 28px; border-radius: 20px; }
+:root[data-style="d"] .mhead :is(.kicker, .meta) { color: inherit; opacity: 0.9; }
+:root[data-style="d"] .mhead .chip { color: inherit; border-color: currentColor; }
+:root[data-style="d"] :is(.lab, .tool, .panel, .q, .mcard, figure.diagram, .recap) { border: 0; border-radius: 20px; padding: 22px 24px; }
+:root[data-style="d"] .navlink { border-radius: 999px; padding: 6px 12px; }
+:root[data-style="d"] .tick { width: 36px; height: 36px; } :root[data-style="d"] ol.steps > li { grid-template-columns: 40px minmax(0, 1fr); }
+:root[data-style="d"] .bar { height: 30px; border-radius: 999px; }
+:root[data-style="d"] .btn { border-radius: 999px; }
+
+/* e: Console. Everything monospaced, hard rules, amber accent, no rounding, headings marked like Markdown. */
+:root[data-style="e"] { --r: 0px; --bg: #f5f5f2; --surface: #f5f5f2; --sunk: #e9e9e4; --fg: #141414; --muted: #5c5c55; --line: #2a2a28; --accent: #8a5a00; --accent-ink: #ffffff; --accent-soft: #f1e6c8;
+  --t-in: #1f5fa8; --t-out: #b34700; --t-cw: #7a3fb5; --t-cr: #1f7a4a; --good: #1f7a4a; --good-soft: #dcefe2; --bad: #a8372f; --bad-soft: #f6dedb;
+  --font-display: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; --font-body: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; }
+:root[data-style="e"][data-mode="dark"] { --bg: #141210; --surface: #141210; --sunk: #1e1b17; --fg: #f2e9d8; --muted: #a89c86; --line: #5a5246; --accent: #ffb000; --accent-ink: #141210; --accent-soft: #3a2c0a;
+  --t-in: #7ab8ff; --t-out: #ff8f4d; --t-cw: #c79bff; --t-cr: #7ee0a0; --good: #7ee0a0; --good-soft: #1b3324; --bad: #ff9d94; --bad-soft: #3d201d; }
+:root[data-style="e"] body { font-size: 14px; }
+:root[data-style="e"] :is(h1, h2, h3, h4) { font-weight: 600; letter-spacing: 0; }
+:root[data-style="e"] h1 { font-size: clamp(1.4rem, 3.4vw, 1.9rem); }
+:root[data-style="e"] h2 { font-size: 1.3rem; } :root[data-style="e"] h3 { font-size: 1rem; }
+:root[data-style="e"] .mhead h2::before, :root[data-style="e"] .mhead h1::before { content: "# "; color: var(--accent); }
+:root[data-style="e"] :is(.lesson, .overview, .reference) h3::before { content: "## "; color: var(--accent); }
+:root[data-style="e"] .tick { border-radius: 0; border-width: 1px; border-color: var(--line); }
+:root[data-style="e"] .bar { height: 18px; border: 1px solid var(--line); }
+:root[data-style="e"] .navlink.active { background: var(--fg); color: var(--bg); } :root[data-style="e"] .navlink.active .n { color: inherit; }
+
+/* ---------- Mermaid diagrams, pre-rendered to SVG at build time. Layout is Mermaid's; every colour is the theme's. ---------- */
+figure.diagram svg.mm { font-family: "Segoe UI", system-ui, Arial, sans-serif; min-width: 0; max-height: 620px; }
+figure.diagram.map svg.mm { max-width: 1000px; max-height: 1150px; }
+svg.mm text, svg.mm tspan { fill: var(--fg) !important; stroke: none !important; }
+svg.mm .node > :is(rect, circle, ellipse, polygon, path), svg.mm .label-container, svg.mm :is(rect.actor, .actor-box, .labelBox, .activation0, .activation1, .activation2), svg.mm .statediagram-state :is(rect, path).basic, svg.mm .classGroup rect, svg.mm .er.entityBox { fill: var(--sunk) !important; stroke: var(--muted) !important; }
+svg.mm .node .label rect, svg.mm .cluster-label rect { fill: none !important; stroke: none !important; }
+svg.mm :is(.edgeLabel rect, rect.background, .labelBkg, .edgeLabel .label rect) { fill: var(--surface) !important; stroke: none !important; opacity: 1 !important; }
+svg.mm :is(.flowchart-link, .transition, .relation, .messageLine0, .messageLine1, .edgePath path, .actor-line, .loopLine, line.divider, .edge-thickness-normal) { stroke: var(--muted) !important; }
+svg.mm :is(.flowchart-link, .transition, .relation, .edgePath path) { fill: none !important; }
+svg.mm marker :is(path, circle, polygon), svg.mm :is(.arrowMarkerPath, .arrowheadPath) { fill: var(--muted) !important; stroke: var(--muted) !important; }
+svg.mm .cluster > :is(rect, polygon, path), svg.mm .statediagram-cluster rect, svg.mm rect.rect { fill: color-mix(in srgb, var(--surface) 55%, transparent) !important; stroke: var(--line) !important; }
+svg.mm :is(.note, .state-note) :is(rect, path), svg.mm rect.note, svg.mm g.note > rect { fill: var(--accent-soft) !important; stroke: var(--accent) !important; }
+svg.mm :is(.state-start, .start-state, circle.state-start) { fill: var(--fg) !important; stroke: var(--fg) !important; }
+svg.mm :is(.end-state-outer, .state-end) { fill: var(--surface) !important; stroke: var(--fg) !important; }
+svg.mm .end-state-inner { fill: var(--fg) !important; stroke: var(--fg) !important; }
+svg.mm .node:is(.hot) > :is(rect, circle, ellipse, polygon, path) { fill: var(--accent-soft) !important; stroke: var(--accent) !important; }
+svg.mm .node:is(.good, .found) > :is(rect, circle, ellipse, polygon, path) { fill: var(--good-soft) !important; stroke: var(--good) !important; }
+svg.mm .node.bad > :is(rect, circle, ellipse, polygon, path) { fill: var(--bad-soft) !important; stroke: var(--bad) !important; }
+svg.mm .node:is(.info, .prac) > :is(rect, circle, ellipse, polygon, path) { fill: color-mix(in srgb, var(--t-in) 14%, var(--surface)) !important; stroke: var(--t-in) !important; }
+svg.mm .node:is(.alt, .adv) > :is(rect, circle, ellipse, polygon, path) { fill: color-mix(in srgb, var(--t-cw) 14%, var(--surface)) !important; stroke: var(--t-cw) !important; }
+svg.mm .node.ghost > :is(rect, circle, ellipse, polygon, path) { fill: none !important; stroke: var(--line) !important; stroke-dasharray: 6 4; }
+
+</style>
+</head>
+<body>
+<div class="top">
+  <a class="brand" href="#">AI/LLM Bootcamp</a>
+  <span class="crumb" id="crumb">Catalogue</span>
+  <label class="themepick">Theme: <select id="theme" aria-label="Theme"></select></label>
+</div>
+<div class="app solo">
+  <main>
+    <section class="view wide" id="view-home">
+      <div>
+        <div class="kicker" id="totals">Thirteen modules</div>
+        <h1>Run it, read the meter, then change one thing.</h1>
+        <p class="lede">A bootcamp on using Claude Code and LLMs well, for people who already run systems for a living. It is a set of separate modules. Take one, take a path, or take them all: each module is its own page with a briefing in several lessons, hands-on labs you run in a scratch folder, judgment calls, and a cheat sheet. Every lab ends in a number or a file you can check, because the habits that matter here are measuring and verifying.</p>
+      </div>
+      <div class="howto">
+        <div><b>Pick by level</b>Foundation modules assume nothing but a working install. Practitioner modules build things. Advanced modules run them at scale and prove what changed.</div>
+        <div><b>Take them a la carte</b>Each module lists its prerequisites and opens with a recap of what it needs from them, so you can start anywhere.</div>
+        <div><b>Lessons, labs, calls</b>Lessons give the mechanism with real field names and flags. Labs are numbered steps with the expected result and a self-check. Calls are scenario questions where the explanation is the point.</div>
+        <div><b>Plan or API key</b>Wherever a subscription plan and pay-per-token differ, the module says what is true for each.</div>
+      </div>
+
+      <div>
+        <div class="row" style="justify-content:space-between">
+          <div class="kicker">Modules</div>
+          <div class="row" id="levels" role="group" aria-label="Filter by level"></div>
+        </div>
+        <div class="cards" id="cards" style="margin-top:10px"></div>
+      </div>
+
+      <div>
+        <div class="kicker">What builds on what</div>
+        <figure class="diagram map">
+<svg class="mm mm-flowchart" role="img" id="mm0640bbfb5e5f" width="100%" xmlns="http://www.w3.org/2000/svg" style="max-width: 652px;" viewBox="4 4 652 1122.6500244140625"><style>#mm0640bbfb5e5f{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;fill:#000000;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#mm0640bbfb5e5f .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#mm0640bbfb5e5f .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#mm0640bbfb5e5f .error-icon{fill:#552222;}#mm0640bbfb5e5f .error-text{fill:#552222;stroke:#552222;}#mm0640bbfb5e5f .edge-thickness-normal{stroke-width:1px;}#mm0640bbfb5e5f .edge-thickness-thick{stroke-width:3.5px;}#mm0640bbfb5e5f .edge-pattern-solid{stroke-dasharray:0;}#mm0640bbfb5e5f .edge-thickness-invisible{stroke-width:0;fill:none;}#mm0640bbfb5e5f .edge-pattern-dashed{stroke-dasharray:3;}#mm0640bbfb5e5f .edge-pattern-dotted{stroke-dasharray:2;}#mm0640bbfb5e5f .marker{fill:#666;stroke:#666;}#mm0640bbfb5e5f .marker.cross{stroke:#666;}#mm0640bbfb5e5f svg{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;}#mm0640bbfb5e5f p{margin:0;}#mm0640bbfb5e5f .label{font-family:"Segoe UI",Arial,sans-serif;color:#000000;}#mm0640bbfb5e5f .cluster-label text{fill:#333;}#mm0640bbfb5e5f .cluster-label span{color:#333;}#mm0640bbfb5e5f .cluster-label span p{background-color:transparent;}#mm0640bbfb5e5f .label text,#mm0640bbfb5e5f span{fill:#000000;color:#000000;}#mm0640bbfb5e5f .node rect,#mm0640bbfb5e5f .node circle,#mm0640bbfb5e5f .node ellipse,#mm0640bbfb5e5f .node polygon,#mm0640bbfb5e5f .node path{fill:#eee;stroke:#999;stroke-width:1px;}#mm0640bbfb5e5f .rough-node .label text,#mm0640bbfb5e5f .node .label text,#mm0640bbfb5e5f .image-shape .label,#mm0640bbfb5e5f .icon-shape .label{text-anchor:middle;}#mm0640bbfb5e5f .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#mm0640bbfb5e5f .rough-node .label,#mm0640bbfb5e5f .node .label,#mm0640bbfb5e5f .image-shape .label,#mm0640bbfb5e5f .icon-shape .label{text-align:center;}#mm0640bbfb5e5f .node.clickable{cursor:pointer;}#mm0640bbfb5e5f .root .anchor path{fill:#666!important;stroke-width:0;stroke:#666;}#mm0640bbfb5e5f .arrowheadPath{fill:#333333;}#mm0640bbfb5e5f .edgePaths .path{stroke:#666;stroke-width:1px;}#mm0640bbfb5e5f .flowchart-link{stroke:#666;fill:none;}#mm0640bbfb5e5f .edgeLabel{background-color:white;text-align:center;}#mm0640bbfb5e5f .edgeLabel p{background-color:white;}#mm0640bbfb5e5f .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mm0640bbfb5e5f .labelBkg{background-color:rgba(255, 255, 255, 0.5);}#mm0640bbfb5e5f .cluster rect{fill:hsl(0, 0%, 98.9215686275%);stroke:#707070;stroke-width:1px;}#mm0640bbfb5e5f .cluster text{fill:#333;}#mm0640bbfb5e5f .cluster span{color:#333;}#mm0640bbfb5e5f .node .collapsed-indicator{fill:#707070;stroke:none;opacity:0.6;}#mm0640bbfb5e5f .node .collapsed-separator{stroke:#707070;stroke-width:0.75px;}#mm0640bbfb5e5f div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"Segoe UI",Arial,sans-serif;font-size:12px;background:hsl(-160, 0%, 93.3333333333%);border:1px solid #707070;border-radius:2px;pointer-events:none;z-index:100;}#mm0640bbfb5e5f .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mm0640bbfb5e5f rect.text{fill:none;stroke-width:0;}#mm0640bbfb5e5f .icon-shape,#mm0640bbfb5e5f .image-shape{background-color:white;text-align:center;}#mm0640bbfb5e5f .icon-shape p,#mm0640bbfb5e5f .image-shape p{background-color:white;padding:2px;}#mm0640bbfb5e5f .icon-shape .label rect,#mm0640bbfb5e5f .image-shape .label rect{opacity:0.5;background-color:white;fill:white;}#mm0640bbfb5e5f .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#mm0640bbfb5e5f .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#mm0640bbfb5e5f .node .neo-node{stroke:#999;}#mm0640bbfb5e5f [data-look="neo"].node rect,#mm0640bbfb5e5f [data-look="neo"].cluster rect,#mm0640bbfb5e5f [data-look="neo"].node polygon{stroke:url(#mm0640bbfb5e5f-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm0640bbfb5e5f [data-look="neo"].swimlane.cluster rect{filter:none;}#mm0640bbfb5e5f [data-look="neo"].node path{stroke:url(#mm0640bbfb5e5f-gradient);stroke-width:1px;}#mm0640bbfb5e5f [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm0640bbfb5e5f [data-look="neo"].node .neo-line path{stroke:#999;filter:none;}#mm0640bbfb5e5f [data-look="neo"].node circle{stroke:url(#mm0640bbfb5e5f-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm0640bbfb5e5f [data-look="neo"].node circle .state-start{fill:#000000;}#mm0640bbfb5e5f [data-look="neo"].icon-shape .icon{fill:url(#mm0640bbfb5e5f-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm0640bbfb5e5f [data-look="neo"].icon-shape .icon-neo path{stroke:url(#mm0640bbfb5e5f-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm0640bbfb5e5f :root{--mermaid-font-family:"Segoe UI",Arial,sans-serif;}</style><g><marker id="mm0640bbfb5e5f_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mm0640bbfb5e5f_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mm0640bbfb5e5f_flowchart-v2-pointEnd-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="11.5" refY="7" markerUnits="userSpaceOnUse" markerWidth="10.5" markerHeight="14" orient="auto"><path d="M 0 0 L 11.5 7 L 0 14 z" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></path></marker><marker id="mm0640bbfb5e5f_flowchart-v2-pointStart-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="1" refY="7" markerUnits="userSpaceOnUse" markerWidth="11.5" markerHeight="14" orient="auto"><polygon points="0,7 11.5,14 11.5,0" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></polygon></marker><marker id="mm0640bbfb5e5f_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm0640bbfb5e5f_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm0640bbfb5e5f_flowchart-v2-circleEnd-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refY="5" refX="12.25" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm0640bbfb5e5f_flowchart-v2-circleStart-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-2" refY="5" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm0640bbfb5e5f_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mm0640bbfb5e5f_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mm0640bbfb5e5f_flowchart-v2-crossEnd-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="17.7" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5;"></path></marker><marker id="mm0640bbfb5e5f_flowchart-v2-crossStart-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="-3.5" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edges edgePaths"><path d="M416,748.5266586303711L448.9289321881345,748.5266586303711Q456,748.5266586303711 456,755.5977264422365L456,784.0955905896237Q456,791.1666584014893 463.0710678118655,791.1666584014893L492,791.1666584014893" id="mm0640bbfb5e5f-L_m7_m14_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 109.31167602539062 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m7_m14_0" data-points="W3sieCI6NDE2LCJ5Ijo3NDguNTI2NjU4NjMwMzcxMX0seyJ4Ijo0NTYsInkiOjc0OC41MjY2NTg2MzAzNzExfSx7IngiOjQ1NiwieSI6NzkxLjE2NjY1ODQwMTQ4OTN9LHsieCI6NDk2LCJ5Ijo3OTEuMTY2NjU4NDAxNDg5M31d" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M416,47.57583392461139L433.8620826562246,47.57583392461139Q436,47.57583392461139 436,45.43791658083597L436,45.43791658083597Q436,43.29999923706055 438.1379173437754,43.29999923706055L492,43.29999923706055" id="mm0640bbfb5e5f-L_m3_m15_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 74.66484832763672 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m3_m15_0" data-points="W3sieCI6NDE2LCJ5Ijo0Ny41NzU4MzM5MjQ2MTEzOX0seyJ4Ijo0MzYsInkiOjQ3LjU3NTgzMzkyNDYxMTM5fSx7IngiOjQzNiwieSI6NDMuMjk5OTk5MjM3MDYwNTV9LHsieCI6NDk2LCJ5Ijo0My4yOTk5OTkyMzcwNjA1NX1d" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M416,731.4866592407227L428.9289321881345,731.4866592407227Q436,731.4866592407227 436,724.4155914288572L436,617.7377274849205Q436,610.666659673055 443.0710678118655,610.666659673055L492,610.666659673055" id="mm0640bbfb5e5f-L_m7_m18_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 187.49169921875 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m7_m18_0" data-points="W3sieCI6NDE2LCJ5Ijo3MzEuNDg2NjU5MjQwNzIyN30seyJ4Ijo0MzYsInkiOjczMS40ODY2NTkyNDA3MjI3fSx7IngiOjQzNiwieSI6NjEwLjY2NjY1OTY3MzA1NX0seyJ4Ijo0OTYsInkiOjYxMC42NjY2NTk2NzMwNTV9XQ==" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M416,596.4666601816813L492,596.4666601816813" id="mm0640bbfb5e5f-L_m16_m18_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 72 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m16_m18_0" data-points="W3sieCI6NDE2LCJ5Ijo1OTYuNDY2NjYwMTgxNjgxM30seyJ4Ijo0OTYsInkiOjU5Ni40NjY2NjAxODE2ODEzfV0=" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M164,911.5166562398275L196.92893218813452,911.5166562398275Q204,911.5166562398275 204,918.5877240516929L204,1050.6122544588459Q204,1057.6833222707114 211.07106781186548,1057.6833222707114L260,1057.6833222707114" id="mm0640bbfb5e5f-L_m2_m19_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 232.83836364746094 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m2_m19_0" data-points="W3sieCI6MTY0LCJ5Ijo5MTEuNTE2NjU2MjM5ODI3NX0seyJ4IjoyMDQsInkiOjkxMS41MTY2NTYyMzk4Mjc1fSx7IngiOjIwNCwieSI6MTA1Ny42ODMzMjIyNzA3MTE0fSx7IngiOjI2NCwieSI6MTA1Ny42ODMzMjIyNzA3MTE0fV0=" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M416,349.276 L428.929,349.276 Q436,349.276 436,356.347 L436,449.662 Q436,456.733 443.071,456.733 L450,456.733 A6,6 0 0 1 462,456.733 L492,456.733" id="mm0640bbfb5e5f-L_m5_m22_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 180.98106384277344 4; stroke-dashoffset: 0;" data-edge="true" data-et="edge" data-id="L_m5_m22_0" data-points="W3sieCI6NDE2LCJ5IjozNDkuMjc1ODMwMjM3MDcwN30seyJ4Ijo0MzYsInkiOjM0OS4yNzU4MzAyMzcwNzA3fSx7IngiOjQzNiwieSI6NDU2LjczMzMyNzg2NTYwMDUzfSx7IngiOjQ5NiwieSI6NDU2LjczMzMyNzg2NTYwMDUzfV0=" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M416,588.133326848348L468.9289321881345,588.133326848348Q476,588.133326848348 476,581.0622590364826L476,472.1377290107994Q476,465.0666611989339 483.0710678118655,465.0666611989339L492,465.0666611989339" id="mm0640bbfb5e5f-L_m16_m22_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 189.73837280273438 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m16_m22_0" data-points="W3sieCI6NDE2LCJ5Ijo1ODguMTMzMzI2ODQ4MzQ4fSx7IngiOjQ3NiwieSI6NTg4LjEzMzMyNjg0ODM0OH0seyJ4Ijo0NzYsInkiOjQ2NS4wNjY2NjExOTg5MzM5fSx7IngiOjQ5NiwieSI6NDY1LjA2NjY2MTE5ODkzMzl9XQ==" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M164,246.89999707539874L221.80458401044208,246.89999707539874Q224,246.89999707539874 224,244.70458108584083L224,244.70458108584083Q224,242.5091650962829 226.19541598955792,242.5091650962829L260,242.5091650962829" id="mm0640bbfb5e5f-L_m1_m23_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 94.73646545410156 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m1_m23_0" data-points="W3sieCI6MTY0LCJ5IjoyNDYuODk5OTk3MDc1Mzk4NzR9LHsieCI6MjI0LCJ5IjoyNDYuODk5OTk3MDc1Mzk4NzR9LHsieCI6MjI0LCJ5IjoyNDIuNTA5MTY1MDk2MjgyOX0seyJ4IjoyNjQsInkiOjI0Mi41MDkxNjUwOTYyODI5fV0=" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M164,890.216657002767L216.92893218813452,890.216657002767Q224,890.216657002767 224,883.1455891909015L224,497.2802298563906Q224,490.2091620445251 231.07106781186548,490.2091620445251L340,490.2091620445251L448.9289321881345,490.2091620445251Q456,490.2091620445251 456,483.1380942326596L456,376.2543964404055Q456,369.18332862854004 463.0710678118655,369.18332862854004L492,369.18332862854004" id="mm0640bbfb5e5f-L_m2_m24_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 834.376708984375 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m2_m24_0" data-points="W3sieCI6MTY0LCJ5Ijo4OTAuMjE2NjU3MDAyNzY3fSx7IngiOjIyNCwieSI6ODkwLjIxNjY1NzAwMjc2N30seyJ4IjoyMjQsInkiOjQ5MC4yMDkxNjIwNDQ1MjUxfSx7IngiOjM0MCwieSI6NDkwLjIwOTE2MjA0NDUyNTF9LHsieCI6NDU2LCJ5Ijo0OTAuMjA5MTYyMDQ0NTI1MX0seyJ4Ijo0NTYsInkiOjM2OS4xODMzMjg2Mjg1NDAwNH0seyJ4Ijo0OTYsInkiOjM2OS4xODMzMjg2Mjg1NDAwNH1d" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M416,242.5091650962829L448.9289321881345,242.5091650962829Q456,242.5091650962829 456,249.5802329081484L456,347.9122613253009Q456,354.9833291371664 463.0710678118655,354.9833291371664L492,354.9833291371664" id="mm0640bbfb5e5f-L_m23_m24_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 179.1458740234375 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m23_m24_0" data-points="W3sieCI6NDE2LCJ5IjoyNDIuNTA5MTY1MDk2MjgyOX0seyJ4Ijo0NTYsInkiOjI0Mi41MDkxNjUwOTYyODI5fSx7IngiOjQ1NiwieSI6MzU0Ljk4MzMyOTEzNzE2NjR9LHsieCI6NDk2LCJ5IjozNTQuOTgzMzI5MTM3MTY2NH1d" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M164,238.5666637420654L176.92893218813452,238.5666637420654Q184,238.5666637420654 184,231.49559593019993L184,58.81356840314352Q184,51.742500591278045 191.07106781186548,51.742500591278045L260,51.742500591278045" id="mm0640bbfb5e5f-L_m1_m3_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 273.495849609375 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m1_m3_0" data-points="W3sieCI6MTY0LCJ5IjoyMzguNTY2NjYzNzQyMDY1NH0seyJ4IjoxODQsInkiOjIzOC41NjY2NjM3NDIwNjU0fSx7IngiOjE4NCwieSI6NTEuNzQyNTAwNTkxMjc4MDQ1fSx7IngiOjI2NCwieSI6NTEuNzQyNTAwNTkxMjc4MDQ1fV0=" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M164,242.7333304087321L196.92893218813452,242.7333304087321Q204,242.7333304087321 204,235.6622625968666L204,146.9802344340273Q204,139.90916662216182 211.07106781186548,139.90916662216182L260,139.90916662216182" id="mm0640bbfb5e5f-L_m1_m4_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 189.495849609375 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m1_m4_0" data-points="W3sieCI6MTY0LCJ5IjoyNDIuNzMzMzMwNDA4NzMyMX0seyJ4IjoyMDQsInkiOjI0Mi43MzMzMzA0MDg3MzIxfSx7IngiOjIwNCwieSI6MTM5LjkwOTE2NjYyMjE2MTgyfSx7IngiOjI2NCwieSI6MTM5LjkwOTE2NjYyMjE2MTgyfV0=" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M164,255.233 L176.929,255.233 Q184,255.233 184,262.304 L184,730.096 Q184,737.167 191.071,737.167 L198,737.167 A6,6 0 0 1 210,737.167 L218,737.167 A6,6 0 0 1 230,737.167 L260,737.167" id="mm0640bbfb5e5f-L_m1_m7_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 582.3103637695312 4; stroke-dashoffset: 0;" data-edge="true" data-et="edge" data-id="L_m1_m7_0" data-points="W3sieCI6MTY0LCJ5IjoyNTUuMjMzMzMwNDA4NzMyMDZ9LHsieCI6MTg0LCJ5IjoyNTUuMjMzMzMwNDA4NzMyMDZ9LHsieCI6MTg0LCJ5Ijo3MzcuMTY2NjU5MDM3MjcyMX0seyJ4IjoyNjQsInkiOjczNy4xNjY2NTkwMzcyNzIxfV0=" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M164,895.5416568120321L236.92893218813452,895.5416568120321Q244,895.5416568120321 244,888.4705890001667L244,758.4377263405113Q244,751.3666585286459 251.07106781186548,751.3666585286459L260,751.3666585286459" id="mm0640bbfb5e5f-L_m2_m7_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 230.8467559814453 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m2_m7_0" data-points="W3sieCI6MTY0LCJ5Ijo4OTUuNTQxNjU2ODEyMDMyMX0seyJ4IjoyNDQsInkiOjg5NS41NDE2NTY4MTIwMzIxfSx7IngiOjI0NCwieSI6NzUxLjM2NjY1ODUyODY0NTl9LHsieCI6MjY0LCJ5Ijo3NTEuMzY2NjU4NTI4NjQ1OX1d" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M164,906.1916564305624L216.92893218813452,906.1916564305624Q224,906.1916564305624 224,913.2627242424278L224,956.8122552217853Q224,963.8833230336508 231.07106781186548,963.8833230336508L260,963.8833230336508" id="mm0640bbfb5e5f-L_m2_m9_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 144.36337280273438 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m2_m9_0" data-points="W3sieCI6MTY0LCJ5Ijo5MDYuMTkxNjU2NDMwNTYyNH0seyJ4IjoyMjQsInkiOjkwNi4xOTE2NTY0MzA1NjI0fSx7IngiOjIyNCwieSI6OTYzLjg4MzMyMzAzMzY1MDh9LHsieCI6MjY0LCJ5Ijo5NjMuODgzMzIzMDMzNjUwOH1d" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M416,55.909167257944716L428.9289321881345,55.909167257944716Q436,55.909167257944716 436,62.98023506981019L436,221.97892951784647Q436,229.04999732971194 443.0710678118655,229.04999732971194L492,229.04999732971194" id="mm0640bbfb5e5f-L_m3_m6_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 239.8125457763672 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m3_m6_0" data-points="W3sieCI6NDE2LCJ5Ijo1NS45MDkxNjcyNTc5NDQ3MTZ9LHsieCI6NDM2LCJ5Ijo1NS45MDkxNjcyNTc5NDQ3MTZ9LHsieCI6NDM2LCJ5IjoyMjkuMDQ5OTk3MzI5NzExOTR9LHsieCI6NDk2LCJ5IjoyMjkuMDQ5OTk3MzI5NzExOTR9XQ==" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M416,340.942 L450,340.942 A6,6 0 0 1 462,340.942 L468.929,340.942 Q476,340.942 476,333.871 L476,250.321 Q476,243.25 483.071,243.25 L492,243.25" id="mm0640bbfb5e5f-L_m5_m6_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 171.21607971191406 4; stroke-dashoffset: 0;" data-edge="true" data-et="edge" data-id="L_m5_m6_0" data-points="W3sieCI6NDE2LCJ5IjozNDAuOTQyNDk2OTAzNzM3M30seyJ4Ijo0NzYsInkiOjM0MC45NDI0OTY5MDM3MzczfSx7IngiOjQ3NiwieSI6MjQzLjI0OTk5NjgyMTA4NTY2fSx7IngiOjQ5NiwieSI6MjQzLjI0OTk5NjgyMTA4NTY2fV0=" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M416,740.0066589355469L448.9289321881345,740.0066589355469Q456,740.0066589355469 456,732.9355911236814L456,704.4377269762942Q456,697.3666591644287 463.0710678118655,697.3666591644287L492,697.3666591644287" id="mm0640bbfb5e5f-L_m7_m8_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 109.31175231933594 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m7_m8_0" data-points="W3sieCI6NDE2LCJ5Ijo3NDAuMDA2NjU4OTM1NTQ2OX0seyJ4Ijo0NTYsInkiOjc0MC4wMDY2NTg5MzU1NDY5fSx7IngiOjQ1NiwieSI6Njk3LjM2NjY1OTE2NDQyODd9LHsieCI6NDk2LCJ5Ijo2OTcuMzY2NjU5MTY0NDI4N31d" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M164,916.8416560490926L176.92893218813452,916.8416560490926Q184,916.8416560490926 184,923.9127238609581L184,1101.9122536959064Q184,1108.983321507772 191.07106781186548,1108.983321507772L340,1108.983321507772L431.66666666666663,1108.983321507772Q436,1108.983321507772 436,1104.6499881744385L436,1104.6499881744385Q436,1100.3166548411052 440.33333333333337,1100.3166548411052L492,1100.3166548411052" id="mm0640bbfb5e5f-L_m2_m10_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 516.21484375 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m2_m10_0" data-points="W3sieCI6MTY0LCJ5Ijo5MTYuODQxNjU2MDQ5MDkyNn0seyJ4IjoxODQsInkiOjkxNi44NDE2NTYwNDkwOTI2fSx7IngiOjE4NCwieSI6MTEwOC45ODMzMjE1MDc3NzJ9LHsieCI6MzQwLCJ5IjoxMTA4Ljk4MzMyMTUwNzc3Mn0seyJ4Ijo0MzYsInkiOjExMDguOTgzMzIxNTA3NzcyfSx7IngiOjQzNiwieSI6MTEwMC4zMTY2NTQ4NDExMDUyfSx7IngiOjQ5NiwieSI6MTEwMC4zMTY2NTQ4NDExMDUyfV0=" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M416,963.8833230336508L428.9289321881345,963.8833230336508Q436,963.8833230336508 436,970.9543908455162L436,1084.9122536959062Q436,1091.9833215077717 443.0710678118655,1091.9833215077717L492,1091.9833215077717" id="mm0640bbfb5e5f-L_m9_m10_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 194.77175903320312 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m9_m10_0" data-points="W3sieCI6NDE2LCJ5Ijo5NjMuODgzMzIzMDMzNjUwOH0seyJ4Ijo0MzYsInkiOjk2My44ODMzMjMwMzM2NTA4fSx7IngiOjQzNiwieSI6MTA5MS45ODMzMjE1MDc3NzE3fSx7IngiOjQ5NiwieSI6MTA5MS45ODMzMjE1MDc3NzE3fV0=" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M164,900.8666566212972L238.57500012715656,900.8666566212972Q244,900.8666566212972 244,906.2916564941406L244,906.2916564941406Q244,911.7166563669841 249.42499987284344,911.7166563669841L340,911.7166563669841L492,911.716656366984" id="mm0640bbfb5e5f-L_m2_m11_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 330.7621154785156 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m2_m11_0" data-points="W3sieCI6MTY0LCJ5Ijo5MDAuODY2NjU2NjIxMjk3Mn0seyJ4IjoyNDQsInkiOjkwMC44NjY2NTY2MjEyOTcyfSx7IngiOjI0NCwieSI6OTExLjcxNjY1NjM2Njk4NDF9LHsieCI6MzQwLCJ5Ijo5MTEuNzE2NjU2MzY2OTg0MX0seyJ4Ijo0OTYsInkiOjkxMS43MTY2NTYzNjY5ODR9XQ==" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M416,757.0466583251953L428.9289321881345,757.0466583251953Q436,757.0466583251953 436,764.1177261370608L436,890.4455890637448Q436,897.5166568756102 443.0710678118655,897.5166568756102L492,897.5166568756102" id="mm0640bbfb5e5f-L_m7_m11_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 207.14178466796875 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m7_m11_0" data-points="W3sieCI6NDE2LCJ5Ijo3NTcuMDQ2NjU4MzI1MTk1M30seyJ4Ijo0MzYsInkiOjc1Ny4wNDY2NTgzMjUxOTUzfSx7IngiOjQzNiwieSI6ODk3LjUxNjY1Njg3NTYxMDJ9LHsieCI6NDk2LCJ5Ijo4OTcuNTE2NjU2ODc1NjEwMn1d" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M164,251.0666637420654L196.92893218813452,251.0666637420654Q204,251.0666637420654 204,258.13773155393085L204,424.73809524991225Q204,431.8091630617777 211.07106781186548,431.8091630617777L260,431.8091630617777" id="mm0640bbfb5e5f-L_m1_m12_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 267.41424560546875 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m1_m12_0" data-points="W3sieCI6MTY0LCJ5IjoyNTEuMDY2NjYzNzQyMDY1NH0seyJ4IjoyMDQsInkiOjI1MS4wNjY2NjM3NDIwNjU0fSx7IngiOjIwNCwieSI6NDMxLjgwOTE2MzA2MTc3Nzd9LHsieCI6MjY0LCJ5Ijo0MzEuODA5MTYzMDYxNzc3N31d" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path><path d="M164,884.8916571935018L196.92893218813452,884.8916571935018Q204,884.8916571935018 204,877.8205893816364L204,453.08023036501686Q204,446.0091625531514 211.07106781186548,446.0091625531514L260,446.0091625531514" id="mm0640bbfb5e5f-L_m2_m12_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 525.5542602539062 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_m2_m12_0" data-points="W3sieCI6MTY0LCJ5Ijo4ODQuODkxNjU3MTkzNTAxOH0seyJ4IjoyMDQsInkiOjg4NC44OTE2NTcxOTM1MDE4fSx7IngiOjIwNCwieSI6NDQ2LjAwOTE2MjU1MzE1MTR9LHsieCI6MjY0LCJ5Ijo0NDYuMDA5MTYyNTUzMTUxNH1d" data-look="neo" marker-end="url(#mm0640bbfb5e5f_flowchart-v2-pointEnd-margin)"></path></g><g class="edgeLabels"></g><g class="nodes"><g class="node default found" id="mm0640bbfb5e5f-flowchart-m1-0" data-look="neo" transform="translate(88, 246.89999707539874)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">1</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Context</tspan></tspan></text></g></g></g><g class="node default found" id="mm0640bbfb5e5f-flowchart-m2-1" data-look="neo" transform="translate(88, 900.8666566212972)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">2</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Tokens</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> and</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">their</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> price</tspan></tspan></text></g></g></g><g class="node default found" id="mm0640bbfb5e5f-flowchart-m13-2" data-look="neo" transform="translate(88, 596.5833269755046)"><rect class="basic label-container" style="" x="-76" y="-40.099998474121094" width="152" height="80.19999694824219"></rect><g class="label" style="" transform="translate(0, -28.099998474121094)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">13</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Models</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> and</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">ways</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> to</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> teach</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="2.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">them</tspan></tspan></text></g></g></g><g class="node default found" id="mm0640bbfb5e5f-flowchart-m17-3" data-look="neo" transform="translate(88, 485.18332926432294)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">17</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Daily</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">workflow</tspan></tspan></text></g></g></g><g class="node default found" id="mm0640bbfb5e5f-flowchart-m20-4" data-look="neo" transform="translate(88, 707.9833246866863)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">20</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Writing</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> for</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">agents</tspan></tspan></text></g></g></g><g class="node default found" id="mm0640bbfb5e5f-flowchart-m21-5" data-look="neo" transform="translate(88, 144.29999860127765)"><rect class="basic label-container" style="" x="-76" y="-40.099998474121094" width="152" height="80.19999694824219"></rect><g class="label" style="" transform="translate(0, -28.099998474121094)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">21</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Where</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Claude</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Code</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="2.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">runs</tspan></tspan></text></g></g></g><g class="node default prac" id="mm0640bbfb5e5f-flowchart-m3-6" data-look="neo" transform="translate(340, 51.742500591278045)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">3</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Skills</tspan></tspan></text></g></g></g><g class="node default prac" id="mm0640bbfb5e5f-flowchart-m4-7" data-look="neo" transform="translate(340, 139.90916662216182)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">4</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Commands</tspan></tspan></text></g></g></g><g class="node default prac" id="mm0640bbfb5e5f-flowchart-m5-8" data-look="neo" transform="translate(340, 345.109163570404)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">5</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Hooks</tspan></tspan></text></g></g></g><g class="node default prac" id="mm0640bbfb5e5f-flowchart-m7-9" data-look="neo" transform="translate(340, 744.266658782959)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">7</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Headless</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> runs</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">and</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> subagents</tspan></tspan></text></g></g></g><g class="node default prac" id="mm0640bbfb5e5f-flowchart-m9-10" data-look="neo" transform="translate(340, 963.8833230336508)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">9</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Telemetry</tspan></tspan></text></g></g></g><g class="node default prac" id="mm0640bbfb5e5f-flowchart-m12-11" data-look="neo" transform="translate(340, 438.90916280746455)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">12</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Session</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">transcripts</tspan></tspan></text></g></g></g><g class="node default prac" id="mm0640bbfb5e5f-flowchart-m15-12" data-look="neo" transform="translate(572, 43.29999923706055)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">15</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> The</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> wider</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">ecosystem</tspan></tspan></text></g></g></g><g class="node default prac" id="mm0640bbfb5e5f-flowchart-m16-13" data-look="neo" transform="translate(340, 592.2999935150146)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">16</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Security</tspan></tspan></text></g></g></g><g class="node default prac" id="mm0640bbfb5e5f-flowchart-m19-14" data-look="neo" transform="translate(340, 1057.6833222707114)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">19</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Claude</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> API</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">building</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> blocks</tspan></tspan></text></g></g></g><g class="node default prac" id="mm0640bbfb5e5f-flowchart-m22-15" data-look="neo" transform="translate(572, 460.8999945322672)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">22</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Sensitive</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> data</tspan></tspan></text></g></g></g><g class="node default prac" id="mm0640bbfb5e5f-flowchart-m23-16" data-look="neo" transform="translate(340, 242.5091650962829)"><rect class="basic label-container" style="" x="-76" y="-40.099998474121094" width="152" height="80.19999694824219"></rect><g class="label" style="" transform="translate(0, -28.099998474121094)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">23</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> MCP:</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">anatomy</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> of</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> the</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="2.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">protocol</tspan></tspan></text></g></g></g><g class="node default adv" id="mm0640bbfb5e5f-flowchart-m6-17" data-look="neo" transform="translate(572, 236.1499970753988)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">6</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Plugins</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> and</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">marketplaces</tspan></tspan></text></g></g></g><g class="node default adv" id="mm0640bbfb5e5f-flowchart-m8-18" data-look="neo" transform="translate(572, 697.3666591644287)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">8</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Orchestration</tspan></tspan></text></g></g></g><g class="node default adv" id="mm0640bbfb5e5f-flowchart-m10-19" data-look="neo" transform="translate(572, 1096.1499881744385)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">10</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Cutting</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> cost</tspan></tspan></text></g></g></g><g class="node default adv" id="mm0640bbfb5e5f-flowchart-m11-20" data-look="neo" transform="translate(572, 904.6166566212971)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">11</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Evals</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> and</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> A/B</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">testing</tspan></tspan></text></g></g></g><g class="node default adv" id="mm0640bbfb5e5f-flowchart-m14-21" data-look="neo" transform="translate(572, 791.1666584014893)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">14</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Agent</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> SDK</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">and</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> agent</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> teams</tspan></tspan></text></g></g></g><g class="node default adv" id="mm0640bbfb5e5f-flowchart-m18-22" data-look="neo" transform="translate(572, 603.5666599273682)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">18</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Unattended</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">and</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> CI</tspan></tspan></text></g></g></g><g class="node default adv" id="mm0640bbfb5e5f-flowchart-m24-23" data-look="neo" transform="translate(572, 362.0833288828532)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">24</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> MCP</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> server</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">or</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> CLI</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> tool</tspan></tspan></text></g></g></g></g></g></g><defs><filter id="mm0640bbfb5e5f-drop-shadow" height="130%" width="130%"><feDropShadow dx="4" dy="4" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><defs><filter id="mm0640bbfb5e5f-drop-shadow-small" height="150%" width="150%"><feDropShadow dx="2" dy="2" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><linearGradient id="mm0640bbfb5e5f-gradient" gradientUnits="objectBoundingBox" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="hsl(0, 0%, 83.3333333333%)" stop-opacity="1"></stop><stop offset="100%" stop-color="hsl(0, 0%, 88.9215686275%)" stop-opacity="1"></stop></linearGradient></svg>
+          <figcaption>An arrow means "is a prerequisite of". Green is foundation, blue is practitioner, purple is advanced. Every module recaps what it needs, so the arrows are advice, not gates.</figcaption>
+        </figure>
+      </div>
+
+      <div>
+        <div class="kicker">Suggested paths</div>
+        <div class="paths" style="margin-top:10px">
+          <div class="panel"><b>The meter reader</b><div class="note">You pay the bill or watch the limit.</div><ol><li><a data-mod="m2"></a></li><li><a data-mod="m9"></a></li><li><a data-mod="m12"></a></li><li><a data-mod="m10"></a></li></ol></div>
+          <div class="panel"><b>The toolsmith</b><div class="note">You shape how a team's sessions behave.</div><ol><li><a data-mod="m1"></a></li><li><a data-mod="m3"></a></li><li><a data-mod="m4"></a></li><li><a data-mod="m5"></a></li><li><a data-mod="m6"></a></li></ol></div>
+          <div class="panel"><b>The fleet operator</b><div class="note">You run agents unattended.</div><ol><li><a data-mod="m7"></a></li><li><a data-mod="m8"></a></li><li><a data-mod="m14"></a></li><li><a data-mod="m18"></a></li><li><a data-mod="m11"></a></li><li><a data-mod="m10"></a></li></ol></div>
+          <div class="panel"><b>The first week</b><div class="note">You are new to Claude Code and want good habits early.</div><ol><li><a data-mod="m21"></a></li><li><a data-mod="m17"></a></li><li><a data-mod="m20"></a></li><li><a data-mod="m1"></a></li></ol></div>
+          <div class="panel"><b>The risk owner</b><div class="note">You answer for what an agent can read, run and send.</div><ol><li><a data-mod="m16"></a></li><li><a data-mod="m22"></a></li><li><a data-mod="m5"></a></li><li><a data-mod="m15"></a></li><li><a data-mod="m18"></a></li></ol></div>
+          <div class="panel"><b>The integrator</b><div class="note">You connect Claude to your own systems.</div><ol><li><a data-mod="m23"></a></li><li><a data-mod="m24"></a></li><li><a data-mod="m19"></a></li><li><a data-mod="m14"></a></li></ol></div>
+          <div class="panel"><b>One afternoon</b><div class="note">The shortest useful set.</div><ol><li><a data-mod="m13"></a></li><li><a data-mod="m2"></a></li><li><a data-mod="m5"></a></li></ol></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="kicker">Before the first lab</div>
+        <ul style="margin:8px 0 0; padding-left:1.2em">
+          <li>Claude Code 2.1 or later, signed in with a plan or an API key. Check with <code>claude --version</code>.</li>
+          <li>One scratch folder for all labs. The labs call it <code>~/bootcamp-labs</code>, with a subfolder per module. Nothing is written outside it unless a step says so, and every lab that installs something ends with its removal.</li>
+          <li>Commands are written for PowerShell. Every <code>claude</code> command is the same in any shell; only the file-creation lines differ.</li>
+          <li>Headless labs pass <code>--setting-sources project --strict-mcp-config</code> so your personal settings, hooks and MCP servers stay out of the measurement. Small runs use the cheapest model tier.</li>
+          <li>Numbers in the Expected lines were measured on real runs in November 2026. Yours will differ a little; the shape should not.</li>
+        </ul>
+        
+      </div>
+
+      <div class="panel">
+        <div class="kicker">Export and share</div>
+        <h3 style="margin-top:8px">Every module travels alone</h3>
+        <p>Each module is its own page with its own link, and also its own self-contained HTML file. Send one module to one person, or the whole set to a team. This edition names no organization, host, account or internal tool.</p>
+        <ul style="padding-left:1.2em">
+          <li><b>A link.</b> On claude.ai, open the module and use Share. A viewer needs only the link.</li>
+          <li><b>A file.</b> Each module page has "Save this module as a file" under Export and share. The file needs no server and no network.</li>
+          <li><b>The folder.</b> This catalogue (<code>index.html</code>) and the module files in one folder link to each other offline, and work unchanged behind any static web server.</li>
+        </ul>
+        <div class="row"><button class="btn" type="button" data-save="index.html">Save this catalogue as a file</button><span class="note"></span></div>
+        <p class="note" style="margin-bottom:0">Progress is kept per module in the browser that opened it. Each module's overview has a progress code to carry it to another device or copy.</p>
+        
+      </div>
+    </section>
+  </main>
+</div>
+
+<script type="application/json" id="manifest">{"edition":"portable","kind":"file","self":"index","catalogue":"index.html","modules":[{"id":"m1","title":"Context","sub":"What the model sees, and what it costs to show it","level":"foundation","prereq":[],"minutes":240,"lessons":6,"labs":5,"calls":5,"href":"m01-context.html"},{"id":"m2","title":"Tokens and their price","sub":"Input, output, cache write, cache read","level":"foundation","prereq":[],"minutes":220,"lessons":6,"labs":5,"calls":5,"href":"m02-tokens.html"},{"id":"m3","title":"Skills","sub":"Instructions that load only when needed","level":"practitioner","prereq":["m1"],"minutes":230,"lessons":6,"labs":5,"calls":5,"href":"m03-skills.html"},{"id":"m4","title":"Commands","sub":"Built-in and your own","level":"practitioner","prereq":["m1"],"minutes":245,"lessons":6,"labs":5,"calls":5,"href":"m04-commands.html"},{"id":"m5","title":"Hooks","sub":"Rules the model cannot talk its way past","level":"practitioner","prereq":[],"minutes":200,"lessons":6,"labs":5,"calls":5,"href":"m05-hooks.html"},{"id":"m6","title":"Plugins and marketplaces","sub":"Package it, publish it, control it","level":"advanced","prereq":["m3","m5"],"minutes":255,"lessons":5,"labs":5,"calls":5,"href":"m06-marketplaces.html"},{"id":"m7","title":"Headless runs and subagents","sub":"Claude Code as a program, and as a team","level":"practitioner","prereq":["m1","m2"],"minutes":220,"lessons":6,"labs":5,"calls":5,"href":"m07-agents.html"},{"id":"m8","title":"Orchestration","sub":"Briefs, handoffs, queues and the ways they fail","level":"advanced","prereq":["m7"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m08-orchestration.html"},{"id":"m9","title":"Telemetry","sub":"See tokens, cache and cost as they happen","level":"practitioner","prereq":["m2"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m09-telemetry.html"},{"id":"m10","title":"Cutting cost","sub":"The levers, and proof that each one worked","level":"advanced","prereq":["m2","m9"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m10-cost.html"},{"id":"m11","title":"Evals and A/B testing","sub":"Compare prompts, models and setups without fooling yourself","level":"advanced","prereq":["m2","m7"],"minutes":250,"lessons":6,"labs":5,"calls":5,"href":"m11-ab-testing.html"},{"id":"m12","title":"Session transcripts","sub":"The anatomy of the JSONL behind every session","level":"practitioner","prereq":["m1","m2"],"minutes":215,"lessons":6,"labs":5,"calls":5,"href":"m12-transcripts.html"},{"id":"m13","title":"Models and ways to teach them","sub":"Model tiers, retrieval, ingestion, fine-tuning and what you will actually use","level":"foundation","prereq":[],"minutes":230,"lessons":6,"labs":5,"calls":5,"href":"m13-models.html"},{"id":"m14","title":"Agent SDK and agent teams","sub":"Your own agent loop, and sessions that message each other","level":"advanced","prereq":["m7"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m14-agent-sdk.html"},{"id":"m15","title":"The wider ecosystem","sub":"Multiplexers, community skills and how to vet them","level":"practitioner","prereq":["m3"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m15-ecosystem.html"},{"id":"m16","title":"Security","sub":"Permissions, sandboxing, prompt injection and what you install","level":"practitioner","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m16-security.html"},{"id":"m17","title":"Daily workflow","sub":"Plan mode, rewind, worktrees, effort and git habits","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m17-workflow.html"},{"id":"m18","title":"Unattended and CI","sub":"GitHub Actions, review in the pipeline, scheduled runs","level":"advanced","prereq":["m7","m16"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m18-ci.html"},{"id":"m19","title":"Claude API building blocks","sub":"Tool use, structured outputs, vision, citations, batch, computer use","level":"practitioner","prereq":["m2"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m19-api.html"},{"id":"m20","title":"Writing for agents","sub":"Briefs, specs, handoffs and CLAUDE.md design","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m20-writing.html"},{"id":"m21","title":"Where Claude Code runs","sub":"Terminal, VS Code, JetBrains, desktop and web compared","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m21-surfaces.html"},{"id":"m22","title":"Sensitive data","sub":"PHI, PII and secrets: what leaves the machine and how to stop it","level":"practitioner","prereq":["m5","m16"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m22-sensitive-data.html"},{"id":"m23","title":"MCP: anatomy of the protocol","sub":"JSON-RPC, capabilities, transports, auth, and a server you build","level":"practitioner","prereq":["m1"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m23-mcp.html"},{"id":"m24","title":"MCP server or CLI tool","sub":"The same job both ways, measured in tokens and turns","level":"advanced","prereq":["m2","m23"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m24-mcp-or-cli.html"}]}</script>
+<script>
+/* AI/LLM Bootcamp page script. One file for the catalogue page and every module page.
+   Reads the manifest (module list, links, edition) that the build embeds, then:
+   - theme: a "Theme:" dropdown at the top right, remembered per viewer; light or dark follows the host page or the system
+   - module page: part navigation on the hash (#overview, #l1.., #labs, #calls, #ref, #share), lab step ticks, lab done,
+     drill answers, progress code. State is kept per module in localStorage, so each module page stands alone.
+   - catalogue page: module cards with level, time and prerequisites, a level filter, and progress where it can be read. */
+(function () {
+  'use strict';
+  var PRISTINE = ''; try { PRISTINE = '<!doctype html>\n' + document.documentElement.outerHTML; } catch (e) {}
+  var root = document.documentElement;
+  var MAN = { modules: [] }; try { MAN = JSON.parse(document.getElementById('manifest').textContent); } catch (e) {}
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function put(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function modById(id) { return MAN.modules.filter(function (x) { return x.id === id; })[0]; }
+  function num(id) { return +id.slice(1); }
+  function mins(n) { n = +n || 0; return n >= 60 ? (Math.round(n / 6) / 10) + ' h' : n + ' min'; }
+  function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+  function link(a, href) { if (href) a.href = href; return a; }
+
+  /* ---- theme ---- */
+  var THEMES = [['a', 'Meter'], ['b', 'Workbench'], ['c', 'Blueprint'], ['d', 'Classroom'], ['e', 'Console']];
+  var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null, forced = null;
+  function mode() { var t = forced || root.getAttribute('data-theme'); root.setAttribute('data-mode', t === 'dark' || (t !== 'light' && mq && mq.matches) ? 'dark' : 'light'); }
+  var sel = document.getElementById('theme');
+  function pick(s, keep) { if (!/^[a-e]$/.test(s)) s = 'a'; root.setAttribute('data-style', s); if (sel) sel.value = s; if (keep) put('ai-bootcamp-theme', s); }
+  if (sel) {
+    THEMES.forEach(function (t) { var o = el('option', '', t[1]); o.value = t[0]; sel.appendChild(o); });
+    sel.addEventListener('change', function () { pick(sel.value, true); });
+  }
+  var qs = /[?&]style=([1-5a-e])/.exec(location.search), qm = /[?&]mode=(light|dark)/.exec(location.search);
+  if (qm) forced = qm[1];
+  pick(qs ? (/\d/.test(qs[1]) ? 'abcde'.charAt(+qs[1] - 1) : qs[1]) : (get('ai-bootcamp-theme') || 'a'), false);
+  mode();
+  if (mq && mq.addEventListener) mq.addEventListener('change', mode);
+  try { new MutationObserver(mode).observe(root, { attributes: true, attributeFilter: ['data-theme'] }); } catch (e) {}
+
+  /* ---- code blocks: caption with a file name or "shell", plus a copy button ---- */
+  [].forEach.call(document.querySelectorAll('pre'), function (pre) {
+    var box = el('div', 'codebox'), c = el('div', 'cap');
+    c.appendChild(el('span', '', pre.getAttribute('data-file') ? 'file  ' + pre.getAttribute('data-file') : (pre.getAttribute('data-cap') || 'shell')));
+    var b = el('button', 'copy', 'Copy'); b.type = 'button';
+    b.addEventListener('click', function () {
+      var t = pre.textContent;
+      function pickText() { try { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = 'Selected'; } catch (e) {} }
+      try { navigator.clipboard.writeText(t).then(function () { b.textContent = 'Copied'; }, pickText); } catch (e) { pickText(); }
+      setTimeout(function () { b.textContent = 'Copy'; }, 1600);
+    });
+    c.appendChild(b); pre.parentNode.insertBefore(box, pre); box.appendChild(c); box.appendChild(pre);
+  });
+
+  function levelChip(lv) { return el('span', 'chip lv-' + lv, lv); }
+  function readState(id) { var S = { labs: {}, steps: {}, drill: [], seen: {} }; try { var r = JSON.parse(get('ai-bootcamp-v2-' + id) || 'null'); if (r && typeof r === 'object') { ['labs', 'steps', 'seen'].forEach(function (k) { if (r[k] && typeof r[k] === 'object') S[k] = r[k]; }); if (r.drill && r.drill.length != null) S.drill = r.drill; } } catch (e) {} return S; }
+  function doneCount(S) { var n = 0, k; for (k in S.labs) if (S.labs[k]) n++; (S.drill || []).forEach(function (x) { if (x != null) n++; }); return n; }
+
+  var hn = document.getElementById('home-notes');
+  function homeNotes() { var off = get('ai-bootcamp-home') === '0'; if (hn) hn.checked = !off; document.body.classList.toggle('hide-home', off); }
+  if (hn) hn.addEventListener('change', function () { put('ai-bootcamp-home', hn.checked ? '1' : '0'); homeNotes(); });
+  homeNotes();
+
+  /* ---- save a copy of this page as one file ---- */
+  /* Inside a hosted viewer the page may be given a save function; it is asked for once, at load. Everywhere else
+     (a file on disk, a plain web server) it stays null and the button uses an ordinary download link. */
+  var DL = null;
+  try {
+    if (window.claude && typeof window.claude.use === 'function') {
+      Promise.resolve(window.claude.use('downloads')).then(function (d) { DL = d || null; }, function () { DL = null; });
+    }
+  } catch (e) { DL = null; }
+  [].forEach.call(document.querySelectorAll('[data-save]'), function (b) {
+    b.addEventListener('click', function () {
+      var msg = b.parentNode.querySelector('.note') || b;
+      var name = b.getAttribute('data-save');
+      function say(t) { if (msg !== b) msg.textContent = t; }
+      function viaLink() {
+        try {
+          var a = el('a'); a.href = URL.createObjectURL(new Blob([PRISTINE], { type: 'text/html' })); a.download = name;
+          document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+          say('Saved as ' + name + ' if your browser allows downloads from this page. If nothing happened, use the file from the export set instead.');
+        } catch (e) { say('This page cannot start a download here. Use the file from the export set instead.'); }
+      }
+      if (DL && typeof DL.save === 'function') {
+        DL.save({ filename: name, data: PRISTINE }).then(function () { say('Saved as ' + name + '.'); }, function (err) {
+          var code = err && err.code;
+          if (code === 'declined') return;
+          if (code === 'rate_limited') { say('A save is already waiting for your answer. Wait a moment, then try again.'); return; }
+          viaLink();
+        });
+      } else { viaLink(); }
+    });
+  });
+
+  /* ================= catalogue page ================= */
+  var cards = document.getElementById('cards');
+  if (cards) {
+    var filter = get('ai-bootcamp-level') || 'all', fbar = document.getElementById('levels');
+    var draw = function () {
+      cards.textContent = '';
+      MAN.modules.forEach(function (m) {
+        if (filter !== 'all' && m.level !== filter) return;
+        var c = link(el(m.href ? 'a' : 'div', 'mcard'), m.href);
+        var top = el('div', 'chips'); top.appendChild(el('span', 'n', 'MODULE ' + num(m.id))); top.appendChild(levelChip(m.level)); top.appendChild(el('span', 'chip', mins(m.minutes))); c.appendChild(top);
+        c.appendChild(el('span', 't', m.title)); c.appendChild(el('span', 's', m.sub));
+        c.appendChild(el('span', 'pre', (m.lessons || 0) + ' lessons · ' + (m.labs || 0) + ' labs · ' + (m.prereq.length ? 'after ' + m.prereq.map(function (p) { var x = modById(p); return x ? num(p) + ' ' + x.title : p; }).join(', ') : 'no prerequisites')));
+        if (!m.href) c.appendChild(el('span', 'pre', 'Published as its own page; ask for the link or use the file set.'));
+        var S = readState(m.id), d = doneCount(S), total = (m.labs || 0) + (m.calls || 0);
+        if (d && total) { var mt = el('div', 'meter'), sp = el('span'); sp.style.width = Math.min(100, Math.round(100 * d / total)) + '%'; mt.appendChild(sp); c.appendChild(mt); }
+        cards.appendChild(c);
+      });
+      if (fbar) [].forEach.call(fbar.children, function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-level') === filter ? 'true' : 'false'); });
+    };
+    if (fbar) ['all', 'foundation', 'practitioner', 'advanced'].forEach(function (lv) {
+      var b = el('button', 'btn', lv === 'all' ? 'All levels' : cap(lv)); b.type = 'button'; b.setAttribute('data-level', lv);
+      b.addEventListener('click', function () { filter = lv; put('ai-bootcamp-level', lv); draw(); }); fbar.appendChild(b);
+    });
+    draw();
+    [].forEach.call(document.querySelectorAll('[data-mod]'), function (a) { var m = modById(a.getAttribute('data-mod')); if (m) { if (!a.textContent) a.textContent = num(m.id) + '. ' + m.title; link(a, m.href); } });
+    var tot = document.getElementById('totals');
+    if (tot) { var tl = 0, tm = 0; MAN.modules.forEach(function (m) { tl += m.labs || 0; tm += +m.minutes || 0; }); tot.textContent = MAN.modules.length + ' modules, ' + tl + ' labs, about ' + Math.round(tm / 60) + ' hours in all'; }
+    return;
+  }
+
+  /* ================= module page ================= */
+  var m = document.querySelector('section.module'); if (!m) return;
+  var id = m.id, me = modById(id) || { prereq: [], level: m.getAttribute('data-level') || '', minutes: m.getAttribute('data-minutes') }, KEY = 'ai-bootcamp-v2-' + id;
+  var S = readState(id);
+  function save() { put(KEY, JSON.stringify(S)); }
+  var nav = document.getElementById('nav'), pager = document.getElementById('pager'), crumb = document.getElementById('crumb'), share = document.getElementById('view-share');
+  var overview = m.querySelector('.overview'), labsEl = m.querySelector('.labs'), ref = m.querySelector('.reference');
+  var lessons = [].slice.call(m.querySelectorAll('.lesson')), labEls = [].slice.call(m.querySelectorAll('article.lab'));
+  var drill = el('div', 'drill'); m.appendChild(drill);
+  var qsn = []; try { qsn = JSON.parse(m.querySelector('script.drill').textContent); } catch (e) {}
+
+  var parts = [];
+  if (overview) parts.push({ key: 'overview', n: '', title: 'Overview', el: overview });
+  lessons.forEach(function (l, i) { parts.push({ key: 'l' + (i + 1), n: String(i + 1), title: l.getAttribute('data-title') || 'Lesson ' + (i + 1), el: l, kind: 'Lesson ' + (i + 1) + ' of ' + lessons.length, min: l.getAttribute('data-minutes') }); });
+  if (labsEl && labEls.length) parts.push({ key: 'labs', n: 'L', title: 'Labs', el: labsEl, kind: labEls.length + ' labs' });
+  if (qsn.length) parts.push({ key: 'calls', n: '?', title: 'Calls', el: drill, kind: qsn.length + ' judgment calls' });
+  if (ref && ref.children.length) parts.push({ key: 'ref', n: '#', title: 'Cheat sheet', el: ref, kind: 'Reference' });
+
+  /* header: full on the overview, slim on the other parts */
+  var head = el('div', 'mhead'), kick = el('div', 'kicker'), h = el('h1', '', m.getAttribute('data-title')), meta = el('div', 'meta'), chips = el('div', 'chips');
+  head.appendChild(kick); head.appendChild(h); head.appendChild(meta); head.appendChild(chips); m.insertBefore(head, m.firstChild);
+  chips.appendChild(levelChip(me.level || 'practitioner')); chips.appendChild(el('span', 'chip', mins(m.getAttribute('data-minutes'))));
+  chips.appendChild(el('span', 'chip', lessons.length + ' lessons')); chips.appendChild(el('span', 'chip', labEls.length + ' labs'));
+  (me.prereq || []).forEach(function (p) { var x = modById(p); if (x) chips.appendChild(link(el(x.href ? 'a' : 'span', 'chip'), x.href)).textContent = 'after ' + num(p) + ' ' + x.title; });
+  if (!(me.prereq || []).length) chips.appendChild(el('span', 'chip', 'no prerequisites'));
+
+  /* overview extras: the parts of this module, what to take next, the progress code */
+  if (overview) {
+    var pl = el('div', 'panel'); pl.appendChild(el('div', 'kicker', 'In this module')); var ul = el('ol', 'partlist');
+    parts.forEach(function (p) { if (p.key === 'overview') return; var li = el('li'), a = el('a'); a.href = '#' + p.key; a.appendChild(el('span', 'n', p.n)); a.appendChild(el('span', '', p.title)); a.appendChild(el('span', 'm', p.min ? p.min + ' min' : (p.kind || ''))); li.appendChild(a); ul.appendChild(li); });
+    pl.appendChild(ul); overview.appendChild(pl);
+    var nexts = MAN.modules.filter(function (x) { return x.prereq.indexOf(id) >= 0; });
+    if (nexts.length || MAN.catalogue) {
+      var nx = el('div', 'panel'); nx.appendChild(el('div', 'kicker', 'Where to go from here')); var row = el('div', 'chips'); row.style.marginTop = '8px';
+      nexts.forEach(function (x) { var a = link(el(x.href ? 'a' : 'span', 'chip'), x.href); a.textContent = num(x.id) + ' ' + x.title; row.appendChild(a); });
+      if (MAN.catalogue) { var ca = link(el('a', 'chip'), MAN.catalogue); ca.textContent = 'All modules'; row.appendChild(ca); }
+      nx.appendChild(row); overview.appendChild(nx);
+    }
+    var pp = el('div', 'panel'); pp.appendChild(el('div', 'kicker', 'Progress code'));
+    var pd = el('p', 'muted', 'Progress for this module lives in this browser only. To move it to another device or another copy of this page, copy the code here and load it there.'); pd.style.marginTop = '6px'; pp.appendChild(pd);
+    var pr = el('div', 'row'), pc = el('input'); pc.type = 'text'; pc.setAttribute('aria-label', 'Progress code'); pc.style.cssText = 'flex:1;min-width:200px;font-family:var(--font-mono);font-size:0.8rem';
+    var b1 = el('button', 'btn', 'Copy mine'), b2 = el('button', 'btn', 'Load'), pm = el('p', 'note'); b1.type = b2.type = 'button'; pm.style.marginBottom = '0';
+    pr.appendChild(pc); pr.appendChild(b1); pr.appendChild(b2); pp.appendChild(pr); pp.appendChild(pm); overview.appendChild(pp);
+    b1.addEventListener('click', function () {
+      try { pc.value = 'AIB2.' + id + '.' + btoa(unescape(encodeURIComponent(JSON.stringify(S)))); } catch (e) { pm.textContent = 'Could not build the code.'; return; }
+      pc.select(); try { navigator.clipboard.writeText(pc.value).then(function () { pm.textContent = 'Copied.'; }, function () { pm.textContent = 'Selected. Copy it with Ctrl+C.'; }); } catch (e) { pm.textContent = 'Selected. Copy it with Ctrl+C.'; }
+    });
+    b2.addEventListener('click', function () {
+      try { var v = pc.value.trim(), pre = 'AIB2.' + id + '.'; if (v.indexOf(pre) !== 0) throw 0; var o = JSON.parse(decodeURIComponent(escape(atob(v.slice(pre.length))))); if (!o || typeof o !== 'object') throw 0; put(KEY, JSON.stringify(o)); location.reload(); }
+      catch (e) { pm.textContent = 'That is not a progress code for this module. It starts with AIB2.' + id + '.'; }
+    });
+  }
+
+  /* labs */
+  labEls.forEach(function (lab, li) {
+    var lh = el('div', 'labhead'); lh.appendChild(el('h3', '', 'Lab ' + (li + 1) + '  ' + lab.getAttribute('data-title'))); lh.appendChild(el('span', 'meta', lab.getAttribute('data-minutes') + ' min')); lab.insertBefore(lh, lab.firstChild);
+    [].forEach.call(lab.querySelectorAll('ol.steps > li'), function (step, si) {
+      var c = el('input', 'tick'); c.type = 'checkbox'; c.setAttribute('aria-label', 'Step ' + (si + 1) + ' done'); c.checked = (S.steps[lab.id] || []).indexOf(si) >= 0;
+      c.addEventListener('change', function () { var a = (S.steps[lab.id] || []).filter(function (x) { return x !== si; }); if (c.checked) a.push(si); S.steps[lab.id] = a; save(); });
+      step.insertBefore(c, step.firstChild);
+    });
+    var foot = el('div', 'labfoot'), btn = el('button', 'btn'); btn.type = 'button';
+    function paint() { var d = !!S.labs[lab.id]; lab.classList.toggle('done', d); btn.textContent = d ? 'Done. Undo' : 'Mark lab done'; }
+    btn.addEventListener('click', function () { if (S.labs[lab.id]) delete S.labs[lab.id]; else S.labs[lab.id] = 1; save(); paint(); progress(); });
+    foot.appendChild(btn); lab.appendChild(foot); paint();
+  });
+
+  /* calls */
+  qsn.forEach(function (q, qi) {
+    var box = el('div', 'q'); box.appendChild(el('div', 'qt', (qi + 1) + '. ' + q.q));
+    var opts = el('div', 'opts'), why = el('div', 'why', q.why); why.hidden = true;
+    var btns = q.o.map(function (o, oi) {
+      var b = el('button', 'opt'); b.type = 'button'; b.appendChild(el('span', 'k', 'ABCD'.charAt(oi))); b.appendChild(el('span', '', o));
+      b.addEventListener('click', function () { S.drill[qi] = oi; save(); mark(); progress(); }); opts.appendChild(b); return b;
+    });
+    function mark() { var a = S.drill[qi]; btns.forEach(function (b, oi) { b.classList.toggle('right', a != null && oi === q.a); b.classList.toggle('wrong', a === oi && oi !== q.a); }); why.hidden = a == null; }
+    box.appendChild(opts); box.appendChild(why); drill.appendChild(box); mark();
+  });
+  if (qsn.length) { var reset = el('button', 'btn', 'Clear my answers'); reset.type = 'button'; reset.style.justifySelf = 'start'; reset.addEventListener('click', function () { S.drill = []; save(); location.reload(); }); drill.appendChild(reset); }
+
+  /* navigation */
+  parts.forEach(function (p) {
+    var a = el('a', 'navlink'); a.href = '#' + p.key; a.appendChild(el('span', 'n', p.n || '·')); a.appendChild(el('span', '', p.title)); a.appendChild(el('span', 'p')); nav.appendChild(a); p.nav = a;
+  });
+  var shareNav = null;
+  if (share) { shareNav = el('a', 'navlink'); shareNav.href = '#share'; shareNav.appendChild(el('span', 'n', '\u2197')); shareNav.appendChild(el('span', '', 'Export and share')); shareNav.appendChild(el('span', 'p')); nav.appendChild(shareNav); }
+  function progress() {
+    parts.forEach(function (p) {
+      var t = p.nav.querySelector('.p'), txt = '', full = false;
+      if (p.key === 'labs') { var d = labEls.filter(function (l) { return S.labs[l.id]; }).length; txt = d ? d + '/' + labEls.length : ''; full = d === labEls.length; }
+      else if (p.key === 'calls') { var a = S.drill.filter(function (x) { return x != null; }).length; txt = a ? a + '/' + qsn.length : ''; full = a === qsn.length; }
+      else if (S.seen[p.key]) { txt = '✓'; full = true; }
+      t.textContent = txt; t.classList.toggle('full', full);
+    });
+  }
+  function route() {
+    var key = (location.hash || '#overview').slice(1), isShare = key === 'share' && share;
+    var cur = parts.filter(function (p) { return p.key === key; })[0]; if (!cur && !isShare) cur = parts[0];
+    m.hidden = !!isShare; if (share) share.hidden = !isShare;
+    if (shareNav) shareNav.classList.toggle('active', !!isShare);
+    parts.forEach(function (p) { p.el.hidden = p !== cur; p.nav.classList.toggle('active', p === cur); });
+    if (cur) {
+      var first = cur.key === 'overview';
+      kick.textContent = 'Module ' + num(id) + (first ? ' · ' + cap(me.level || '') : ' · ' + m.getAttribute('data-title'));
+      h.textContent = first ? m.getAttribute('data-title') : cur.title;
+      meta.textContent = first ? m.getAttribute('data-sub') : (cur.kind || '') + (cur.min ? ' · about ' + cur.min + ' min' : '');
+      chips.hidden = !first;
+      if (/^l\d+$/.test(cur.key) && !S.seen[cur.key]) { S.seen[cur.key] = 1; save(); }
+      if (crumb) crumb.textContent = 'Module ' + num(id) + ' · ' + m.getAttribute('data-title') + (first ? '' : ' · ' + cur.title);
+      var i = parts.indexOf(cur); pager.textContent = '';
+      if (i > 0) { var pv = el('a', 'btn', '← ' + parts[i - 1].title); pv.href = '#' + parts[i - 1].key; pager.appendChild(pv); }
+      if (i < parts.length - 1) { var nx2 = el('a', 'btn primary next', parts[i + 1].title + ' →'); nx2.href = '#' + parts[i + 1].key; pager.appendChild(nx2); }
+      try { cur.nav.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {}
+    } else { pager.textContent = ''; if (crumb) crumb.textContent = 'Export and share'; }
+    progress(); window.scrollTo(0, 0);
+  }
+  route(); window.addEventListener('hashchange', route);
+})();
+
+</script>
+<script>
+
+</script>
+
+</body>
+</html>

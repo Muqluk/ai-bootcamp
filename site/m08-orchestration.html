@@ -1,0 +1,718 @@
+<section class="module" id="m8" data-title="Orchestration" data-sub="Briefs, handoffs, queues and the ways they fail" data-level="advanced" data-prereq="m7" data-minutes="255">
+  <div class="overview">
+    <p class="lede">Orchestration is running more than one model session on one job: a lead and its subagents, a set of workers fed from a queue, a pipeline of stages, a writer and a reviewer. It is distributed systems work with an unreliable, very fluent worker in every slot, so the old rules apply: define the interface, keep state outside the process, make steps idempotent, verify independently and cap everything. This module covers the shapes, the brief that sits between them, and the ways a fleet fails in practice.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Pick an orchestration shape for a job, estimate what it adds in tokens and coordination, and say when one session is the better answer.</li>
+      <li>Write a brief with a goal, a done-test a script can check, a scope fence, inputs by path, a return contract and a blocked rule, and grade a worker's run against it.</li>
+      <li>Keep a job's state in files and a queue rather than in a conversation, and make each step safe to run twice.</li>
+      <li>Write a handoff file a cold session can finish from, and decide when to park a session instead of keeping it warm.</li>
+      <li>Add a reviewer stage that returns PASS or FAIL with evidence as validated JSON, and gate on it with a script.</li>
+      <li>Name the common fleet failures by symptom, and set concurrency, turn and budget caps plus a kill switch.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key).</li>
+      <li>Windows PowerShell 5.1 or later. The labs use background jobs (<code>Start-Job</code>) for parallel workers.</li>
+      <li>About $0.05 of API spend, or a small share of a plan's 5-hour window. Every run uses Haiku.</li>
+      <li>The module "Headless runs and subagents", or the recap below.</li>
+    </ul>
+    <div class="recap"><h3>If you skipped the prerequisites</h3>
+      <p><code>claude -p "prompt"</code> runs one headless session and exits. With <code>--output-format json</code> it prints one JSON object with <code>result</code> (the final text), <code>session_id</code>, <code>num_turns</code>, <code>total_cost_usd</code>, <code>usage</code> (the four token counts), <code>is_error</code>, <code>subtype</code> (<code>success</code> or an error such as <code>error_max_turns</code>) and <code>permission_denials</code>. <code>--allowedTools "Read,Write"</code> grants tools without a prompt; in a headless run anything that would need a prompt is denied, and the run carries on. <code>--max-turns</code> caps the agent loop and <code>--max-budget-usd</code> caps estimated spend. A subagent is a second context window the main session starts with the Agent tool: it gets its own system prompt and tools, does its work, and only its final report comes back to the parent. Every fresh session or subagent pays a fixed prompt overhead before it does anything: on this course's test machine a one-word Haiku reply carried about 21,700 prompt tokens (system prompt and tool definitions), mostly as <span class="tok cw">cache write</span> and <span class="tok cr">cache read</span>. On an API key you pay per token; on a subscription plan the same tokens draw down a 5-hour window and weekly limits, and <code>total_cost_usd</code> is a list-price estimate, not a charge.</p>
+    </div>
+  </div>
+
+  <div class="lesson" id="m8-l1" data-title="Shapes and what they cost" data-minutes="20">
+    <h3>Four shapes</h3>
+    <p>Almost every multi-agent setup is one of four shapes, or two of them nested. They differ in where the context lives, who decides what happens next, and how results travel back.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Shape</th><th>How it runs</th><th>Where results travel</th><th>Who decides the next step</th></tr>
+      <tr><td>One agent with subagents</td><td>One session spawns subagents with the Agent tool. Each subagent has a fresh context window.</td><td>Only the subagent's final report returns into the parent's context.</td><td>The parent model.</td></tr>
+      <tr><td>Orchestrator and workers</td><td>Separate sessions. A lead (a model or a script) hands out work items; workers run as their own processes.</td><td>Files, a queue or a tracker. Nothing is shared in memory.</td><td>The lead, from the queue's state.</td></tr>
+      <tr><td>Pipeline</td><td>Fixed stages in order: gather, change, test, report. Each stage is a session or a script.</td><td>Each stage reads the previous stage's output files.</td><td>The pipeline definition. No model chooses the order.</td></tr>
+      <tr><td>Writer and reviewer</td><td>One session produces, a second session with a different prompt checks the product against the done-test.</td><td>The product file, then a verdict.</td><td>A gate script reading the verdict.</td></tr>
+    </table></div>
+
+    <figure class="diagram">
+<pre class="mermaid">flowchart TD
+  lead["Orchestrator"]:::hot
+  q[("Queue and tracker")]:::info
+  w1["Worker 1"]
+  w2["Worker 2"]
+  rv["Reviewer"]:::alt
+  lead -- "brief down" --> q
+  q --> w1
+  q --> w2
+  w1 -- "report up" --> q
+  w2 -- "report up" --> q
+  q -- "product to check" --> rv
+  rv -- "verdict" --> q
+  q -- "state for next step" --> lead
+</pre>
+      <figcaption>Nothing is shared in memory: the brief goes down through the queue, and reports and verdicts come back up through it.</figcaption>
+    </figure>
+
+    <h3>What each shape costs</h3>
+    <p>There are two bills. The token bill is what the sessions consume. The coordination bill is the work you do to define interfaces, carry state between sessions and debug a run where three processes each did something plausible.</p>
+    <p>The token bill starts with the fixed overhead. Every new session and every subagent re-sends its own system prompt and tool definitions before it reads a word of your task. In the recap's measurement that was about 21,700 prompt tokens for a one-word answer. Ten workers pay it ten times, and a worker that is restarted pays it again. Caching softens it: identical prefixes are read back at a tenth of the input price or less. It does not remove it, because each new session writes its own conversation into the cache.</p>
+    <p>On top of the overhead, every handoff moves text. A subagent's report becomes input to the parent. A pipeline stage re-reads the files the last stage wrote. A reviewer reads the whole product and the source it was built from. In this module's labs, on Haiku, a worker that counted eight CSV rows cost about $0.004, and the reviewer that checked its output cost about $0.005 to $0.006. Checking carefully costs about as much as doing.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Shape</th><th>Token cost beyond one session</th><th>Coordination cost</th><th>Good for</th></tr>
+      <tr><td>Subagents</td><td>Overhead per subagent, plus each report as parent input. The parent's own context stays small, which is the saving.</td><td>Low. The parent writes the brief in its prompt. Hard to inspect: the subagent's working is not in the parent's transcript.</td><td>Searches and reads whose detail the parent should not carry.</td></tr>
+      <tr><td>Orchestrator and workers</td><td>Overhead per worker per item, plus re-reading inputs a shared session would already hold.</td><td>High. Queue, claims, briefs, handoff files, a done-test per item.</td><td>Many independent items. Work that outlives one context window or one day.</td></tr>
+      <tr><td>Pipeline</td><td>Overhead per stage, plus each stage re-reading artifacts.</td><td>Medium. The stages are fixed, so failures are easy to place.</td><td>Repeatable jobs: the same steps every night.</td></tr>
+      <tr><td>Writer and reviewer</td><td>Roughly double: the reviewer re-reads the product and the sources.</td><td>Low to medium. Needs a done-test the reviewer can apply.</td><td>Anything where a wrong answer is expensive.</td></tr>
+    </table></div>
+
+    <h3>When not to orchestrate</h3>
+    <p>A single session with a clear prompt beats a fleet whenever the job fits comfortably in one context, has one done-test, and gains nothing from parallel work or an independent check. Orchestration earns its cost for four reasons only:</p>
+    <ul>
+      <li><b>Parallelism.</b> The items are independent and wall-clock time matters.</li>
+      <li><b>Context limits.</b> The work would push one session into compaction, or the detail of one part would crowd out the rest.</li>
+      <li><b>Independent verification.</b> A second context that did not write the product is the check you want.</li>
+      <li><b>Different permissions.</b> One stage may read production, another may only write a report. Separate sessions get separate tool grants.</li>
+    </ul>
+    <p>If none of these applies, the coordination bill buys nothing. Most "multi-agent" failures in this module start with a job that did not need more than one agent.</p>
+    <aside class="rule">Orchestrate for parallelism, context limits, independent checking or separate permissions, and for nothing else.</aside>
+    <aside class="trap">Fan-out feels free because each worker's cost is small. Ten workers each paying a 20,000-token overhead, retrying twice, and handing a 3,000-token report to a parent cost more than the single session would have, and finish no sooner if the parent then reads every report in series.</aside>
+  </div>
+
+  <div class="lesson" id="m8-l2" data-title="The brief is the interface" data-minutes="20">
+    <h3>Why the brief carries the whole job</h3>
+    <p>A worker starts with no memory of your conversation, your intent or the last attempt. Its context is its system prompt, whatever project instructions load, and the brief. Everything you meant but did not write is filled in by the model's best guess, and the guess is fluent enough to look like understanding. Treat the brief the way you treat an API contract between two services: it states inputs, outputs and error behaviour, and anything outside it is undefined.</p>
+
+    <h3>Six parts</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Part</th><th>What it says</th><th>Test that it is good</th></tr>
+      <tr><td>Goal</td><td>One or two sentences: the outcome and who uses it.</td><td>A stranger could explain why the task exists.</td></tr>
+      <tr><td>Done-test</td><td>A numbered list of checks that decide finished or not finished.</td><td>A script, or a reviewer with no other context, could apply every item.</td></tr>
+      <tr><td>Scope fence</td><td>What the worker may create or change, and what it must not touch.</td><td>The grader can check it: a file list, a hash, a path rule.</td></tr>
+      <tr><td>Inputs by path</td><td>Every file the worker needs, with its location and format.</td><td>No "the usual file" or "the services list".</td></tr>
+      <tr><td>Return contract</td><td>The exact shape of the final message, for example one line <code>DONE &lt;count&gt;</code>.</td><td>A regex or a JSON schema can parse it.</td></tr>
+      <tr><td>When blocked</td><td>What counts as blocked, and what to do: stop, report, do not guess.</td><td>The worker has a legal way to fail.</td></tr>
+    </table></div>
+    <p>The last part matters more than it looks. A model with no permitted failure path completes the task anyway, by assumption. Giving it a cheap, explicit way out (<code>BLOCKED &lt;reason&gt;</code>) turns silent guesses into reports you can act on.</p>
+
+    <h3>A bad brief and its repair</h3>
+    <p>The bad brief below is typical of a request typed into a chat: clear to the writer, empty for a cold worker.</p>
+    <pre data-file="brief-bad.md"><code>Have a look at the services file and tidy up a list of the ports that matter. Make it neat.</code></pre>
+    <pre data-file="brief-good.md"><code># Brief: list the ports of running services
+
+## Goal
+List the TCP ports of the services that are running, for a firewall review.
+
+## Done when (grade.ps1 checks exactly this)
+1. open-ports.txt exists in this folder.
+2. It holds one port number per line, digits only, sorted from low to high, nothing else.
+3. The ports are exactly those of rows in services.csv whose state is running.
+4. services.csv is unchanged and no other file is created.
+
+## Scope
+Create open-ports.txt only. Do not edit services.csv. No scripts, notes or backups.
+
+## Inputs
+- services.csv (columns: name,port,state)
+
+## Return
+One line: DONE &lt;number of ports&gt;, or BLOCKED &lt;one-sentence reason&gt;.
+
+## If blocked
+If a state value is not one of running, stopped, disabled, return BLOCKED and name it. Do not guess.</code></pre>
+    <div class="tablewrap"><table>
+      <tr><th>Gap in the bad brief</th><th>What the worker did with it (three runs in lab 5)</th><th>Repair</th></tr>
+      <tr><td>"the services file"</td><td>Found <code>services.csv</code> each time, and each time said it had considered the operating system's own services file.</td><td>Inputs by path, with columns.</td></tr>
+      <tr><td>"tidy up"</td><td>Twice rewrote <code>services.csv</code> in place (re-sorted, once with the columns re-ordered).</td><td>Scope fence: create one named file, do not edit the input.</td></tr>
+      <tr><td>"ports that matter"</td><td>Kept all six rows twice; filtered to running once.</td><td>Done-test item 3 defines "matter".</td></tr>
+      <tr><td>"neat"</td><td>Produced a Markdown table in a new file <code>ports.md</code>.</td><td>Done-test item 2 fixes the format.</td></tr>
+      <tr><td>No return shape</td><td>Paragraphs of explanation and an offer to change it.</td><td>Return contract.</td></tr>
+    </table></div>
+    <p>The repaired brief passed all five grader checks on its first run, at about the same cost. Note that the worker still added prose after <code>DONE 4</code>. The contract said "one line"; it did not say "and nothing else". The lab 1 brief does say so, and its worker complied. Write the contract as tightly as the parser that reads it.</p>
+
+    <h3>Writing the done-test first</h3>
+    <p>Write the done-test before the rest of the brief, and write the grading script from it at the same time. If you cannot write the script, the done-test is not concrete yet. A done-test that only a person can apply ("the summary is clear") is fine for a reviewer session, provided it is numbered so the reviewer can cite which item failed.</p>
+    <aside class="rule">If you cannot write the grading script, you have not finished writing the brief.</aside>
+    <aside class="trap">A brief that refers to "what we discussed" or "the earlier approach" points at a context the worker never had. It gets a guess, delivered with the same confidence as a fact.</aside>
+  </div>
+
+  <div class="lesson" id="m8-l3" data-title="State outside the window, and handoffs" data-minutes="25">
+    <h3>The system of record</h3>
+    <p>A model's context window is process memory: large, fast, and gone when the process ends, compacts or is replaced. A fleet needs a system of record that survives all three. Use a tracker or a queue for the state of each work item (open, claimed by whom, done, blocked) and files for the content that moves between sessions (briefs, products, handoffs, verdicts).</p>
+    <div class="tablewrap"><table>
+      <tr><th>What</th><th>Where it lives</th><th>Why</th></tr>
+      <tr><td>Item state</td><td>Tracker or queue directory</td><td>One place answers "who has this and is it done". Survives any session.</td></tr>
+      <tr><td>Who holds an item</td><td>A claim record, created atomically</td><td>Two workers cannot both hold it.</td></tr>
+      <tr><td>The task</td><td>A brief file</td><td>Re-readable by a retry, a reviewer or a successor.</td></tr>
+      <tr><td>The product</td><td>Output files at agreed paths</td><td>A grader checks files, not claims.</td></tr>
+      <tr><td>Progress mid-task</td><td>A handoff file</td><td>A cold session can continue from it.</td></tr>
+    </table></div>
+
+    <figure class="diagram">
+<pre class="mermaid">stateDiagram-v2
+  [*] --> Open
+  Open --> Claimed: worker claims
+  Claimed --> Done: done-test passes
+  Claimed --> Blocked: blocker found
+  Claimed --> HandedOff: handoff file written
+  HandedOff --> Claimed: successor claims
+  Blocked --> Open: blocker cleared
+  Done --> [*]
+</pre>
+      <figcaption>Each item is in exactly one state in the tracker, whichever session is alive.</figcaption>
+    </figure>
+
+    <h3>Why chat is not a record</h3>
+    <p>A message between agents, or a line in a session's transcript, is not state. It cannot be queried, it is not ordered against other agents' messages, and the receiver may compact it away. "I told the worker in the chat" means the instruction exists in one context window, for as long as that window lasts. When you need to know what happened, read the files and the tracker. When something must happen, write it there.</p>
+
+    <h3>Idempotent steps</h3>
+    <p>Workers crash, time out and get retried. A step is safe to retry when running it twice has the same effect as running it once. Three habits get you there:</p>
+    <ul>
+      <li><b>Check before doing.</b> If <code>done\job2.txt</code> exists, skip job 2. Lab 4's worker does this before it claims.</li>
+      <li><b>Write whole outputs.</b> Produce a complete file (write to a temporary name, then rename) rather than appending to one, so a retry replaces instead of duplicating.</li>
+      <li><b>Claim atomically.</b> Create the claim with an operation that fails if it already exists. In .NET that is <code>[IO.File]::Open($path, 'CreateNew', 'Write')</code>. A check-then-create (<code>if (-not (Test-Path ...))</code>) has a gap two workers can both pass through.</li>
+    </ul>
+
+    <h3>When to hand off</h3>
+    <p>Hand off when a session has done a clean unit of work and the rest needs a context it does not have room for, when it is about to wait for something slow (a person, a nightly job, another team), or when its context has grown large enough that every turn re-reads a long history. Each turn re-sends the whole conversation, so a session at 300,000 tokens pays for 300,000 prompt tokens on every turn, mostly as <span class="tok cr">cache read</span>. A successor that starts from a 2,000-token handoff file pays the fixed overhead and the handoff, and nothing else.</p>
+
+    <h3>What a handoff file must contain</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Section</th><th>Content</th></tr>
+      <tr><td>Goal</td><td>The whole job in one sentence, not just the remaining step.</td></tr>
+      <tr><td>Done-test</td><td>How the successor proves the whole job is finished. Copy it from the brief.</td></tr>
+      <tr><td>Done so far</td><td>Each finished step and the file it produced.</td></tr>
+      <tr><td>Next step</td><td>The exact next action: input file, output file, format rule.</td></tr>
+      <tr><td>Do not redo</td><td>Finished files that must not be rewritten.</td></tr>
+      <tr><td>Open questions or blockers</td><td>Or "none". A successor that finds a blocker here asks instead of guessing.</td></tr>
+    </table></div>
+    <p>In lab 3 a session finished two of three steps and wrote a handoff from this template. A cold session with no <code>--resume</code> and the plan file hidden finished step three correctly and left both finished files byte-for-byte unchanged. The handoff it read included the expected final line, the exact format rule, and a "Do not redo" list naming both files.</p>
+
+    <figure class="diagram">
+<pre class="mermaid">sequenceDiagram
+  participant A as Worker at its limit
+  participant F as Handoff file
+  participant T as Tracker
+  participant B as Successor
+  A->>F: write goal, done-test, next step
+  A->>T: record handoff, then end
+  T->>B: start cold session
+  B->>F: read handoff
+  B->>T: claim the item
+  B->>T: report when done-test passes
+</pre>
+      <figcaption>The successor learns everything from the file and the tracker, never from the first worker's context.</figcaption>
+    </figure>
+
+    <h3>Parked waits, not warm idle sessions</h3>
+    <p>A session that waits with its context loaded costs nothing while idle, but its cache entry expires. Claude Code's main conversation uses a 1-hour cache lifetime on a subscription within plan usage, and 5 minutes on an API key, on usage credits and on cloud providers. When the session resumes after that, the first turn writes the whole context back into the cache at the write price (1.25 times input for the 5-minute lifetime, 2 times for 1 hour). A 300,000-token session woken after a long wait pays to write 300,000 tokens before it does anything.</p>
+    <p>Parking means: write the handoff, record the wait in the tracker (what is awaited, from whom, and how to resume), and end the session. When the answer arrives, start a cold session from the handoff. You pay the fixed overhead and a small file, not a large rewrite, and the wait is visible in the tracker rather than hidden in an idle process.</p>
+    <aside class="rule">If a fact lives only in a context window, the fleet does not know it.</aside>
+    <aside class="trap">A handoff that lists only the next step, without the goal and the done-test, gets a successor that does the step and reports the whole job done.</aside>
+    
+  </div>
+
+  <div class="lesson" id="m8-l4" data-title="Verification as a stage" data-minutes="20">
+    <h3>Why the author cannot be the check</h3>
+    <p>A session that wrote a product has its own reasoning in context. Asked "is this right", it re-reads that reasoning and agrees with it. Its final message reports what it intended, which may differ from what is on disk. Both effects are strongest exactly when the output is wrong in a way the author did not notice. So the check is a separate stage, run by something that did not write the product: a script, a reviewer session with a different prompt, or both.</p>
+
+    <h3>Four rules for the stage</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Rule</th><th>What it means</th><th>In the labs</th></tr>
+      <tr><td>Check against the done-test</td><td>The reviewer applies the brief's numbered list, not its own idea of quality.</td><td>The reviewer prompt names "the numbered Done when list in brief.md".</td></tr>
+      <tr><td>Evidence over assertion</td><td>Each verdict cites what proves it: a quoted line, a count, a hash.</td><td>The schema requires <code>failed_checks</code> and <code>evidence</code>.</td></tr>
+      <tr><td>A different context</td><td>A fresh session with a reviewer's prompt, read-only tools, and the source of truth.</td><td>The reviewer gets only <code>Read</code> and is told it is not the author.</td></tr>
+      <tr><td>Gates enforced, not requested</td><td>A script reads the verdict and decides. A hook blocks the action. No one is asked to remember.</td><td>The gate script exits 1 unless the verdicts are right.</td></tr>
+    </table></div>
+
+    <h3>Structured verdicts</h3>
+    <p><code>--json-schema</code> makes a headless run return its answer as JSON that matches a schema, in the <code>structured_output</code> field of the result. A verdict schema with an enum for the verdict means a gate script never parses prose:</p>
+    <pre data-file="verdict.schema.json"><code>{"type":"object","properties":{"verdict":{"type":"string","enum":["PASS","FAIL"]},"failed_checks":{"type":"array","items":{"type":"integer"}},"evidence":{"type":"array","items":{"type":"string"}}},"required":["verdict","failed_checks","evidence"]}</code></pre>
+    <p>In lab 2 the reviewer was given the worker's real output and a copy with one planted defect (<code>closed,5</code> instead of <code>closed,4</code>). It passed the first and failed the second, citing check 4 with the four ticket ids that have status closed. It also failed check 2 on the defective copy for a reason nobody planted: the copy had been written with <code>Set-Content -Encoding utf8</code>, which in Windows PowerShell 5.1 adds a byte-order mark, so the first line was no longer exactly <code>status,count</code>. The script grader in lab 1 reads the file with <code>Get-Content</code>, which hides the mark, and would have passed it. A script and a reviewer catch different things; use both where it matters.</p>
+    <pre data-cap="output"><code>defect : exit 0 verdict=FAIL failed=2,4 cost=0.0045
+   evidence: Check 2 fails: defect/status-counts.csv begins with a UTF-8 BOM (EF BB BF), so its first line is ?status,count rather than exactly status,count. ...
+   evidence: Check 4 fails: defect/status-counts.csv lists closed,5, but tickets.csv has 4 rows with status closed (ids 102, 105, 106, 108). ...
+GATE OK: reviewer passed the good file and failed the planted defect</code></pre>
+
+    <h3>Gates in hooks</h3>
+    <p>A gate that depends on the model choosing to run it is a suggestion. Hooks run whether the model wants them or not (see the module "Hooks"). <code>PreToolUse</code> can deny a write outside the scope fence before it happens. <code>Stop</code>, <code>SubagentStop</code> and <code>TaskCompleted</code> are blockable events, so a hook there can run the done-test script and refuse to let the session or subagent finish while it fails. Test the exact blocking behaviour on your version before you rely on it. In a pipeline you control from a script, the gate is simpler still: the next stage does not start unless the verdict file says PASS.</p>
+    <aside class="rule">The thing that decides "done" must be something other than the thing that did the work.</aside>
+    <aside class="trap">A reviewer given the author's transcript, or asked "does this look right", inherits the author's framing and approves it. Give it the brief, the product and the source of truth, and nothing else.</aside>
+    
+  </div>
+
+  <div class="lesson" id="m8-l5" data-title="Failure modes seen in practice" data-minutes="20">
+    <p>Each failure below has turned up in real fleets. They share a cause: the worker produced fluent text where the system needed a checked fact. Each countermeasure moves a decision from the model's prose into a file, a script or a hook.</p>
+
+    <h3>The confident wrong answer, and the confident retraction</h3>
+    <p><b>Symptom:</b> a worker reports a finding as fact ("the rule is missing on web-01"). Challenged, it reverses just as firmly ("you're right, the rule is present"), and neither statement was checked. <b>Cause:</b> the model produces the most plausible text for the context; a challenge changes the context, so it changes the answer. Neither is evidence. <b>Countermeasure:</b> require evidence with every claim (the command and its output, the quoted line), and answer a challenge by re-running the check, not by asking again.</p>
+
+    <h3>Stopping short and reporting done</h3>
+    <p><b>Symptom:</b> <code>DONE</code>, but two of five items were skipped, or a test was "verified" by reading the code. <b>Cause:</b> the brief had no checkable done-test, or the worker graded itself. <b>Countermeasure:</b> a numbered done-test, a grading script or reviewer stage that runs after the worker, and a gate that ignores the worker's own verdict.</p>
+
+    <h3>Scope creep</h3>
+    <p><b>Symptom:</b> the worker fixed the task and also "tidied" three other files, or edited the input. In lab 5 the bad brief's worker rewrote <code>services.csv</code> in place on two of three runs. <b>Cause:</b> no scope fence, or a fence the worker could not see. <b>Countermeasure:</b> list what may be created or changed; check it in the grader (hashes, file list); deny writes outside it with a <code>PreToolUse</code> hook or a narrow <code>--allowedTools</code>.</p>
+
+    <h3>A lost or duplicated message between agents</h3>
+    <p><b>Symptom:</b> a worker never received an instruction, or acted on it twice. <b>Cause:</b> the message lived in transport only (a chat line, a pipe, a relay) with no acknowledgement and no record. <b>Countermeasure:</b> put the instruction in the tracker or a file, give it an id, and make acting on it idempotent, so a duplicate is a no-op and a missing one is visible as an item that never changed state.</p>
+
+    <h3>Two agents editing the same files</h3>
+    <p><b>Symptom:</b> changes disappear, or a file holds a mix of two edits. In lab 4, two workers without claims each processed all three jobs: six model calls for three jobs. <b>Cause:</b> no ownership. Each worker read the same queue and acted. <b>Countermeasure:</b> an atomic claim per item, one owner per file or folder, and separate working copies (a git worktree per worker) where work overlaps.</p>
+
+    <h3>A worker waiting on a human who was never asked</h3>
+    <p><b>Symptom:</b> a worker reports "I need approval to write that file" or "please confirm", and the run ends. Nobody saw it. <b>Cause:</b> a headless run cannot show a permission prompt, so the tool call is denied and the model writes a polite request into its final message. The run still ends with <code>subtype</code> <code>success</code> and exit code 0. <b>Countermeasure:</b> grant exactly the tools the brief needs, read <code>permission_denials</code> in every result and treat a non-empty list as a failure, and route real questions to a tracker field a person watches. With <code>--permission-prompts none</code> the denial is explicit.</p>
+    <pre data-cap="output"><code>"subtype":"success","is_error":false,
+"permission_denials":[{"tool_name":"Write","tool_input":{"file_path":"...\\b.txt","content":"hi"}}],
+"result":"The file was not created. When I called the Write tool ... the harness denied permission. ..."</code></pre>
+
+    <h3>Runaway fan-out and cost</h3>
+    <p><b>Symptom:</b> a lead spawns a worker per file, each spawns helpers, retries multiply, and the bill or the plan window is gone by mid-morning. <b>Cause:</b> no cap on concurrency, depth, turns or spend, and a retry policy with no limit. <b>Countermeasure:</b> the caps in the next lesson, set before the first run, and a kill switch that stops new work without killing finished work.</p>
+    <aside class="rule">Every failure here is fixed by moving a decision out of the model's prose and into a file, a script or a hook.</aside>
+    <aside class="trap">Exit code 0 and <code>"subtype":"success"</code> mean the session ended normally. They say nothing about whether the task was done or whether a tool was denied.</aside>
+  </div>
+
+  <div class="lesson" id="m8-l6" data-title="Limits, budgets and the two bills" data-minutes="20">
+    <h3>Four caps</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Cap</th><th>Mechanism</th><th>What you see when it trips</th></tr>
+      <tr><td>Concurrency</td><td>Your orchestrator's worker limit. For subagents, up to 20 run at once in one session by default (<code>CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS</code> adjusts it), nested up to 3 levels.</td><td>Your queue holds the rest. The Agent tool refuses to spawn past the cap.</td></tr>
+      <tr><td>Turns</td><td><code>--max-turns N</code> per run, or <code>CLAUDE_CODE_MAX_TURNS</code> when no flag is passed.</td><td><code>"subtype":"error_max_turns"</code>, <code>"terminal_reason":"max_turns"</code>, <code>is_error</code> true, exit code 1.</td></tr>
+      <tr><td>Spend per run</td><td><code>--max-budget-usd N</code>, checked against Claude Code's client-side cost estimate. Subagent spend counts.</td><td><code>"subtype":"error_max_budget_usd"</code>, <code>"terminal_reason":"budget_exhausted"</code>, exit code 1. Spawning a subagent past the cap fails with <code>Budget limit reached</code>.</td></tr>
+      <tr><td>Kill switch</td><td>A flag the orchestrator checks before each new item (a <code>STOP</code> file, a tracker field), plus a hard time limit that kills the process tree.</td><td>Workers finish the item in hand and take no more.</td></tr>
+    </table></div>
+    <p>The budget cap is checked after spending, so it can be overshot by up to one response. In lab 4 a run with a cap of $0.0001 stopped with <code>error_max_budget_usd</code> after spending about $0.0002, and on a run with a cold cache about $0.0016. Set the cap with headroom, and treat it as a fuse, not a forecast.</p>
+    <p>A kill switch should stop new work, not destroy work in progress. A worker that checks for <code>STOP</code> before each claim leaves no half-claimed items. A hard process kill is the second line, for a worker that hangs; pair it with idempotent steps so the killed item can be retried cleanly.</p>
+
+    <h3>Subscription window or API dollars</h3>
+    <p>The same fleet is measured differently depending on how it is signed in. Check which one you are on before you scale: in a headless run, an <code>ANTHROPIC_API_KEY</code> in the environment is always used when present, so a fleet launched from a shell that has one set bills the API, not the plan. The stream-json <code>init</code> line shows <code>apiKeySource</code>, which reads <code>none</code> on a subscription login.</p>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>Subscription plan</th><th>API key</th></tr>
+      <tr><td>What a worker spends</td><td>A share of one pool: a 5-hour window that starts at your first message, plus weekly limits. Chat, desktop, IDE and Claude Code all draw on it.</td><td>Dollars per token, by model and token type.</td></tr>
+      <tr><td>What parallel workers do</td><td>Drain the window faster. Ten workers for one hour can use what one worker would use in ten.</td><td>Multiply the bill and hit per-minute rate limits (requests and tokens per minute by tier). Cache reads do not count toward the input-tokens-per-minute limit.</td></tr>
+      <tr><td>When the limit is hit</td><td>Wait for the reset, upgrade, or spend usage credits, billed at API rates.</td><td>Requests are throttled; a workspace spend limit stops spend.</td></tr>
+      <tr><td><code>total_cost_usd</code></td><td>A list-price estimate. Useful as a relative measure of how hard a worker draws on the window.</td><td>A client-side estimate of the bill. The console is authoritative.</td></tr>
+      <tr><td><code>--max-budget-usd</code></td><td>Still enforced, against the estimate. It caps window drain per run indirectly.</td><td>Caps estimated dollars per run.</td></tr>
+      <tr><td>Fleet monitoring</td><td>The status line's <code>rate_limits.five_hour.used_percentage</code> and <code>seven_day</code> fields; <code>/usage</code>.</td><td>The console's usage and cost pages; telemetry (see "Telemetry").</td></tr>
+      <tr><td>Cache lifetime</td><td>1 hour on the main conversation within plan usage.</td><td>5 minutes by default.</td></tr>
+    </table></div>
+    <p>The advertised plan limits assume ordinary, individual use of Claude Code and the Agent SDK. A fleet of always-on workers is not that, and on a plan the practical limit on a fleet is the window, not the dollar figure. On an API key a fleet is limited only by your caps, your rate-limit tier and your spend limit, so the caps above are the whole safety net.</p>
+
+    <h3>Sizing a fleet</h3>
+    <p>Estimate per-item cost from a real run, not a guess: run one item, read <code>total_cost_usd</code> and <code>usage</code>, and multiply by items and by your expected retry rate. Then choose the model per stage. Opus 5.5 lists input and output at 40 times the Haiku 5.5 rate for prompts under 100,000 tokens. A reviewer that checks a count needs Haiku; a worker that designs a firewall change may need more. Every worker should log its <code>session_id</code>, cost and turns next to its item, so a bad night can be traced to the item and the stage that caused it.</p>
+    <aside class="rule">Set concurrency, turn, spend and time caps before the first fleet run, and log cost per item from the start.</aside>
+    <aside class="trap">A budget cap per run does not cap a fleet. Fifty runs under a $0.50 cap can spend $25, and a retry loop can start the fifty-first.</aside>
+    
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m8-lab1" data-title="Write a brief, run a worker, grade it" data-minutes="20">
+      <p class="goal">Write a six-part brief for a small task, run a headless worker on it, and grade the result with a script built from the brief's own done-test.</p>
+      <ol class="steps">
+        <li><p>Make the lab folder and an input file.</p>
+          <pre><code>mkdir {{LAB}}/m8/lab1 -Force; cd {{LAB}}/m8/lab1
+@'
+id,status,owner
+101,open,ana
+102,closed,ben
+103,open,cho
+104,pending,ana
+105,closed,dev
+106,closed,ben
+107,open,dev
+108,closed,cho
+'@ | Set-Content -Encoding utf8 tickets.csv</code></pre></li>
+        <li><p>Write the brief.</p>
+          <pre data-file="brief.md"><code>@'
+# Brief: count tickets by status
+
+## Goal
+Produce a count of tickets per status from tickets.csv.
+
+## Done when (the grader checks exactly this)
+1. status-counts.csv exists in this folder.
+2. Its first line is exactly: status,count
+3. It has one row per distinct status in tickets.csv, sorted by status name A to Z.
+4. Each count equals the number of rows in tickets.csv with that status.
+
+## Scope
+- You may create status-counts.csv. Nothing else.
+- Do not edit tickets.csv. Do not create helper scripts or notes.
+
+## Inputs
+- tickets.csv (columns: id,status,owner)
+
+## Return
+Your final message is one line and nothing else:
+DONE status-counts.csv &lt;number of data rows&gt;
+or, if you cannot meet the done-test:
+BLOCKED &lt;one-sentence reason&gt;
+
+## If blocked
+Do not guess and do not write a partial file. Return BLOCKED.
+'@ | Set-Content -Encoding utf8 brief.md</code></pre></li>
+        <li><p>Write the grader from the done-test, and record the input's hash so the grader can check the scope fence.</p>
+          <pre data-file="grade.ps1"><code>@'
+# Grades a run against brief.md. Exit 0 = PASS.
+param([string]$Result = 'worker.json')
+$fail = 0
+function Check($name, $ok) { if ($ok) { "PASS  $name" } else { "FAIL  $name"; $script:fail++ } }
+$expected = Import-Csv tickets.csv | Group-Object status | Sort-Object Name | ForEach-Object { "$($_.Name),$($_.Count)" }
+$exists = Test-Path status-counts.csv
+Check 'status-counts.csv exists' $exists
+if ($exists) {
+  $lines = @(Get-Content status-counts.csv | Where-Object { $_.Trim() -ne '' })
+  Check 'header is status,count' ($lines[0] -eq 'status,count')
+  Check 'rows match tickets.csv, sorted' ((($lines | Select-Object -Skip 1) -join ';') -eq ($expected -join ';'))
+}
+Check 'tickets.csv unchanged' ((Get-FileHash tickets.csv).Hash -eq (Get-Content tickets.sha256))
+$extra = Get-ChildItem -File | Where-Object { $_.Name -notin 'tickets.csv','brief.md','grade.ps1','tickets.sha256','status-counts.csv','worker.json' }
+Check 'no files outside scope' (-not $extra)
+$r = Get-Content $Result -Raw | ConvertFrom-Json
+Check 'return line matches contract' ($r.result.Trim() -match '^DONE status-counts\.csv \d+$')
+"cost_usd=$([math]::Round($r.total_cost_usd,4)) turns=$($r.num_turns) denials=$(@($r.permission_denials).Count)"
+exit $fail
+'@ | Set-Content -Encoding utf8 grade.ps1
+(Get-FileHash tickets.csv).Hash | Set-Content tickets.sha256</code></pre></li>
+        <li><p>Run the worker. <code>--setting-sources project</code> loads only this folder's settings, and <code>--strict-mcp-config</code> loads no MCP servers, so your personal settings, hooks and MCP servers stay out of the run and out of the measurement. Every headless run in this module uses both. <code>--allowedTools "Read,Write"</code> grants exactly what the brief needs.</p>
+          <pre><code>claude -p "Do the task in brief.md exactly." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read,Write" --max-turns 8 --output-format json &gt; worker.json
+(Get-Content worker.json -Raw | ConvertFrom-Json).result
+Get-Content status-counts.csv</code></pre>
+          <p class="expect"><b>Expected:</b> the result is the single line <code>DONE status-counts.csv 3</code>, and the file holds <code>status,count</code>, <code>closed,4</code>, <code>open,3</code>, <code>pending,1</code>.</p></li>
+        <li><p>Grade the run.</p>
+          <pre><code>.\grade.ps1; "grade exit $LASTEXITCODE"</code></pre>
+          <p class="expect"><b>Expected:</b> six <code>PASS</code> lines, then something like <code>cost_usd=0.0037 turns=6 denials=1</code> and <code>grade exit 0</code>. The one denial on the test run was the worker trying to use Bash to write and check the file; Bash was not granted, the call was denied, and the worker used Write instead.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>Which grader check enforces the scope fence, and which enforces the return contract? <i>"tickets.csv unchanged" and "no files outside scope" enforce the fence; "return line matches contract" enforces the contract.</i></li>
+          <li>Open <code>worker.json</code> and read <code>permission_denials</code>. What did the worker try that it was not given? <i>On the test run, a Bash command. Your run may show none, or a different tool.</i></li>
+          <li>Delete the "If blocked" section from the brief, change one status in <code>tickets.csv</code> to an empty value, re-record the hash and run again. Does the worker report a problem or write a count anyway? <i>Without a blocked rule a worker usually writes a count, often with an empty-status row or a silent drop. The grader decides whether that passes.</i></li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m8-lab2" data-title="Add a reviewer stage with a JSON verdict" data-minutes="25">
+      <p class="goal">Run a two-stage pipeline: a worker writes, a separate reviewer session checks against the done-test and returns PASS or FAIL with evidence as schema-validated JSON, and a gate script decides.</p>
+      <ol class="steps">
+        <li><p>Set up from lab 1's brief and input, and run the worker stage.</p>
+          <pre><code>mkdir {{LAB}}/m8/lab2 -Force; cd {{LAB}}/m8/lab2
+Copy-Item ..\lab1\tickets.csv, ..\lab1\brief.md .
+claude -p "Do the task in brief.md exactly." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read,Write" --max-turns 8 --output-format json &gt; worker.json
+(Get-Content worker.json -Raw | ConvertFrom-Json).result</code></pre>
+          <p class="expect"><b>Expected:</b> <code>DONE status-counts.csv 3</code>.</p></li>
+        <li><p>Make two candidates: the worker's output, and a copy with one planted defect.</p>
+          <pre><code>New-Item -ItemType Directory good, defect | Out-Null
+Copy-Item status-counts.csv good\
+(Get-Content status-counts.csv) -replace '^closed,4$', 'closed,5' | Set-Content -Encoding utf8 defect\status-counts.csv</code></pre></li>
+        <li><p>Write the verdict schema. Windows PowerShell 5.1 strips bare double quotes from arguments passed to a program, so the schema's quotes are escaped as <code>\"</code> when it is passed on the command line. Without the escape, <code>claude</code> stops with <code>--json-schema is not valid JSON</code>. The flag takes the JSON text itself, not a file path.</p>
+          <pre><code>@'
+{"type":"object","properties":{"verdict":{"type":"string","enum":["PASS","FAIL"]},"failed_checks":{"type":"array","items":{"type":"integer"}},"evidence":{"type":"array","items":{"type":"string"}}},"required":["verdict","failed_checks","evidence"]}
+'@ | Set-Content -Encoding ascii verdict.schema.json
+$schema = (Get-Content verdict.schema.json -Raw).Trim() -replace '"', '\"'</code></pre></li>
+        <li><p>Run the reviewer on each candidate. It gets a reviewer's prompt, only the Read tool, and the source of truth.</p>
+          <pre><code>$review = 'You are a reviewer, not the author. Check {0}\status-counts.csv against the numbered "Done when" list in brief.md, using tickets.csv as the source of truth. Count the rows yourself. Do not fix anything. For each failed check give its number and quote the line that proves it.'
+foreach ($c in 'good', 'defect') {
+  claude -p ($review -f $c) --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read" --max-turns 6 --output-format json --json-schema $schema &gt; "review-$c.json"
+  $r = Get-Content "review-$c.json" -Raw | ConvertFrom-Json
+  "$c : verdict=$($r.structured_output.verdict) failed=$($r.structured_output.failed_checks -join ',') cost=$([math]::Round($r.total_cost_usd,4))"
+  $r.structured_output.evidence | ForEach-Object { "   evidence: $_" }
+}</code></pre>
+          <p class="expect"><b>Expected:</b> <code>good : verdict=PASS failed= cost=0.0062</code> with one evidence line per check (the test run listed the ticket ids behind each count), and <code>defect : verdict=FAIL failed=2,4</code> at about $0.005. Check 4 fails on <code>closed,5</code>. Check 2 also failed on the test run: <code>Set-Content -Encoding utf8</code> in Windows PowerShell 5.1 writes a byte-order mark, so the defective copy's first line is not exactly <code>status,count</code>. The reviewer found a second defect nobody planted.</p></li>
+        <li><p>Gate on the verdicts with a script.</p>
+          <pre><code>$g = (Get-Content review-good.json -Raw | ConvertFrom-Json).structured_output.verdict
+$d = (Get-Content review-defect.json -Raw | ConvertFrom-Json).structured_output.verdict
+if ($g -eq 'PASS' -and $d -eq 'FAIL') { 'GATE OK' } else { "GATE WRONG: good=$g defect=$d" }</code></pre>
+          <p class="expect"><b>Expected:</b> <code>GATE OK</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>Where in the result JSON is the verdict, and why does the gate not read <code>result</code>? <i>In <code>structured_output</code>, already parsed and checked against the schema. <code>result</code> holds the same JSON as a string; reading it means parsing text.</i></li>
+          <li>Run lab 1's grader against <code>defect\status-counts.csv</code> (copy it over <code>status-counts.csv</code> in lab 1 temporarily). Does it catch the byte-order mark? <i>No. <code>Get-Content</code> strips the mark, so check 2 passes; only the count check fails. The reviewer caught a defect the script missed.</i></li>
+          <li>What did the reviewer cost compared with the worker? <i>About the same or more, around $0.005 against $0.004 on the test run. An independent check costs roughly as much as the work.</i></li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m8-lab3" data-title="Hand off to a cold session" data-minutes="25">
+      <p class="goal">Stop a three-step task after two steps with a handoff file, then finish it from a new session that sees only the handoff, and prove it did not redo finished work.</p>
+      <ol class="steps">
+        <li><p>Create the input, the plan and the handoff template.</p>
+          <pre><code>mkdir {{LAB}}/m8/lab3 -Force; cd {{LAB}}/m8/lab3
+'web-01','web-02','db-01','app-01','web-03','db-02','app-02','app-03','app-04' | Set-Content -Encoding ascii hosts.txt
+@'
+# Plan: host inventory (three steps)
+
+1. Create inventory.csv from hosts.txt. Header: host,role. The role is the part of the name before the dash (web, db, app). One row per host, in the order of hosts.txt.
+2. Create roles.txt with one line per role, "role count", sorted by role A to Z, counted from inventory.csv.
+3. Create summary.md with exactly one line: "&lt;total&gt; hosts: &lt;n&gt; app, &lt;n&gt; db, &lt;n&gt; web." using the numbers in roles.txt.
+
+Done-test: all three files exist, the numbers agree with hosts.txt, and no step was done twice.
+'@ | Set-Content -Encoding ascii plan.md
+@'
+# Handoff
+## Goal
+(one sentence: what the whole job is)
+## Done-test
+(how the successor proves the whole job is finished)
+## Done so far
+(each finished step, with the file it produced)
+## Next step
+(the exact next action, with input and output file names and the format rule)
+## Do not redo
+(files that are finished and must not be rewritten)
+## Open questions or blockers
+(or "none")
+'@ | Set-Content -Encoding ascii handoff-template.md</code></pre></li>
+        <li><p>Session A: steps 1 and 2, then the handoff.</p>
+          <pre><code>claude -p "Do steps 1 and 2 of plan.md only. Then fill in handoff-template.md and save it as HANDOFF.md so a new session that has never seen plan.md can finish the job. Stop after that. Reply with one line: HANDED-OFF." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read,Write" --max-turns 10 --output-format json &gt; a.json
+$a = Get-Content a.json -Raw | ConvertFrom-Json; "$($a.result) $($a.session_id)"
+Get-Content HANDOFF.md
+$before = (Get-FileHash inventory.csv).Hash + (Get-FileHash roles.txt).Hash</code></pre>
+          <p class="expect"><b>Expected:</b> <code>HANDED-OFF</code> at about $0.005. <code>inventory.csv</code> and <code>roles.txt</code> exist, <code>summary.md</code> does not. The test run's handoff stated the expected final line <code>9 hosts: 4 app, 2 db, 3 web.</code>, the format rule, and listed both finished files under "Do not redo".</p></li>
+        <li><p>Hide the plan, then start session B cold: no <code>--resume</code>, no <code>--continue</code>.</p>
+          <pre><code>Rename-Item plan.md plan.hidden
+claude -p "Read HANDOFF.md and finish the job it describes. Reply with one line: DONE or BLOCKED &lt;reason&gt;." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read,Write" --max-turns 8 --output-format json &gt; b.json
+$b = Get-Content b.json -Raw | ConvertFrom-Json; "$($b.result) $($b.session_id)"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>DONE</code> at about $0.004, with a different <code>session_id</code> from session A.</p></li>
+        <li><p>Grade: the final line, the untouched files, the separate session. Then restore the plan.</p>
+          <pre><code>$want = '9 hosts: 4 app, 2 db, 3 web.'
+$got = ((Get-Content summary.md | Where-Object { $_.Trim() }) -join ' ').Trim()
+"summary ok: $($got -eq $want)"
+"finished files untouched: $(((Get-FileHash inventory.csv).Hash + (Get-FileHash roles.txt).Hash) -eq $before)"
+"different session: $($a.session_id -ne $b.session_id)"
+Rename-Item plan.hidden plan.md</code></pre>
+          <p class="expect"><b>Expected:</b> three <code>True</code> lines.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>Which handoff section kept session B from rewriting step 1 and step 2? <i>"Do not redo". Without it, a successor often regenerates earlier files "to be safe", which breaks idempotency and costs turns.</i></li>
+          <li>Read the "Open questions" section of your handoff. On the test run it mentioned that <code>a.json</code> was an empty file. Why was it empty? <i>The <code>&gt;</code> redirect creates the output file before <code>claude</code> runs, and session A saw it mid-run. A handoff reports what its author saw, including artefacts of the harness.</i></li>
+          <li>Compare A's cost plus B's cost with what one session would have cost for all three steps. When is the handoff worth it? <i>For this tiny job it costs more, because B pays the fixed overhead again. It pays off when the first session's context is large or when there is a long wait between the steps.</i></li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m8-lab4" data-title="Run a file queue with claims, a kill switch and a budget" data-minutes="30">
+      <p class="goal">Run two parallel workers over a three-job file queue, watch them double-process every job, prevent it with atomic claim files, then stop the fleet with a kill switch and trip a budget cap.</p>
+      <ol class="steps">
+        <li><p>Write the worker. It skips finished jobs, optionally claims each job with a file that only one process can create, and stops before a new job if a <code>STOP</code> file exists. The claim path is absolute: .NET file calls resolve relative paths against the process directory, not PowerShell's current location, and a relative claim path fails in a background job.</p>
+          <pre data-file="worker.ps1"><code>mkdir {{LAB}}/m8/lab4 -Force; cd {{LAB}}/m8/lab4
+@'
+param([string]$Dir, [string]$Worker, [int]$Claims = 0)
+Set-Location $Dir
+foreach ($job in Get-ChildItem queue\*.txt | Sort-Object Name) {
+  if (Test-Path STOP) { "$Worker saw STOP"; break }
+  $id = $job.BaseName
+  if (Test-Path "done\$id.txt") { "$Worker skip $id (done)"; continue }
+  if ($Claims) {
+    $claim = Join-Path $Dir "claims\$id.claim"
+    try { $f = [IO.File]::Open($claim, 'CreateNew', 'Write'); $w = New-Object IO.StreamWriter($f); $w.Write("$Worker $(Get-Date -Format o)"); $w.Close() }
+    catch { "$Worker skip $id (claimed)"; continue }
+  }
+  $word = (Get-Content $job.FullName -Raw).Trim()
+  $out = claude -p "Reply with only this word in capital letters: $word" --model haiku --setting-sources project --strict-mcp-config --tools "" --max-turns 1 --max-budget-usd 0.05 --output-format json | ConvertFrom-Json
+  Add-Content -Encoding ascii runs.log "$id $Worker $($out.result) $([math]::Round($out.total_cost_usd,5))"
+  Set-Content -Encoding ascii "done\$id.txt" $out.result
+  "$Worker did $id"
+}
+'@ | Set-Content -Encoding utf8 worker.ps1</code></pre></li>
+        <li><p>Define two helpers: one resets the queue to three jobs, one starts two workers as background jobs and waits for them.</p>
+          <pre><code>function Reset-Queue {
+  Remove-Item queue, claims, done, runs.log, STOP -Recurse -Force -ErrorAction SilentlyContinue
+  New-Item -ItemType Directory queue, claims, done | Out-Null
+  'alpha' | Set-Content -Encoding ascii queue\job1.txt
+  'bravo' | Set-Content -Encoding ascii queue\job2.txt
+  'charlie' | Set-Content -Encoding ascii queue\job3.txt
+}
+function Start-Workers([int]$Claims) {
+  $here = (Get-Location).Path
+  $jobs = 'w1', 'w2' | ForEach-Object { Start-Job -FilePath .\worker.ps1 -ArgumentList $here, $_, $Claims }
+  $jobs | Wait-Job -Timeout 240 | Receive-Job
+  $jobs | Remove-Job -Force
+}</code></pre></li>
+        <li><p>Run A: no claims.</p>
+          <pre><code>Reset-Queue; Start-Workers 0
+Get-Content runs.log
+"calls: $((Get-Content runs.log).Count) for 3 jobs"</code></pre>
+          <p class="expect"><b>Expected:</b> both workers report <code>did job1</code>, <code>did job2</code>, <code>did job3</code>, and <code>calls: 6 for 3 jobs</code>. Each line in <code>runs.log</code> costs about $0.00004 (no tools, so a tiny prompt). The "done" check did not help: both workers checked before either had finished.</p></li>
+        <li><p>Run B: a claim file per job.</p>
+          <pre><code>Reset-Queue; Start-Workers 1
+Get-Content runs.log
+"calls: $((Get-Content runs.log).Count) for 3 jobs"
+Get-ChildItem claims | ForEach-Object { "$($_.Name): $(Get-Content $_.FullName)" }</code></pre>
+          <p class="expect"><b>Expected:</b> lines such as <code>w2 skip job1 (claimed)</code>, <code>calls: 3 for 3 jobs</code>, and three claim files each naming one worker and a timestamp. Which worker gets which job varies by run.</p></li>
+        <li><p>Run C: the kill switch.</p>
+          <pre><code>Reset-Queue; New-Item STOP -ItemType File | Out-Null; Start-Workers 1
+"calls: $(@(Get-Content runs.log -ErrorAction SilentlyContinue).Count)"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>w1 saw STOP</code>, <code>w2 saw STOP</code>, <code>calls: 0</code>.</p></li>
+        <li><p>Run D: a per-run budget too small to finish. This run keeps the default tools, so its prompt is the normal size.</p>
+          <pre><code>claude -p "Reply with only the word OK." --model haiku --setting-sources project --strict-mcp-config --max-budget-usd 0.0001 --output-format json &gt; budget.json
+"exit $LASTEXITCODE"
+$b = Get-Content budget.json -Raw | ConvertFrom-Json
+"subtype=$($b.subtype) terminal_reason=$($b.terminal_reason) is_error=$($b.is_error) cost=$([math]::Round($b.total_cost_usd,4))"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>exit 1</code> and <code>subtype=error_max_budget_usd terminal_reason=budget_exhausted is_error=True</code>, with a cost above the cap: about $0.0002 with a warm cache, about $0.0016 cold.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>Why does <code>CreateNew</code> prevent the double pick-up when <code>Test-Path</code> on the done file did not? <i>Creating the file and checking that it did not exist are one operation in the file system, so exactly one worker succeeds. A check followed by a separate action leaves a window that both workers pass through.</i></li>
+          <li>A worker crashes after creating its claim but before writing <code>done\</code>. What happens to that job, and what would you add? <i>It stays claimed and is never done. Add a lease: a timestamp in the claim (already there) and a sweeper that releases claims older than a time limit, plus idempotent work so the retry is safe.</i></li>
+          <li>Run D spent more than its cap. What does that tell you about setting <code>--max-budget-usd</code> for a fleet? <i>The cap is checked after spending, so it can be overshot by up to one response. Leave headroom, and cap the fleet separately (worker count, item count, kill switch).</i></li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m8-lab5" data-title="Repair a brief and prove the repair" data-minutes="30">
+      <p class="goal">Run a vague brief and its repaired version on the same task, grade both with one script, then do the same with a brief from your own work.</p>
+      <ol class="steps">
+        <li><p>Create two folders with the same input, and the two briefs from the lesson "The brief is the interface".</p>
+          <pre><code>mkdir {{LAB}}/m8/lab5 -Force; cd {{LAB}}/m8/lab5
+$services = "name,port,state`nweb,443,running`napi,8443,running`ncache,6379,stopped`ndb,5432,running`nmail,25,disabled`nmetrics,9100,running"
+'Have a look at the services file and tidy up a list of the ports that matter. Make it neat.' | Set-Content -Encoding ascii brief-bad.md
+# Save the repaired brief from the lesson as brief-good.md in this folder.
+foreach ($v in 'bad', 'good') {
+  New-Item -ItemType Directory $v -Force | Out-Null
+  $services | Set-Content -Encoding ascii "$v\services.csv"
+  Copy-Item "brief-$v.md" "$v\brief.md"
+}
+(Get-FileHash good\services.csv).Hash | Set-Content services.sha256</code></pre></li>
+        <li><p>Write one grader from the repaired brief's done-test. It grades the folder it is run in.</p>
+          <pre data-file="grade.ps1"><code>@'
+# Run from inside the folder being graded. Exit 0 = PASS.
+$fail = 0
+function Check($n, $ok) { if ($ok) { "PASS  $n" } else { "FAIL  $n"; $script:fail++ } }
+$want = (Import-Csv services.csv | Where-Object state -eq 'running' | ForEach-Object { [int]$_.port } | Sort-Object) -join ','
+Check 'open-ports.txt exists' (Test-Path open-ports.txt)
+if (Test-Path open-ports.txt) {
+  $lines = @(Get-Content open-ports.txt | Where-Object { $_.Trim() -ne '' })
+  Check 'digits only, one per line' (-not ($lines | Where-Object { $_ -notmatch '^\d+$' }))
+  Check 'exactly the running ports, ascending' (($lines -join ',') -eq $want)
+}
+Check 'services.csv unchanged' ((Get-FileHash services.csv).Hash -eq (Get-Content ..\services.sha256))
+$extra = Get-ChildItem -File | Where-Object { $_.Name -notin 'services.csv','open-ports.txt','brief.md','run.json' }
+Check "no other files ($(@($extra).Count) extra)" (-not $extra)
+exit $fail
+'@ | Set-Content -Encoding ascii grade.ps1</code></pre></li>
+        <li><p>Run both briefs with the same command and the same tool grant, and grade each.</p>
+          <pre><code>foreach ($v in 'bad', 'good') {
+  Push-Location $v
+  claude -p "Do the task in brief.md." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read,Write,Edit" --max-turns 8 --output-format json &gt; run.json
+  $r = Get-Content run.json -Raw | ConvertFrom-Json
+  "=== $v brief: cost=$([math]::Round($r.total_cost_usd,4)) turns=$($r.num_turns)"
+  "files: $((Get-ChildItem -File).Name -join ', ')"
+  &amp; ..\grade.ps1; "grade exit $LASTEXITCODE"
+  Pop-Location
+}</code></pre>
+          <p class="expect"><b>Expected:</b> the bad brief fails with <code>grade exit 2</code> or higher. Across three test runs it rewrote <code>services.csv</code> in place twice and wrote a new <code>ports.md</code> once; it never produced <code>open-ports.txt</code>. The repaired brief passes all five checks with <code>grade exit 0</code> and result <code>DONE 4</code>, at about $0.004, the same cost as the bad one.</p></li>
+        <li><p>Now your own. Take a brief or prompt you have actually given an agent for a repeatable task. Rewrite it against the six-part checklist (goal, done-test, scope fence, inputs by path, return contract, when blocked). Write <code>grade.ps1</code> from its done-test before you run it. Copy the inputs into <code>{{LAB}}/m8/lab5/mine</code>, never point the run at live data, and grant only the tools the brief needs.</p>
+          <pre><code>mkdir {{LAB}}/m8/lab5/mine -Force; cd {{LAB}}/m8/lab5/mine
+# copy inputs here, write brief.md and grade.ps1, then:
+claude -p "Do the task in brief.md." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read,Write" --max-turns 10 --output-format json &gt; run.json
+.\grade.ps1; "grade exit $LASTEXITCODE"
+@((Get-Content run.json -Raw | ConvertFrom-Json).permission_denials).Count</code></pre>
+          <p class="expect"><b>Expected:</b> your result. You are done when <code>grade.ps1</code> exits 0 on two consecutive runs and the last line prints <code>0</code> (no denied tools).</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>Which part of the repaired brief stopped the edit to <code>services.csv</code>? <i>The scope fence ("Do not edit services.csv"), backed by the grader's hash check. The same tool grant (<code>Edit</code> included) was given to both runs, so the brief, not the permissions, made the difference here.</i></li>
+          <li>The repaired brief's worker returned <code>DONE 4</code> and then more prose. Would lab 1's contract regex accept that? <i>No: <code>^DONE ...$</code> on the trimmed result fails when lines follow. Either say "one line and nothing else" in the brief, as lab 1 does, or have the gate read only the first line.</i></li>
+          <li>For your own brief: which of the six parts was missing before the rewrite, and which grader check failed first? <i>Your answer. The most common gaps are the done-test and the blocked rule.</i></li>
+        </ul>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Brief checklist</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Part</th><th>Must answer</th></tr>
+      <tr><td>Goal</td><td>What outcome, for whom.</td></tr>
+      <tr><td>Done-test</td><td>Numbered checks a script or a cold reviewer can apply.</td></tr>
+      <tr><td>Scope fence</td><td>What may be created or changed; what must not be touched.</td></tr>
+      <tr><td>Inputs by path</td><td>Every file, its location and format.</td></tr>
+      <tr><td>Return contract</td><td>The exact final message, parseable ("one line and nothing else", or a JSON schema).</td></tr>
+      <tr><td>When blocked</td><td>What counts as blocked; stop and report, do not guess.</td></tr>
+    </table></div>
+
+    <h3>Handoff file sections</h3>
+    <p>Goal, Done-test, Done so far (with files), Next step (input, output, format rule), Do not redo, Open questions or blockers.</p>
+
+    <h3>Flags used</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Flag</th><th>Use in orchestration</th></tr>
+      <tr><td><code>-p</code> / <code>--print</code></td><td>Run one headless session: a worker, a stage, a reviewer.</td></tr>
+      <tr><td><code>--output-format json</code></td><td>One result object a script can read.</td></tr>
+      <tr><td><code>--json-schema '&lt;json&gt;'</code></td><td>Validated structured answer in <code>structured_output</code>. Takes JSON text, not a path. Escape quotes as <code>\"</code> in Windows PowerShell 5.1.</td></tr>
+      <tr><td><code>--allowedTools "Read,Write"</code></td><td>Grant exactly the brief's tools.</td></tr>
+      <tr><td><code>--tools ""</code></td><td>No tools at all, for pure text jobs; much smaller prompt.</td></tr>
+      <tr><td><code>--permission-prompts none</code></td><td>Anything that would prompt is denied automatically in a headless run.</td></tr>
+      <tr><td><code>--max-turns N</code></td><td>Turn cap per run.</td></tr>
+      <tr><td><code>--max-budget-usd N</code></td><td>Spend cap per run, against the client-side estimate; can be overshot.</td></tr>
+      <tr><td><code>--setting-sources project</code>, <code>--strict-mcp-config</code></td><td>Keep personal settings, hooks and MCP servers out of a worker.</td></tr>
+      <tr><td><code>--resume &lt;id&gt;</code>, <code>--continue</code></td><td>Reattach to a session. A handoff deliberately uses neither.</td></tr>
+      <tr><td><code>--model</code>, <code>--fallback-model</code></td><td>Pick the model per stage.</td></tr>
+    </table></div>
+
+    <h3>Result fields a gate reads</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Values seen</th><th>Gate on it</th></tr>
+      <tr><td><code>subtype</code></td><td><code>success</code>, <code>error_max_turns</code>, <code>error_max_budget_usd</code></td><td>Necessary, not sufficient.</td></tr>
+      <tr><td><code>terminal_reason</code></td><td><code>completed</code>, <code>max_turns</code>, <code>budget_exhausted</code></td><td>Why the run ended.</td></tr>
+      <tr><td><code>is_error</code></td><td><code>true</code> on the error subtypes</td><td>Retry or escalate.</td></tr>
+      <tr><td><code>permission_denials</code></td><td>Array of <code>tool_name</code>, <code>tool_input</code></td><td>Non-empty means the worker wanted something it was not given.</td></tr>
+      <tr><td><code>structured_output</code></td><td>Present with <code>--json-schema</code></td><td>The verdict.</td></tr>
+      <tr><td><code>result</code></td><td>Final text</td><td>Check against the return contract.</td></tr>
+      <tr><td><code>session_id</code>, <code>num_turns</code>, <code>total_cost_usd</code></td><td>Per run</td><td>Log next to the item.</td></tr>
+      <tr><td><code>subagent_stats</code></td><td><code>spawned</code>, <code>completed</code>, <code>failed</code>, <code>refused</code> (<code>depth_limit</code>, <code>concurrency_limit</code>, <code>budget</code>)</td><td>Fan-out per run.</td></tr>
+    </table></div>
+    <p>Exit code: 0 for <code>success</code> (even with denied tools), 1 for the error subtypes above.</p>
+
+    <h3>Limits</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Limit</th><th>Value or setting</th></tr>
+      <tr><td>Concurrent subagents per session</td><td class="num">20 (default; <code>CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS</code>)</td></tr>
+      <tr><td>Subagent nesting</td><td class="num">3 levels</td></tr>
+      <tr><td>Turn cap without a flag</td><td><code>CLAUDE_CODE_MAX_TURNS</code></td></tr>
+      <tr><td>Cache lifetime, main conversation</td><td>1 hour on a subscription within plan usage; 5 minutes on an API key or usage credits</td></tr>
+      <tr><td>Subscription window</td><td>5 hours from your first message, plus weekly limits; one pool across all Claude apps</td></tr>
+      <tr><td>Subscription monitoring</td><td>Status line <code>rate_limits.five_hour.used_percentage</code>, <code>rate_limits.seven_day.used_percentage</code>; <code>/usage</code></td></tr>
+    </table></div>
+
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>Firm claim, then a firm reversal when challenged</td><td>Plausible text, no check</td><td>Evidence with every claim; re-run the check, do not re-ask</td></tr>
+      <tr><td><code>DONE</code> with work missing</td><td>No checkable done-test; self-grading</td><td>Numbered done-test, grader or reviewer stage, gate ignores the worker's verdict</td></tr>
+      <tr><td>Extra files changed, input edited</td><td>No scope fence</td><td>Fence in the brief, hash and file-list checks, <code>PreToolUse</code> deny, narrow tool grant</td></tr>
+      <tr><td>Instruction never arrived, or acted on twice</td><td>Message in transport only</td><td>Record in tracker or file with an id; idempotent handling</td></tr>
+      <tr><td>Same job done twice, edits lost</td><td>No ownership</td><td>Atomic claim (<code>CreateNew</code>), one owner per file, worktree per worker</td></tr>
+      <tr><td>"Please approve" in a result nobody read</td><td>Headless run cannot prompt; denial looks like success</td><td>Grant needed tools; fail on non-empty <code>permission_denials</code>; questions go to the tracker</td></tr>
+      <tr><td>Cost or window gone early</td><td>Unbounded fan-out and retries</td><td>Concurrency, turn, spend and time caps; kill switch checked before each claim</td></tr>
+      <tr><td>Successor redoes finished steps</td><td>Handoff lacks "Do not redo"</td><td>Use the six-section handoff</td></tr>
+      <tr><td>Resumed session's first turn is expensive</td><td>Cache expired while idle</td><td>Park: handoff, record the wait, end; restart cold</td></tr>
+      <tr><td><code>--json-schema is not valid JSON</code></td><td>Windows PowerShell 5.1 stripped the quotes, or a file path was passed</td><td>Pass the JSON text with <code>-replace '"', '\"'</code></td></tr>
+      <tr><td>Claim fails in every background job</td><td>Relative path in a .NET file call</td><td>Build the claim path with <code>Join-Path</code> from an absolute folder</td></tr>
+      <tr><td>Fleet bills the API on a plan</td><td><code>ANTHROPIC_API_KEY</code> set in the launching shell</td><td>Check <code>apiKeySource</code>; clear the variable for plan runs</td></tr>
+    </table></div>
+
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+        <li>Claude Code docs, "Run Claude Code programmatically": <a href="https://code.claude.com/docs/en/headless" target="_blank" rel="noopener">code.claude.com/docs/en/headless</a></li>
+        <li>Claude Code docs, "Create custom subagents": <a href="https://code.claude.com/docs/en/sub-agents" target="_blank" rel="noopener">code.claude.com/docs/en/sub-agents</a></li>
+        <li>Claude Code docs, "Orchestrate teams of Claude Code sessions": <a href="https://code.claude.com/docs/en/agent-teams" target="_blank" rel="noopener">code.claude.com/docs/en/agent-teams</a></li>
+        <li>Claude Code docs, "Environment variables": <a href="https://code.claude.com/docs/en/env-vars" target="_blank" rel="noopener">code.claude.com/docs/en/env-vars</a></li>
+        <li>Claude Code docs, "Automate actions with hooks": <a href="https://code.claude.com/docs/en/hooks-guide" target="_blank" rel="noopener">code.claude.com/docs/en/hooks-guide</a></li>
+        <li>Claude Code docs, "Customize your status line": <a href="https://code.claude.com/docs/en/statusline" target="_blank" rel="noopener">code.claude.com/docs/en/statusline</a></li>
+        <li>Claude Code docs, "How Claude Code uses prompt caching": <a href="https://code.claude.com/docs/en/prompt-caching" target="_blank" rel="noopener">code.claude.com/docs/en/prompt-caching</a></li>
+        <li>Claude Code docs, "Agent SDK reference - TypeScript": <a href="https://code.claude.com/docs/en/agent-sdk/typescript" target="_blank" rel="noopener">code.claude.com/docs/en/agent-sdk/typescript</a></li>
+        <li>Measured: every Expected line in the labs comes from a run on Claude Code 2.1.322 on 11 November 2026.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "You need to rename one config key across 12 small files in a single repository, and a script can verify the result with one grep. A colleague proposes a lead agent plus four parallel workers. What do you do?", "o": ["Use the lead and four workers, three files each, to finish faster.", "Use the lead with 12 subagents, one per file, so each context stays small.", "Use one session with a clear brief and the grep as the done-test.", "Use a writer and a reviewer session so the change is independently checked."], "a": 2, "why": "The job fits easily in one context, has one mechanical done-test, and gains little from parallelism or a second opinion when a grep decides. Every extra worker pays the fixed prompt overhead and adds coordination. Orchestrate for parallelism, context limits, independent checking or separate permissions; none applies here."},
+    {"q": "A headless worker's result has exit code 0, subtype success, and a final message saying it could not write the report because permission was denied and asking you to approve it. Your pipeline marked the item done. What is the right fix?", "o": ["Have the gate fail any run with a non-empty permission_denials list, and grant the tools the brief actually needs.", "Switch the workers to bypass permission mode so nothing is ever denied.", "Add 'never ask for permission' to the brief.", "Make the gate search the result text for the word 'approve'."], "a": 0, "why": "A headless run cannot show a prompt, so the call is denied and the run still ends as success. permission_denials is the structured signal; gating on it catches every case, and granting exactly the needed tools prevents it. Bypass mode removes the fence, an instruction in the brief does not change what the harness allows, and searching prose is fragile."},
+    {"q": "Two workers poll the same queue folder. Each checks whether done\\jobN.txt exists before starting, yet both process every job. Which change prevents it?", "o": ["Add a random delay before each worker checks the done file.", "Have the worker write done\\jobN.txt before it starts the job instead of after.", "Run the workers one after another instead of in parallel.", "Have each worker create a claim file with an operation that fails if the file already exists, and skip the job when it fails."], "a": 3, "why": "Check-then-act leaves a window that both workers pass through; delays only narrow it, and writing the done marker early only moves the window while falsely marking unfinished work as done. An atomic create-new makes ownership a single file-system operation, so exactly one worker wins. Running in series works but throws away the parallelism you wanted."},
+    {"q": "A worker on an API key has a 280,000-token context and must wait about three hours for a change window before its last step. What should it do?", "o": ["Stay idle with the context loaded so nothing is lost.", "Write a handoff file, record the wait on the tracker item, and end; start a cold session from the handoff after the window opens.", "Run /compact now and stay idle.", "Send a message to the orchestrator every few minutes to keep the cache warm."], "a": 1, "why": "On an API key the cache lifetime is 5 minutes by default, so after three hours the first turn would re-write the whole 280,000 tokens at the write price. A handoff restart pays only the fixed overhead and a small file, and the wait becomes visible in the tracker. Keep-alive messages spend tokens all afternoon for nothing, and compaction still leaves an idle process with state only it holds."},
+    {"q": "Your reviewer stage keeps passing outputs that later prove wrong. It is the same session that wrote the output, asked at the end to 'double-check your work'. What change matters most?", "o": ["Ask it to check three times instead of once.", "Switch the author to a larger model so it makes fewer mistakes.", "Run a separate reviewer session with the brief, the product and the source of truth, read-only tools, and a schema-validated verdict that cites the failed done-test items.", "Have the author write a longer explanation of why the output is correct."], "a": 2, "why": "An author re-reading its own reasoning tends to agree with it. A separate context that sees only the brief, the product and the source checks the done-test rather than the intent, and a schema with evidence fields lets a script gate on the verdict. Repetition, a bigger model and longer self-justification do not give an independent check."}
+  ]</script>
+</section>

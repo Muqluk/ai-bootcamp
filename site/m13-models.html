@@ -1,0 +1,514 @@
+<section class="module" id="m13" data-title="Models and ways to teach them" data-sub="Model tiers, retrieval, ingestion, fine-tuning and what you will actually use" data-level="foundation" data-prereq="" data-minutes="230">
+  <div class="overview">
+    <p class="lede">A model knows what was in its training data and what is in front of it right now, and nothing else. Every technique in this module is a way to choose the model, or to put the right text in front of it. Know the four ways to give a model knowledge it lacks, and you can tell a retrieval problem from a model problem before you spend money on either.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Pick a model tier and an effort level for a task, and say what each costs per million tokens.</li>
+      <li>Choose between prompt and context, retrieval, tools and MCP, and training, for a given knowledge gap.</li>
+      <li>Describe the stages of a retrieval pipeline (ingestion, chunking, embedding, search, prompt) and where each one fails.</li>
+      <li>Measure retrieval separately from answering, with a hit rate you compute without calling a model.</li>
+      <li>Decide when to send a whole document and when to retrieve from it.</li>
+      <li>Make a model cite its sources and say "not in the documents" instead of guessing.</li>
+      <li>Explain training, fine-tuning and distillation, and what is and is not documented for Claude.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (subscription plan or API key).</li>
+      <li>PowerShell and a scratch folder for the labs ({{LAB}}/m13).</li>
+      <li>No machine-learning background. Numbers in this module come from Anthropic's public documentation and from runs of 2026-11-11.</li>
+    </ul>
+  </div>
+
+  <div class="lesson" id="m13-l1" data-title="The model family and how to choose" data-minutes="20">
+    <h3>The current tiers</h3>
+    <p>Anthropic's models overview lists four current models. They differ in capability, latency and price. All four share a 1M-token context window and a 128K maximum output, and all four list a reliable knowledge cutoff of Jun 2026.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Model</th><th>API ID</th><th class="num">Input $/MTok</th><th class="num">Output $/MTok</th><th>Positioning in the docs</th></tr>
+      <tr><td>Fable 5.2</td><td><code>claude-fable-5-2</code></td><td class="num">8</td><td class="num">40</td><td>Highest capability</td></tr>
+      <tr><td>Opus 5.5</td><td><code>claude-opus-5-5</code></td><td class="num">4</td><td class="num">20</td><td>Complex agentic coding</td></tr>
+      <tr><td>Sonnet 5.5</td><td><code>claude-sonnet-5-5</code></td><td class="num">2</td><td class="num">10</td><td>Everyday work, fast</td></tr>
+      <tr><td>Haiku 5.5</td><td><code>claude-haiku-5-5</code></td><td class="num">0.10 (0.50 over 100k prompt tokens)</td><td class="num">0.50 (2.50 over)</td><td>Lowest latency and price; subagents</td></tr>
+    </table></div>
+    <p>The choosing page says most workloads start with Opus 5.5, and that tuning effort is often a better lever than switching models. Price ratios matter more than the absolute numbers: Fable costs 80 times Haiku on input at the short-prompt rate. A task that Haiku does correctly is not improved by a more expensive tier.</p>
+    <aside class="rule">Start at the cheapest tier that could plausibly do the job, measure it against a check you wrote, and move up only when the check fails.</aside>
+
+    <h3>Effort and thinking</h3>
+    <p>Current models use adaptive thinking: the model decides how much to reason before answering. Thinking is always on for Opus 5.5 and Fable 5.2. Thinking tokens are billed as output tokens, so more thinking costs more. The older <code>budget_tokens</code> setting returns a 400 error on current models; you control the amount with the effort parameter instead.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Effort levels</th><th>Default</th></tr>
+      <tr><td>low, medium, high, xhigh, max</td><td>high on Fable 5.2 and Sonnet 5.5; medium on Opus 5.5 and Haiku 5.5</td></tr>
+    </table></div>
+    <p>In Claude Code the <code>/model</code> command and the <code>--model</code> flag take aliases: <code>default</code>, <code>best</code>, <code>opus</code>, <code>sonnet</code>, <code>haiku</code>, <code>fable</code>, <code>sonnet[1m]</code> and <code>opusplan</code>. On a subscription plan the model you pick changes how fast the 5-hour window and weekly limits drain. With an API key it changes the bill per token directly.</p>
+
+    <h3>Where models are served</h3>
+    <p>The same model family is served from the Claude API and from three cloud platforms, each with its own documentation page: Amazon Bedrock, Google Cloud (Claude Models on Google Cloud) and Microsoft Foundry. Choose by where your identity, billing and data-residency rules already live. Features and limits can differ by platform, so check the platform's page before assuming a feature from the API page exists there. The Batch API, available on the Claude API, takes 50 percent off for asynchronous work: most batches finish under an hour, they expire at 24 hours and results are kept for 29 days.</p>
+
+    <h3>Deprecations and cutoffs</h3>
+    <p>A model moves through Active, Legacy, Deprecated and Retired. Publicly released models get at least 60 days' notice before retirement, and requests to a retired model fail. Every model ID is a pinned snapshot, including dateless IDs from 4.6 onward, so a pinned ID does not change behaviour under you; it does stop working on its retirement date. The docs list the current models as retiring no sooner than: Fable 5.2 on 2027-11-09, Opus 5.5 on 2027-09-22, Sonnet 5.5 on 2027-09-28, Haiku 5.5 on 2027-10-07.</p>
+    <p>The knowledge cutoff is the date after which the model knows nothing. Ask about a library released after Jun 2026 and the model will either say it does not know or invent an answer. That is the first reason the rest of this module exists.</p>
+    <aside class="trap">A bigger tier is not automatically more correct. In the first lab a mid-tier model got a counting question wrong that the cheapest tier got right, and the top tier answered correctly but ignored the requested format.</aside>
+  </div>
+
+  <div class="lesson" id="m13-l2" data-title="Four ways to give a model knowledge it lacks" data-minutes="20">
+    <h3>The gap</h3>
+    <p>When an answer is wrong, one of two things is true. The model reasoned badly from the facts it had, or it lacked the facts. Only the second is a knowledge problem. The facts can be missing because they postdate the cutoff, because they are private (your runbooks, your tickets), or because they change faster than anyone retrains a model (today's alert state). Each way of closing the gap changes where the facts come from.</p>
+    <h3>Way 1: prompt and context</h3>
+    <p>You paste the facts into the prompt, or load them into the session (a memory file, an attached document). The model sees them verbatim on every request. This is the simplest way and the most accurate for small amounts of text, because nothing is lost in between. Its limits are the context window, the cost of resending the text each turn (prompt caching reduces that cost), and your effort in choosing what to include.</p>
+    <h3>Way 2: retrieval (RAG)</h3>
+    <p>Retrieval-augmented generation keeps the documents outside the model. For each question, a search step picks the few relevant pieces, and only those go into the prompt. Use it when the corpus is too large or too changeable to include whole. The price is a pipeline you must build and measure: if search misses the right passage, the model never sees it and cannot answer.</p>
+    <h3>Way 3: tools and MCP as retrieval</h3>
+    <p>Instead of you running search, the model asks for it. You give it a tool (read a file, grep, query a ticket system) and it decides what to fetch. Tool use distinguishes client tools, which run in your code, from server tools, which Anthropic runs. The Model Context Protocol (MCP) is an open standard for exposing tools and data to a model through a common connector. This is how Claude Code finds facts in a repository: it searches and reads on demand rather than embedding the repo first. It handles live data well, and the model can refine its own search when the first attempt fails.</p>
+    <h3>Way 4: training and fine-tuning</h3>
+    <p>Changing the model's weights so the knowledge or behaviour is built in. It is the heaviest way, slowest to change and hardest to correct. Lesson 6 covers what the terms mean and what the docs say about it.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Way</th><th>Where facts live</th><th>Freshness</th><th>Setup cost</th><th>Fits when</th></tr>
+      <tr><td>Prompt and context</td><td>In the request</td><td>As fresh as you paste it</td><td>None</td><td>Small, known set of facts</td></tr>
+      <tr><td>Retrieval (RAG)</td><td>Index outside the model</td><td>As fresh as the last ingestion</td><td>Pipeline plus measurement</td><td>Large corpus, many questions</td></tr>
+      <tr><td>Tools and MCP</td><td>Live systems</td><td>Live</td><td>Tool definitions and permissions</td><td>Facts change; model can search iteratively</td></tr>
+      <tr><td>Training and fine-tuning</td><td>Model weights</td><td>Frozen at training</td><td>Highest</td><td>Style or behaviour, at scale, if offered</td></tr>
+    </table></div>
+    <figure class="diagram">
+<pre class="mermaid">flowchart TD
+  a{"Do the facts fit in the prompt?"} -- yes --> b["Way 1: prompt and context"]:::good
+  a -- no --> c{"Does the data change live?"}
+  c -- yes --> d["Way 3: tools and MCP"]:::info
+  c -- no --> e{"Large corpus, many questions?"}
+  e -- yes --> f["Way 2: retrieval"]:::alt
+  e -- no --> g["Way 4: training"]:::ghost
+</pre>
+      <figcaption>Work down from the simplest way and stop at the first one that works; training comes last.</figcaption>
+    </figure>
+    <aside class="rule">Go down the table in order and stop at the first row that works. Most teams never need the last row.</aside>
+    <aside class="trap">Retrieval is not a way to make a weak model smart. It supplies facts. If the task needs judgment the model cannot do, better context will not fix it; a higher tier or effort level might.</aside>
+  </div>
+
+  <div class="lesson" id="m13-l3" data-title="How retrieval works: ingestion, chunking, embeddings, search" data-minutes="25">
+    <h3>The pipeline</h3>
+    <p>A retrieval system has two phases. Ingestion runs ahead of time and builds the index. Query time runs per question.</p>
+    <ol>
+      <li>Ingest: read the source files and extract text. Keep the source name and location with every piece.</li>
+      <li>Chunk: cut the text into pieces small enough to retrieve precisely and large enough to make sense alone.</li>
+      <li>Index: store each chunk for search, either by its words, by an embedding, or both.</li>
+      <li>Search: score the chunks against the question and take the top few.</li>
+      <li>Prompt: place the chunks in the request with their sources and instructions about how to use them.</li>
+    </ol>
+    <figure class="diagram">
+<pre class="mermaid">flowchart LR
+  subgraph ing["Ingestion, ahead of time"]
+    a["Read sources"] --> b["Chunk the text"] --> c["Index chunks"]
+  end
+  subgraph qry["Query time, per question"]
+    d["Search for top chunks"] --> e["Prompt with chunks and sources"] --> f["Answer with citations"]:::good
+  end
+  c --> d
+</pre>
+      <figcaption>The index is built once; each question searches it and sends only the top chunks to the model.</figcaption>
+    </figure>
+    <h3>Chunking</h3>
+    <p>Chunk size is the first tuning knob. Tiny chunks (a sentence) match precisely but lose the surrounding facts: the sentence "restore within 4 hours" is useless without knowing which system it describes. Huge chunks (a whole document) always contain the answer but add noise, cost more and push the real passage into a crowd. A paragraph or a section, with the title carried along, is the usual start. The chunking lab in this module measures all three sizes on the same questions.</p>
+    <h3>Embeddings</h3>
+    <p>An embedding is a list of numbers representing the meaning of a piece of text. Texts with similar meaning get nearby vectors, so you can search by closeness rather than by shared words. Anthropic's embeddings page states that Anthropic does not offer its own embedding model, and points to Voyage AI. Its page lists the <code>voyage-4</code> family (<code>voyage-4-large</code>, <code>voyage-4</code>, <code>voyage-4-lite</code>), <code>voyage-code-4</code> for code, and contextualized chunk embeddings (<code>voyage-context-4</code>), which encode each chunk with awareness of its document. It also says to assess several embedding vendors.</p>
+    <h3>Keyword versus vector search</h3>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>Keyword search</th><th>Vector search</th></tr>
+      <tr><td>Matches on</td><td>Shared words</td><td>Similar meaning</td></tr>
+      <tr><td>Strong at</td><td>Identifiers, error codes, exact names</td><td>Paraphrase: "start time" finds "begins at"</td></tr>
+      <tr><td>Weak at</td><td>Synonyms and rewording</td><td>Exact strings, rare tokens</td></tr>
+      <tr><td>Needs</td><td>Nothing extra</td><td>An embedding model and a vector store</td></tr>
+    </table></div>
+    <p>Production systems often run both and merge the results. Keyword scoring needs no model and no service, which makes it a good first baseline.</p>
+    <h3>Evaluate retrieval on its own</h3>
+    <p>A wrong answer has two possible causes: search did not surface the passage, or the model misread it. Separate them. Write a set of questions with a known gold string that must appear in the answer. For each question, run only the search step and check whether any of the top results contains the gold string. The fraction of questions where it does is the hit rate. It costs no tokens. Then run the model and score answers. If hit rate is low, fix chunking and search. If hit rate is high and answers are wrong, fix the prompt or the tier.</p>
+    <h3>Prompt caching with retrieval</h3>
+    <p>Retrieved chunks change per question, so they cannot be cached across questions, but everything stable can: the instructions, the output format, any fixed reference document. Put stable content first and the retrieved chunks after it. Cached reads are billed at a fraction of normal input: on Haiku 5.5 up to 100k tokens, input is $0.10 per MTok and cache read is $0.01; on Sonnet 5.5 input is $2 and cache read is $0.10. The minimum cacheable prompt is 512 tokens on those models, and the default lifetime is 5 minutes, refreshed on each use (a 1-hour lifetime costs extra). Shorter prompts are processed without caching and no error is returned; check <code>cache_read_input_tokens</code> in the usage fields.</p>
+    <aside class="rule">Measure hit rate before you measure answers. It is free, fast and it points at the stage that is broken.</aside>
+    <aside class="trap">A chunk that cuts a table or a numbered procedure in half retrieves well and answers badly. Split on structure, not on character count.</aside>
+  </div>
+
+  <div class="lesson" id="m13-l4" data-title="Long context versus retrieval, and ingesting PDFs and images" data-minutes="20">
+    <h3>Just send it all</h3>
+    <p>Current models take 1M tokens of context. For a single manual or a set of runbooks that fits, sending everything is often the better design: no index, no chunking, no search misses, and the model can cross-reference between sections. The cost is paid in tokens on every request, and in attention: the models handle long inputs well but not perfectly, and answer quality can drop when the relevant passage is buried in a large amount of unrelated text.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Factor</th><th>Whole document in context</th><th>Retrieval</th></tr>
+      <tr><td>Corpus size</td><td>Fits in the window with room to spare</td><td>Larger than the window, or most of it irrelevant</td></tr>
+      <tr><td>Cost per question</td><td>Whole corpus as input (cheaper with caching)</td><td>A few chunks</td></tr>
+      <tr><td>Failure mode</td><td>Passage buried; cost</td><td>Search misses the passage</td></tr>
+      <tr><td>Cross-document questions</td><td>Good</td><td>Weak unless chunks overlap in topic</td></tr>
+      <tr><td>Build effort</td><td>None</td><td>Pipeline, index, evaluation</td></tr>
+    </table></div>
+    <figure class="diagram">
+<pre class="mermaid">flowchart TD
+  a{"Does the corpus fit the window?"} -- no --> r["Retrieval"]:::alt
+  a -- yes --> b{"Same document asked many times?"}
+  b -- yes --> c["Whole document with caching"]:::good
+  b -- no --> d["Whole document in context"]:::good
+</pre>
+      <figcaption>If the corpus fits, send it whole; caching makes repeated questions cheaper.</figcaption>
+    </figure>
+    <p>If the same large document is asked about many times, prompt caching makes the whole-document design much cheaper: the first request writes the cache and later ones read it at the discounted rate, as long as they arrive within the cache lifetime.</p>
+    <h3>Prompting for long inputs</h3>
+    <p>Anthropic's prompting guidance for 20k-token and larger inputs: put long documents at the top of the prompt and the question after them (queries at the end improved quality by up to 30 percent in their tests), and wrap each document in <code>&lt;document&gt;</code> tags with <code>&lt;source&gt;</code> and <code>&lt;document_content&gt;</code> subtags so the model can tell them apart and name them.</p>
+    <h3>Images and PDFs</h3>
+    <p>Models accept images and PDF pages as input alongside text. A single request can carry up to 600 images or PDF pages (100 for models with a 200k-token window), and large files may reach request size limits before the token limit. Pages cost tokens like any other input, so a 300-page PDF is not free. Ingestion for retrieval has an extra concern: scanned or image-only PDFs have no text layer, so a text extractor returns nothing. Either extract with a model that reads the page image, or send the PDF to the model directly.</p>
+    <h3>The Files API</h3>
+    <p>Uploading the same file with every request wastes bandwidth. The Files API stores a file once and returns a <code>file_id</code> that you reference in <code>document</code>, <code>image</code> or <code>container_upload</code> blocks. It is out of beta and needs no beta header. Files are retained until you delete them or they expire. Whether a given file type works depends on the model; the images are supported on all current models, and PDFs and other types have their own pages.</p>
+    <aside class="rule">If it fits and you will ask many questions, put it in context and cache it. Reach for retrieval when it does not fit or when most of it is noise for each question.</aside>
+    <aside class="trap">Counting characters is not counting tokens. A corpus that "feels small" can exceed the window once tables and code are tokenized. Check the size before choosing the design.</aside>
+  </div>
+
+  <div class="lesson" id="m13-l5" data-title="Grounding, citations and unanswerable questions" data-minutes="20">
+    <h3>Why models answer anyway</h3>
+    <p>A model generates plausible text. Given a question and no relevant passage, the default is a plausible answer, not silence. Anthropic's hallucination page calls the result text that is factually incorrect or inconsistent with the given context. Grounding is the practice of tying every claim to text you supplied, and making the absence of that text an acceptable answer.</p>
+    <h3>Techniques from the docs</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Technique</th><th>What you do</th></tr>
+      <tr><td>Allow "I don't know"</td><td>Tell the model it may say the information is missing, and give the exact words</td></tr>
+      <tr><td>Quote first</td><td>For documents over 20k tokens, ask for word-for-word quotes first, then an answer based only on the quotes; if none, "No relevant quotes found."</td></tr>
+      <tr><td>Verify with citations</td><td>Require a supporting quote for each claim; retract claims with none</td></tr>
+      <tr><td>Best-of-N</td><td>Run the same prompt several times; disagreement flags a guess</td></tr>
+      <tr><td>Review the reasoning</td><td>Read summarized thinking blocks when an answer looks wrong</td></tr>
+    </table></div>
+    <h3>The unanswerable question</h3>
+    <p>Every retrieval test set needs questions whose answer is not in the documents. The right behaviour is a fixed refusal string your code can check. If the instructions say "if the passages do not contain the answer, reply exactly NOT IN DOCUMENTS", you can count refusals mechanically, and a model that fills the gap from memory fails the check. Include at least one such question per test set; a system that has never been asked one has an unknown false-answer rate.</p>
+    <h3>Citations in the API</h3>
+    <p>The citations feature returns structured references to the source text rather than relying on the model to format them. Plain text and PDF documents are chunked into sentences for citation. If you chunk yourself, use custom content documents; to cite retrieved chunks, put each one in a plain text document so sentences within it can be cited. Text quoted in a citation (<code>cited_text</code>) does not count toward output tokens. Search result blocks (<code>search_result</code>) give retrieval citations with a source and title, whether the results come from a tool result or from the user message. The docs note that prompts demanding JSON-only output may yield few citations.</p>
+    <p>In Claude Code and headless runs without the API features, the same effect comes from the prompt: number the chunks, require a bracketed chunk number after every claim, and check mechanically that each cited number exists in what you supplied.</p>
+    <aside class="rule">Give the model an exit, then test the exit. An unanswerable question in the test set is how you learn the exit works.</aside>
+    <aside class="trap">A citation proves the model pointed at a passage, not that the passage supports the claim. Spot-check by reading the cited text.</aside>
+  </div>
+
+  <div class="lesson" id="m13-l6" data-title="Training, fine-tuning and distillation: what you will actually use" data-minutes="15">
+    <h3>The terms</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Term</th><th>In general</th></tr>
+      <tr><td>Pretraining</td><td>Learning from a very large text corpus; builds the base model and sets the knowledge cutoff</td></tr>
+      <tr><td>Post-training</td><td>Further training on instructions and human or automated feedback to make the model helpful and safe</td></tr>
+      <tr><td>Fine-tuning</td><td>Continuing training of an existing model on a smaller, task-specific dataset, changing its weights</td></tr>
+      <tr><td>Distillation</td><td>Training a smaller model to imitate the outputs of a larger one, to get most of the quality at lower cost</td></tr>
+      <tr><td>Embedding model</td><td>A model trained to turn text into vectors; separate from the chat model</td></tr>
+    </table></div>
+    <p>Fine-tuning is usually discussed for changing style, format or narrow behaviour at scale, not for adding facts: facts you want updated or removed are far easier to change in a document than in weights. Distillation is a cost play when one task runs millions of times.</p>
+    <h3>What the Claude docs say</h3>
+    <p>Anthropic's current documentation does not document fine-tuning Claude.</p>
+    <h3>What you will actually use</h3>
+    <p>The first three ways. Choose a tier and effort level, put stable knowledge in context and cache it, retrieve when the corpus is big, and give the model tools or MCP servers for live data. Nobody in this course trains a model, and the work that decides success is the same in every case: a test set with known answers, a score you compute, and a change you keep only if the score rises.</p>
+    <aside class="rule">Measure before you build. A retrieval pipeline or a tier change that you cannot score is a guess.</aside>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m13-lab1" data-title="Same question, three tiers" data-minutes="15">
+      <p class="goal">Run one counting question on Haiku, Sonnet and Opus, and end with a table of answer, correctness, cost and time for each.</p>
+      <ol class="steps">
+        <li><p>Create the lab folder and write the script. This lab is about model choice, so it passes <code>--model</code> three times. It still passes <code>--setting-sources project</code> and <code>--strict-mcp-config</code>, which keep your personal settings, hooks and MCP servers out of the measurement. <code>--tools ""</code> removes tools so the model answers from its own reasoning, and <code>--max-turns 1</code> caps it at one turn.</p>
+          <pre data-file="{{LAB}}/m13/lab1.ps1"><code>New-Item -ItemType Directory -Force {{LAB}}/m13/lab1 | Out-Null
+Set-Location {{LAB}}/m13/lab1
+$q = 'Reply with only a number. How many of these words are palindromes: level, rotor, banana, civic, kayak, apple, noon, radar, window'
+$rows = foreach ($m in 'haiku', 'sonnet', 'opus') {
+  $raw = claude -p $q --model $m --setting-sources project --strict-mcp-config --tools "" --max-turns 1 --output-format json
+  $j = $raw | ConvertFrom-Json
+  $id = ($j.modelUsage.PSObject.Properties | Select-Object -First 1).Name
+  [pscustomobject]@{
+    model   = $id
+    answer  = $j.result.Trim()
+    correct = ($j.result.Trim() -eq '6')
+    cost    = [math]::Round($j.total_cost_usd, 4)
+    seconds = [math]::Round($j.duration_ms / 1000, 1)
+    out_tok = $j.usage.output_tokens
+  }
+}
+$rows | Format-Table -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> the file exists. The correct answer is 6 (level, rotor, civic, kayak, noon, radar).</p></li>
+        <li><p>Run it.</p>
+          <pre><code>powershell -NoProfile -ExecutionPolicy Bypass -File {{LAB}}/m13/lab1.ps1</code></pre>
+          <p class="expect"><b>Expected:</b> three rows. In the verified run Haiku answered <code>6</code> (correct, about $0.0007, about 1 second); Sonnet answered <code>5</code> (wrong, about $0.0092, about 1.3 seconds); Opus listed the six words ("level, rotor, civic, kayak, noon, radar = 6...") and so was marked not correct by the strict check, at about $0.0194 and 3.7 seconds. Your numbers vary run to run, and a model that errs once may get it right next time.</p></li>
+        <li><p>Read the table as a decision. Rank the three by cost, then by whether the answer was usable.</p>
+          <p class="expect"><b>Expected:</b> cost rises about 13 times from Haiku to Sonnet and about 28 times to Opus in this run, and the most expensive row is not the most useful one.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Which tier would you pick for this task, and why? Haiku: it was correct at the lowest cost, in a task with a mechanical check. Why was Opus marked wrong although its content was right? It ignored "reply with only a number", and the check compares the whole reply to the string 6. A check that parses the first number would accept it. Both correctness and format matter when the output feeds a script. Why is one run weak evidence? Models are not deterministic, so a single wrong answer from Sonnet does not rank it below Haiku; repeat the run and count wins.</p>
+      </details>
+    </article>
+    <article class="lab" id="m13-lab2" data-title="Compare three ways to give a model a fact" data-minutes="20">
+      <p class="goal">You ask one question about a runbook three ways (no access, file pasted into the prompt, file search tools) and end up holding a table of turns, input tokens, cost and answer for each.</p>
+      <ol class="steps">
+        <li><p>Create the lab folder, 19 filler runbooks and one runbook that holds the answer. The two flags used on every run, <code>--setting-sources project</code> and <code>--strict-mcp-config</code>, keep your personal settings, hooks and MCP servers out of the measurement.</p>
+          <pre><code>$lab = '{{LAB}}/m13/lab2'
+$rb = Join-Path $lab 'runbooks'
+New-Item -ItemType Directory -Force $rb | Out-Null
+$topics = 'dns-flush','cert-renew','disk-cleanup','log-rotate','vpn-reset','printer-queue','user-offboard','user-onboard','patch-window','firewall-change','db-reindex','web-restart','queue-drain','backup-verify','ntp-check','share-perms','license-audit','monitor-silence','ups-test'
+$n = 0
+foreach ($t in $topics) { $n++; Set-Content -Encoding utf8 (Join-Path $rb "$t.md") "# $t`n`nOwner: ops. Step 1: open a change ticket. Step 2: run the $t script on web-0$($n % 4 + 1). Step 3: confirm the result and close the ticket." }
+Set-Content -Encoding utf8 (Join-Path $rb 'acme-restore.md') @'
+# acme-restore
+
+Owner: storage team.
+Step 1: stop the deploy service on web-01.
+Step 2: mount the snapshot from vault-02, never vault-01.
+Step 3: set RETAIN_DAYS=37 in restore.conf before you start the copy.
+Step 4: start the deploy service and check /health returns 200.
+'@
+(Get-ChildItem $rb).Count</code></pre>
+          <p class="expect"><b>Expected:</b> <code>20</code> files.</p></li>
+        <li><p>Define the question and a helper that reduces each JSON result to the numbers that matter. Input total is the sum of the three input token fields.</p>
+          <pre><code>$q = 'In the acme-restore runbook, what value is RETAIN_DAYS set to in step 3, and which vault is the snapshot mounted from? Answer in one line. If you do not know, say UNKNOWN.'
+function Show($label, $raw) {
+  $j = $raw | ConvertFrom-Json
+  $inTok = $j.usage.input_tokens + $j.usage.cache_creation_input_tokens + $j.usage.cache_read_input_tokens
+  [pscustomobject]@{ run = $label; turns = $j.num_turns; input_total = $inTok; cost = [math]::Round($j.total_cost_usd, 4); answer = $j.result.Trim() }
+}</code></pre></li>
+        <li><p>Run A (no access) and B (the file pasted into the prompt). Both disable tools and allow one turn.</p>
+          <pre><code>$empty = Join-Path $lab 'empty'; New-Item -ItemType Directory -Force $empty | Out-Null
+Set-Location $empty
+$a = Show 'A no access' (claude -p $q --model haiku --setting-sources project --strict-mcp-config --tools "" --max-turns 1 --output-format json)
+$doc = Get-Content -Raw (Join-Path $rb 'acme-restore.md')
+$b = Show 'B file in prompt' (claude -p "Runbook:`n$doc`n`n$q" --model haiku --setting-sources project --strict-mcp-config --tools "" --max-turns 1 --output-format json)</code></pre>
+          <p class="expect"><b>Expected:</b> A has one turn, about 3,800 input tokens (the fixed system prompt) and no usable answer: in the run recorded here Haiku printed tool-call markup instead of the values, and it may say <code>UNKNOWN</code> in yours. B has one turn, about 3,900 input tokens, cost about $0.0002, and answers <code>RETAIN_DAYS=37</code> and <code>vault-02</code>.</p></li>
+        <li><p>Run C from inside the runbook folder: the model gets Read, Grep and Glob and must find the file itself. Then print all three.</p>
+          <pre><code>Set-Location $rb
+$c = Show 'C Read+Grep over 20 files' (claude -p $q --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read,Grep,Glob" --tools "Read,Grep,Glob" --max-turns 6 --output-format json)
+$a, $b, $c | Format-List</code></pre>
+          <p class="expect"><b>Expected:</b> C takes about 3 turns, about 13,500 input tokens in total (each turn re-sends the growing context), cost about $0.0011, and gives <code>37</code> and <code>vault-02</code>. Roughly 3.5 times the input of B and 5 times the cost for the same answer, in exchange for not knowing in advance which file matters.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Why does C use about three times the input of B?</b> Every turn re-sends the whole conversation, and each tool result (the search hit, the file read) is appended. Three turns means roughly three passes over a growing context.</p>
+        <p><b>When is B the right design?</b> When you already know which document answers the question and it is small. Searching costs turns and tokens you do not need to spend.</p>
+        <p><b>When is C the right design?</b> When the right file is not known in advance and the corpus is too large to paste.</p>
+        <p><b>What does A show?</b> Without the fact in context or a way to fetch it, the model cannot produce the value; a correct answer here would be a guess.</p>
+      </details>
+    </article>
+    <article class="lab" id="m13-lab3" data-title="Build keyword retrieval and answer from the chunks" data-minutes="25">
+      <p class="goal">You score seven runbook chunks against a question by keyword overlap in plain PowerShell, pass the top chunks to Haiku with a cite-or-refuse instruction, and see it answer two questions with chunk ids and refuse the third.</p>
+      <ol class="steps">
+        <li><p>Create the script with the chunk store and the scorer. Each chunk has an id; the score is the number of distinct non-stopword terms shared with the question.</p>
+          <pre><code>New-Item -ItemType Directory -Force '{{LAB}}/m13/lab3' | Out-Null
+Set-Location '{{LAB}}/m13/lab3'
+$chunks = @(
+  @{ id = 'rb-01'; text = 'Backup runbook. The nightly backup of web-01 starts at 02:30 and writes to vault-02.' },
+  @{ id = 'rb-02'; text = 'Backup runbook. A failed backup is retried once at 04:00. After a second failure the on-call engineer opens a ticket.' },
+  @{ id = 'rb-03'; text = 'Deploy runbook. The deploy service on web-01 is stopped before a restore and started again afterwards.' },
+  @{ id = 'rb-04'; text = 'Certificate runbook. Certificates for acme.example expire after 90 days and are renewed at day 60 by the cert-renew job.' },
+  @{ id = 'rb-05'; text = 'Access runbook. Requests to join the admin group are approved by the security lead and logged in the access ticket.' },
+  @{ id = 'rb-06'; text = 'Monitoring runbook. Alerts for web-01 go to the ops channel. Silences last at most 4 hours.' },
+  @{ id = 'rb-07'; text = 'Ticket runbook. Priority 1 tickets get a first response within 15 minutes. Priority 3 tickets get a response the next business day.' }
+)
+$stop = 'the','a','an','of','to','is','at','in','on','and','for','by','are','after','before','what','when','who','does','do','how','which','it','be','than','or'
+function Tok($s) { ($s.ToLower() -split '[^a-z0-9\-:]+') | Where-Object { $_ -and ($stop -notcontains $_) } | Select-Object -Unique }
+function Get-Top($q, $k) {
+  $qt = Tok $q
+  $chunks | ForEach-Object {
+    $ct = Tok $_.text
+    [pscustomobject]@{ id = $_.id; score = @($qt | Where-Object { $ct -contains $_ }).Count; text = $_.text }
+  } | Sort-Object score -Descending | Select-Object -First $k | Where-Object { $_.score -gt 0 }
+}</code></pre></li>
+        <li><p>Ask three questions. The last one has no answer in the chunks. The prompt tells the model to answer only from the chunks, cite ids, and otherwise reply with a fixed phrase. <code>--setting-sources project</code> and <code>--strict-mcp-config</code> keep your own settings and MCP servers out of the run.</p>
+          <pre><code>$questions = @(
+  'When does the nightly backup of web-01 start?',
+  'Who approves a request to join the admin group?',
+  'What is the guaranteed response time for a mailbox quota increase request?'
+)
+foreach ($q in $questions) {
+  $top = @(Get-Top $q 3)
+  Write-Output "QUESTION: $q"
+  Write-Output ('RETRIEVED: ' + (($top | ForEach-Object { "$($_.id)($($_.score))" }) -join ', '))
+  $ctx = ($top | ForEach-Object { "[$($_.id)] $($_.text)" }) -join "`n"
+  $prompt = "Answer only from the chunks below. Cite the chunk ids in square brackets. If the chunks do not contain the answer, reply exactly: not in the sources.`n`nChunks:`n$ctx`n`nQuestion: $q"
+  $raw = claude -p $prompt --model haiku --setting-sources project --strict-mcp-config --tools "" --max-turns 1 --output-format json
+  $j = $raw | ConvertFrom-Json
+  Write-Output "ANSWER: $($j.result.Trim())"
+  Write-Output ''
+}</code></pre>
+          <p class="expect"><b>Expected:</b> Question 1 retrieves <code>rb-01(3), rb-06(1), rb-03(1)</code> and answers <code>[rb-01] The nightly backup of web-01 starts at 02:30.</code> Question 2 retrieves only <code>rb-05(3)</code> and answers with the approver, the security lead, citing <code>[rb-05]</code>. Question 3 retrieves only <code>rb-07(1)</code>, which matches on a single word ("response") but does not answer it, and the model replies <code>not in the sources.</code></p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Why did question 3 still retrieve a chunk?</b> Keyword overlap scores shared words, not meaning, so any chunk sharing one term ranks above zero. Retrieval cannot tell "related" from "answers it"; the refusal came from the instruction to the model, not from the retriever.</p>
+        <p><b>What would you add so an unanswerable question is caught before the model call?</b> A minimum score threshold, for example require at least 2 shared terms. The cost is missing short questions that legitimately match on one term.</p>
+        <p><b>What does the chunk id buy you?</b> Every claim in the answer can be checked against one named chunk, and a missing or wrong id is a visible failure.</p>
+      </details>
+    </article>
+    <article class="lab" id="m13-lab4" data-title="Measure how chunking changes the retrieval hit rate" data-minutes="20">
+      <p class="goal">You chunk one eight-paragraph runbook three ways, run six questions with known answers through keyword retrieval, and end up holding a hit rate per chunking. No model call is involved.</p>
+      <ol class="steps">
+        <li><p>Create the corpus and the three chunkings: fixed 40-character windows with no overlap, the same windows overlapping by 20 characters, and one chunk per paragraph.</p>
+          <pre><code>New-Item -ItemType Directory -Force '{{LAB}}/m13/lab4' | Out-Null
+Set-Location '{{LAB}}/m13/lab4'
+$paras = @(
+  'Backups. The nightly backup of web-01 starts at 02:30. It writes to vault-02 and keeps 14 daily copies.',
+  'Restores. Stop the deploy service before a restore. Mount the snapshot read-only and copy the files back. Start the deploy service afterwards.',
+  'Certificates. Certificates for acme.example expire after 90 days. The cert-renew job runs at day 60. Renewal failures page the on-call engineer.',
+  'Access. Requests to join the admin group are approved by the security lead. Every approval is logged in the access ticket. Access is reviewed each quarter.',
+  'Monitoring. Alerts for web-01 go to the ops channel. Silences last at most 4 hours. A longer silence needs a change ticket.',
+  'Tickets. Priority 1 tickets get a first response within 15 minutes. Priority 3 tickets get a response the next business day.',
+  'Patching. The patch window is the first Tuesday of the month from 22:00 to 02:00. Servers reboot in the order web-01, web-02, db-01.',
+  'Logging. Application logs rotate daily and are kept for 30 days. Audit logs are kept for 365 days on vault-02.'
+)
+$stop = 'the','a','an','of','to','is','at','in','on','and','for','by','are','after','before','what','when','who','does','do','how','which','it','be','than','or','each','every'
+function Tok($s) { ($s.ToLower() -split '[^a-z0-9\-:]+') | Where-Object { $_ -and ($stop -notcontains $_) } | Select-Object -Unique }
+$text = $paras -join ' '
+function Window($t, $size, $step) { for ($i = 0; $i -lt $t.Length; $i += $step) { $t.Substring($i, [math]::Min($size, $t.Length - $i)) } }
+$sets = @(
+  @{ name = 'fixed40-nooverlap'; chunks = @(Window $text 40 40) },
+  @{ name = 'fixed40-overlap20'; chunks = @(Window $text 40 20) },
+  @{ name = 'by-paragraph';      chunks = $paras }
+)</code></pre></li>
+        <li><p>Define six questions, each with the exact string that must appear in a retrieved chunk for the retrieval to count as a hit, and a ranker that scores chunks by shared terms.</p>
+          <pre><code>$qs = @(
+  @{ q = 'When does the nightly backup of web-01 start?'; gold = '02:30' },
+  @{ q = 'How many days do audit logs stay on vault-02?'; gold = '365 days' },
+  @{ q = 'Who approves requests to join the admin group?'; gold = 'security lead' },
+  @{ q = 'What is the longest an alert silence can last?'; gold = 'at most 4 hours' },
+  @{ q = 'On which day does the cert-renew job run?'; gold = 'day 60' },
+  @{ q = 'In which order do servers reboot during the patch window?'; gold = 'web-01, web-02, db-01' }
+)
+function Rank($q, $chunks) {
+  $qt = Tok $q; $i = 0
+  $chunks | ForEach-Object { $ct = Tok $_; $i++; [pscustomobject]@{ n = $i; score = @($qt | Where-Object { $ct -contains $_ }).Count; text = $_ } } | Sort-Object @{e='score';Descending=$true}, n
+}</code></pre></li>
+        <li><p>Compute hit@1 (the answer string is in the top chunk) and hit@3 (it is in one of the top three) for each chunking.</p>
+          <pre><code>foreach ($set in $sets) {
+  $h1 = 0; $h3 = 0
+  foreach ($x in $qs) {
+    $r = @(Rank $x.q $set.chunks)
+    $rank = 0; for ($k = 0; $k -lt $r.Count; $k++) { if ($r[$k].text.Contains($x.gold)) { $rank = $k + 1; break } }
+    if ($rank -eq 1) { $h1++ }
+    if ($rank -ge 1 -and $rank -le 3) { $h3++ }
+  }
+  $avg = [math]::Round((($set.chunks | ForEach-Object { $_.Length }) | Measure-Object -Average).Average)
+  Write-Output ("{0}: chunks={1} avg_chars={2} hit@1={3}/6 hit@3={4}/6" -f $set.name, $set.chunks.Count, $avg, $h1, $h3)
+}</code></pre>
+          <p class="expect"><b>Expected:</b> three lines:</p>
+          <pre data-cap="output"><code>fixed40-nooverlap: chunks=26 avg_chars=40 hit@1=3/6 hit@3=3/6
+fixed40-overlap20: chunks=52 avg_chars=40 hit@1=0/6 hit@3=4/6
+by-paragraph: chunks=8 avg_chars=129 hit@1=6/6 hit@3=6/6</code></pre></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Why did the fixed windows without overlap hit only 3 of 6?</b> A 40-character window boundary can cut straight through an answer string such as <code>at most 4 hours</code>, so no single chunk contains the whole answer. Count the misses in your own run and check which strings were split.</p>
+        <p><b>Why did overlap raise hit@3 but drop hit@1 to 0?</b> Overlap lets a window contain the whole string, so the answer reaches the top three more often, but neighbouring overlapping windows share words and tie on score, so the top-ranked window is often a fragment next to the answer rather than the one that holds it.</p>
+        <p><b>What does by-paragraph cost?</b> Each chunk is about three times longer (129 characters against 40), so every retrieved chunk adds more input tokens. Hit rate and context cost move in opposite directions.</p>
+        <p><b>Why score with a known answer string instead of asking a model?</b> It is free, repeatable and does not depend on the model's phrasing, so you can compare chunkings in seconds.</p>
+      </details>
+    </article>
+    <article class="lab" id="m13-lab5" data-title="Decide: context, retrieval, a tool, or nothing" data-minutes="30">
+      <p class="goal">You take one knowledge need of your own, fill in a decision table for the four options, and run one measurement for the option you chose, so the choice rests on a number. The worked example below runs as written.</p>
+      <ol class="steps">
+        <li><p>Describe the need in five lines: what the model must know, how big that knowledge is, how often it changes, how often it is asked, and whether the answer must be exact. The example need is a three-line fact about log retention.</p>
+          <pre><code>New-Item -ItemType Directory -Force '{{LAB}}/m13/lab5' | Out-Null
+Set-Location '{{LAB}}/m13/lab5'
+Set-Content -Encoding utf8 .\need.txt @'
+need: the audit log retention period for the acme platform
+size_of_knowledge: 3 lines
+changes: about once a year
+asked: a few times a week
+must_be_exact: yes
+'@
+Set-Content -Encoding utf8 .\facts.md "Audit logs on the acme platform are kept for 365 days.`nApplication logs are kept for 30 days.`nBackups keep 14 daily copies."</code></pre></li>
+        <li><p>Measure the baseline (no knowledge) and the chosen option (the facts in the prompt) with one tiny Haiku run each, then write the decision table. A rule of thumb for filling it in: small and stable goes in context; large, stable and many documents goes to retrieval; live or changing data goes behind a tool; common knowledge needs none of them.</p>
+          <pre><code>$q = 'How many days are audit logs kept on the acme platform? Reply with only the number, or UNKNOWN if you cannot tell.'
+function Run($prompt) {
+  $j = (claude -p $prompt --model haiku --setting-sources project --strict-mcp-config --tools "" --max-turns 1 --output-format json) | ConvertFrom-Json
+  $inTok = $j.usage.input_tokens + $j.usage.cache_creation_input_tokens + $j.usage.cache_read_input_tokens
+  [pscustomobject]@{ answer = $j.result.Trim(); input_tokens = $inTok; cost = [math]::Round($j.total_cost_usd, 5) }
+}
+$none = Run $q
+$ctx = Run ("Facts:`n" + (Get-Content -Raw .\facts.md) + "`n`n" + $q)
+$rows = @(
+  [pscustomobject]@{ option = 'none';      verdict = 'rejected'; why = 'answer is UNKNOWN or a guess'; measured_answer = $none.answer; input_tokens = $none.input_tokens; correct = ($none.answer -eq '365') }
+  [pscustomobject]@{ option = 'context';   verdict = 'CHOSEN';   why = '3 lines, rarely changes, asked often';  measured_answer = $ctx.answer; input_tokens = $ctx.input_tokens; correct = ($ctx.answer -eq '365') }
+  [pscustomobject]@{ option = 'retrieval'; verdict = 'rejected'; why = 'needs an index for 3 lines';  measured_answer = ''; input_tokens = ''; correct = '' }
+  [pscustomobject]@{ option = 'tool';      verdict = 'rejected'; why = 'no live system to query';   measured_answer = ''; input_tokens = ''; correct = '' }
+)
+$rows | Export-Csv -NoTypeInformation -Encoding utf8 .\decision.csv
+$rows | Format-Table -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> a table where <code>none</code> answers <code>UNKNOWN</code> with about 3,750 input tokens and <code>correct</code> False, and <code>context</code> answers <code>365</code> with about 3,800 input tokens and <code>correct</code> True. The other two rows stay empty.</p></li>
+        <li><p>Apply the done-test: the chosen option must be correct, and must add fewer than 100 input tokens over the baseline.</p>
+          <pre><code>$chosen = $rows | Where-Object verdict -eq 'CHOSEN'
+$delta = $chosen.input_tokens - $none.input_tokens
+Write-Output "chosen=$($chosen.option) correct=$($chosen.correct) extra_input_tokens=$delta"
+if ($chosen.correct -eq $true -and $delta -lt 100) { Write-Output 'DONE-TEST PASS' } else { Write-Output 'DONE-TEST FAIL' }</code></pre>
+          <p class="expect"><b>Expected:</b> <code>chosen=context correct=True extra_input_tokens=50</code> (about 50) and <code>DONE-TEST PASS</code>.</p></li>
+        <li><p>Now do it on your own need. Replace <code>need.txt</code> and <code>facts.md</code> with a real piece of knowledge you want a model to use, change <code>$q</code> to a question whose answer you can check, and fill all four rows of the table with a verdict and a reason. Measure the baseline and the option you chose. Your done-test: <code>decision.csv</code> has four rows with reasons, the chosen row has a measured answer and input token count, and the chosen option answers correctly where the baseline does not (or you document that the baseline already did, which means the answer is <code>none</code>).</p>
+          <p class="expect"><b>Expected:</b> a <code>decision.csv</code> of your own with one measured chosen row. If you chose retrieval, build the measurement from the keyword retriever in the retrieval lab; if you chose a tool, measure one run that grants the tool with <code>--allowedTools</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Why did the baseline say UNKNOWN instead of a number?</b> The fact is specific to this platform and is not in the model's training data, and the prompt allowed UNKNOWN. Without that allowance it would likely have produced a plausible wrong number.</p>
+        <p><b>What does 50 extra input tokens tell you about the cost of context here?</b> Putting a small fact in context is nearly free, so adding retrieval machinery for it would cost more in engineering than it saves in tokens.</p>
+        <p><b>When does your own choice flip?</b> When the knowledge grows past what you are willing to send on every call (retrieval), or when it changes faster than you can edit the file (a tool that reads the live source).</p>
+        <p><b>What makes the table checkable by someone else?</b> Each verdict has a reason, and the chosen row carries a measured answer and token count rather than an opinion.</p>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Model tiers (from the docs)</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Model</th><th class="num">Input $/MTok</th><th class="num">Output $/MTok</th><th>Context</th><th>Max output</th><th>Default effort</th><th>Retires no sooner than</th></tr>
+      <tr><td>Fable 5.2</td><td class="num">8</td><td class="num">40</td><td>1M</td><td>128K</td><td>high</td><td>2027-11-09</td></tr>
+      <tr><td>Opus 5.5</td><td class="num">4</td><td class="num">20</td><td>1M</td><td>128K</td><td>medium</td><td>2027-09-22</td></tr>
+      <tr><td>Sonnet 5.5</td><td class="num">2</td><td class="num">10</td><td>1M</td><td>128K</td><td>high</td><td>2027-09-28</td></tr>
+      <tr><td>Haiku 5.5</td><td class="num">0.10 / 0.50</td><td class="num">0.50 / 2.50</td><td>1M</td><td>128K</td><td>medium</td><td>2027-10-07</td></tr>
+    </table></div>
+    <p>Haiku 5.5 has two rates: the first for prompts up to 100,000 tokens, the second above. Batch processing takes 50 percent off. All four list a reliable knowledge cutoff of Jun 2026.</p>
+    <h3>The four ways</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Way</th><th>Use when</th><th>Main risk</th></tr>
+      <tr><td>Prompt and context</td><td>Facts are small and known</td><td>Window size, resend cost</td></tr>
+      <tr><td>Retrieval</td><td>Large or changing corpus</td><td>Search misses the passage</td></tr>
+      <tr><td>Tools and MCP</td><td>Live data, iterative search</td><td>Permissions, tool sprawl</td></tr>
+      <tr><td>Training and fine-tuning</td><td>Behaviour at scale (not documented for Claude)</td><td>Slow to correct</td></tr>
+    </table></div>
+    <h3>Retrieval glossary</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Term</th><th>Meaning</th></tr>
+      <tr><td>Ingestion</td><td>Reading sources, extracting text, keeping source metadata</td></tr>
+      <tr><td>Chunk</td><td>A piece of a document that is indexed and retrieved as a unit</td></tr>
+      <tr><td>Embedding</td><td>A vector of numbers representing the meaning of text</td></tr>
+      <tr><td>Vector store</td><td>An index that finds the nearest embeddings to a query</td></tr>
+      <tr><td>Keyword search</td><td>Scoring by shared words</td></tr>
+      <tr><td>Reranker</td><td>A second model that reorders the first search's results</td></tr>
+      <tr><td>Top-k</td><td>The number of best-scoring chunks sent to the model</td></tr>
+      <tr><td>Hit rate</td><td>Fraction of questions where the gold string is in the top-k chunks</td></tr>
+      <tr><td>Grounding</td><td>Tying claims to supplied text</td></tr>
+      <tr><td>Citation</td><td>A pointer from a claim to the source passage</td></tr>
+    </table></div>
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>Right document exists, answer is wrong</td><td>Search did not surface the chunk</td><td>Measure hit rate; change chunk size or search method</td></tr>
+      <tr><td>Hit rate high, answers still wrong</td><td>Prompt or tier problem</td><td>Tighten instructions; raise effort or tier</td></tr>
+      <tr><td>Confident answer to an unanswerable question</td><td>No exit given</td><td>Specify an exact refusal string and test it</td></tr>
+      <tr><td>Answer needs a sentence cut from its context</td><td>Chunks too small</td><td>Use paragraphs or sections with titles</td></tr>
+      <tr><td>Cost far above expectation</td><td>Whole corpus resent each turn, or huge chunks</td><td>Cache stable content; shrink chunks; retrieve</td></tr>
+      <tr><td>Cache never reads</td><td>Prompt under the minimum, or calls beyond the lifetime</td><td>Check <code>cache_read_input_tokens</code>; pad or reorder; use the 1-hour lifetime</td></tr>
+      <tr><td>Requests fail after months</td><td>Pinned model retired</td><td>Watch deprecation notices; test the replacement early</td></tr>
+      <tr><td>Strict check marks a correct answer wrong</td><td>Format ignored</td><td>Parse leniently or enforce the format in the prompt</td></tr>
+    </table></div>
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+        <li>Claude API docs, "Models overview": <a href="https://platform.claude.com/docs/en/models/overview" target="_blank" rel="noopener">platform.claude.com/docs/en/models/overview</a></li>
+        <li>Claude API docs, "Choosing the right model": <a href="https://platform.claude.com/docs/en/about-claude/models/choosing-a-model" target="_blank" rel="noopener">platform.claude.com/docs/en/about-claude/models/choosing-a-model</a></li>
+        <li>Claude API docs, "Pricing": <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener">platform.claude.com/docs/en/about-claude/pricing</a></li>
+        <li>Claude API docs, "Model deprecations": <a href="https://platform.claude.com/docs/en/about-claude/model-deprecations" target="_blank" rel="noopener">platform.claude.com/docs/en/about-claude/model-deprecations</a></li>
+        <li>Claude API docs, "Effort": <a href="https://platform.claude.com/docs/en/build-with-claude/effort" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/effort</a></li>
+        <li>Claude API docs, "Context windows": <a href="https://platform.claude.com/docs/en/build-with-claude/context-windows" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/context-windows</a></li>
+        <li>Claude API docs, "Embeddings": <a href="https://platform.claude.com/docs/en/build-with-claude/embeddings" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/embeddings</a></li>
+        <li>Claude API docs, "Citations": <a href="https://platform.claude.com/docs/en/build-with-claude/citations" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/citations</a></li>
+        <li>Claude API docs, "Reduce hallucinations": <a href="https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations" target="_blank" rel="noopener">platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations</a></li>
+        <li>Claude API docs, "Prompt caching": <a href="https://platform.claude.com/docs/en/build-with-claude/prompt-caching" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/prompt-caching</a></li>
+        <li>Claude API docs, "Thinking": <a href="https://platform.claude.com/docs/en/build-with-claude/thinking" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/thinking</a></li>
+        <li>Claude API docs, "Files API": <a href="https://platform.claude.com/docs/en/build-with-claude/files" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/files</a></li>
+        <li>Claude API docs, "Search results": <a href="https://platform.claude.com/docs/en/build-with-claude/search-results" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/search-results</a></li>
+        <li>Claude API docs, "Tool use with Claude": <a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview" target="_blank" rel="noopener">platform.claude.com/docs/en/agents-and-tools/tool-use/overview</a></li>
+        <li>Claude API docs, "MCP connector": <a href="https://platform.claude.com/docs/en/agents-and-tools/mcp-connector" target="_blank" rel="noopener">platform.claude.com/docs/en/agents-and-tools/mcp-connector</a></li>
+        <li>Measured: lab numbers from runs of 2026-11-11.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "A team asks a model about an internal runbook. The answers are wrong, but the runbook is 3 pages and the team uses it for every question. What is the best first change?", "o": ["Build an embedding index of the runbook", "Put the runbook in the prompt and cache it", "Fine-tune a model on the runbook", "Switch to the most expensive tier"], "a": 1, "why": "Three pages fit easily, so the simplest way (prompt and context) avoids search misses entirely, and caching makes repeated questions cheap. Retrieval and training add machinery for a problem that does not exist at this size."},
+    {"q": "Your retrieval system answers 8 of 20 test questions correctly. You run only the search step and find the gold string in the top 3 chunks for 19 of 20 questions. Where is the problem?", "o": ["Chunking and search", "The embedding model", "The prompt or the model tier, since retrieval is working", "The test set is too small to tell"], "a": 2, "why": "A 19 of 20 hit rate means the right text reached the model nearly every time. The failure is after retrieval: instructions, format or capability. Tuning chunk size would not help."},
+    {"q": "A task runs on Haiku and is correct on every test case. Someone proposes moving to a tier that costs 20 times more per input token for 'safety'. What do the docs and the lab suggest?", "o": ["Move up; bigger tiers are always more accurate", "Stay, and raise effort or tier only if the check you wrote starts failing", "Move to the top tier, then lower the effort", "Replace the model with fine-tuning"], "a": 1, "why": "The docs say tuning effort is often a better lever than switching models, and the lab showed a mid-tier model failing where the cheapest tier succeeded. Escalate on evidence from your own check, not on assumption."},
+    {"q": "Your test set has twenty questions, all answerable. The system scores 100 percent in testing and then invents an answer to a real user's question that is not in the documents. What was missing?", "o": ["A larger context window", "A better embedding model", "Unanswerable questions in the test set and an exact refusal string", "A higher effort level"], "a": 2, "why": "Without an unanswerable question you never measured the false-answer rate. Giving the model a fixed 'not in the documents' reply and testing that it uses it is the grounding technique the docs recommend."},
+    {"q": "A colleague wants to know which Claude model to fine-tune on the company's tickets. What can you say from Anthropic's current documentation?", "o": ["Use Haiku, because it is cheapest to tune", "The docs do not document fine-tuning Claude, so use context, retrieval and tools instead", "Use Opus, because tuning needs the largest model", "Fine-tune through the Files API"], "a": 1, "why": "Anthropic's current docs do not document fine-tuning Claude at all. The Files API stores files for requests; it does not train. Put the tickets in context, retrieve from them, or expose them through a tool."}
+  ]</script>
+</section>

@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>html,body{height:100%}body{margin:0}img{max-width:100%}</style>
+<title>Where Claude Code runs · AI/LLM Bootcamp</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&family=Nunito:wght@700;800&display=swap">
+<style>
+/* AI/LLM Bootcamp. One stylesheet for the catalogue page and every module page.
+   Layout: a top bar (brand, where you are, theme picker), a part rail on the left (a strip in some themes and on phones),
+   one reading column that swaps parts on the hash.
+   The four token types keep one colour each everywhere, the way a utility meter keeps one colour per tariff.
+   Five themes: data-style a..e on the root (a = Meter is the base). data-mode light|dark is resolved in script. */
+:root {
+  --bg: #f1f3f6; --surface: #ffffff; --sunk: #e8ebf0; --fg: #17202b; --muted: #566273; --line: #d3d9e2;
+  --accent: #a4460d; --accent-ink: #ffffff; --accent-soft: #fbeadf;
+  --t-in: #2a66b3; --t-out: #b8500f; --t-cw: #7446bd; --t-cr: #25784c;
+  --good: #25784c; --good-soft: #e0f1e7; --bad: #a8372f; --bad-soft: #f8e3e1; --home: #7446bd; --home-soft: #efe8fa;
+  --font-display: "Archivo", "Segoe UI Semibold", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, "SF Mono", monospace;
+  --top-h: 46px;
+}
+:root[data-mode="dark"] {
+  --bg: #11151b; --surface: #19202a; --sunk: #0d1116; --fg: #e5e9ef; --muted: #98a4b3; --line: #2b3542;
+  --accent: #f09460; --accent-ink: #1d0f05; --accent-soft: #3a2415;
+  --t-in: #6ea9ee; --t-out: #f09460; --t-cw: #b396f0; --t-cr: #6cc795;
+  --good: #6cc795; --good-soft: #17301f; --bad: #e6837b; --bad-soft: #3a1f1d; --home: #b396f0; --home-soft: #261f38; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+script, pre.mermaid { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.6; margin: 0; }
+a { color: var(--accent); }
+h1, h2, h3, h4 { font-family: var(--font-display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(1.9rem, 4.6vw, 2.7rem); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.6rem; font-weight: 700; }
+h3 { font-size: 1.15rem; font-weight: 700; margin-top: 1.7em; }
+h4 { font-size: 1rem; font-weight: 700; margin-top: 1.2em; }
+p { margin: 0.7em 0; }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--sunk); padding: 0.08em 0.32em; border-radius: 4px; overflow-wrap: anywhere; }
+.codebox { margin: 0.7em 0; border: 1px solid var(--line); border-radius: 8px; background: var(--sunk); min-width: 0; }
+.codebox .cap { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--line); font: 600 0.72rem var(--font-mono); color: var(--muted); }
+.codebox pre { margin: 0; padding: 11px 13px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.5; }
+.codebox pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: normal; }
+.copy { font: 600 0.72rem var(--font-body); padding: 3px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
+.copy:hover { color: var(--fg); }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* top bar */
+.top { position: sticky; top: 0; z-index: 12; height: var(--top-h); display: flex; align-items: center; gap: 14px; background: var(--surface); border-bottom: 1px solid var(--line); padding: 0 max(14px, env(safe-area-inset-right, 0px)) 0 max(14px, env(safe-area-inset-left, 0px)); }
+.brand { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; text-decoration: none; color: var(--fg); white-space: nowrap; }
+.crumb { font-size: 0.86rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.themepick { margin-left: auto; display: flex; align-items: center; gap: 6px; font: 600 0.8rem var(--font-body); color: var(--muted); white-space: nowrap; }
+.themepick select { font: 600 0.8rem var(--font-body); padding: 4px 6px; }
+
+/* frame */
+.app { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: calc(100vh - var(--top-h)); }
+.app.solo { grid-template-columns: minmax(0, 1fr); }
+.side { position: sticky; top: var(--top-h); align-self: start; height: calc(100vh - var(--top-h)); overflow-y: auto; background: var(--surface); border-right: 1px solid var(--line); padding: 16px 12px 18px max(12px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 14px; }
+#nav { display: flex; flex-direction: column; gap: 2px; }
+.navlink { display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; align-items: center; text-decoration: none; color: var(--fg); font-size: 0.9rem; padding: 6px 8px; border-radius: 7px; line-height: 1.3; }
+.navlink:hover { background: var(--sunk); }
+.navlink.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.navlink .n { font: 600 0.74rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.navlink .p { font: 600 0.68rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.navlink .p.full { color: var(--good); }
+.side-foot { margin-top: auto; display: grid; gap: 6px; font-size: 0.85rem; padding: 0 8px; }
+.side-foot label { display: flex; gap: 8px; align-items: center; color: var(--muted); cursor: pointer; }
+main { min-width: 0; padding-block: 30px 72px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.view, section.module, .pager { max-width: 780px; margin: 0 auto; min-width: 0; }
+.view, section.module { display: grid; gap: 20px; }
+.view.wide { max-width: 1040px; }
+.view > *, section.module > * { min-width: 0; }
+@media (max-width: 860px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { z-index: 9; height: auto; flex-direction: row; align-items: center; gap: 10px; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px max(14px, env(safe-area-inset-right, 0px)) 6px max(14px, env(safe-area-inset-left, 0px)); overflow: visible; }
+  .side-foot { display: none; }
+  #nav { flex-direction: row; overflow-x: auto; scrollbar-width: none; min-width: 0; flex: 1; }
+  #nav::-webkit-scrollbar { display: none; }
+  .navlink { grid-template-columns: auto auto; flex: 0 0 auto; white-space: nowrap; padding: 5px 9px; }
+  .navlink .p { display: none; }
+  main { padding-block: 22px 56px; }
+  .crumb { display: none; }
+}
+
+/* shared pieces */
+.kicker { font: 600 0.72rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); }
+.muted { color: var(--muted); }
+.lede { font-size: 1.08rem; color: var(--muted); max-width: 66ch; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; min-width: 0; }
+.panel > h3:first-child { margin-top: 0; }
+.btn { font: 600 0.9rem var(--font-body); padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; text-decoration: none; display: inline-block; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+input[type="text"], input[type="number"], textarea, select { font: inherit; font-size: 0.92rem; color: var(--fg); background: var(--sunk); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; min-width: 0; }
+textarea { width: 100%; min-height: 96px; resize: vertical; font-family: var(--font-mono); font-size: 0.8rem; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 0.74rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 0.84rem; }
+.tok { font: 600 0.78rem var(--font-mono); white-space: nowrap; }
+.tok::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; background: currentColor; }
+.tok.in { color: var(--t-in); } .tok.out { color: var(--t-out); } .tok.cw { color: var(--t-cw); } .tok.cr { color: var(--t-cr); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.chip { font: 600 0.7rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; text-decoration: none; }
+a.chip:hover { border-color: var(--accent); color: var(--accent); }
+.chip.lv-foundation { color: var(--t-cr); border-color: var(--t-cr); }
+.chip.lv-practitioner { color: var(--t-in); border-color: var(--t-in); }
+.chip.lv-advanced { color: var(--t-cw); border-color: var(--t-cw); }
+
+/* catalogue */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+.mcard { display: grid; gap: 6px; align-content: start; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; text-decoration: none; color: inherit; }
+a.mcard:hover { border-color: var(--accent); }
+.mcard .n { font: 600 0.72rem var(--font-mono); color: var(--accent); }
+.mcard .t { font-family: var(--font-display); font-weight: 700; font-size: 1.08rem; }
+.mcard .s { font-size: 0.86rem; color: var(--muted); }
+.mcard .pre { font-size: 0.8rem; color: var(--muted); }
+.meter { height: 6px; background: var(--sunk); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.meter span { display: block; height: 100%; width: 0; background: var(--good); }
+.howto { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 18px; }
+.howto b { display: block; font-family: var(--font-display); font-size: 1rem; }
+.howto div { font-size: 0.92rem; color: var(--muted); }
+.paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.paths .panel { padding: 14px 16px; }
+.paths b { font-family: var(--font-display); }
+.paths ol { margin: 6px 0 0; padding-left: 1.3em; font-size: 0.9rem; }
+
+/* module */
+.mhead { display: grid; gap: 8px; }
+.mhead .meta { color: var(--muted); font-size: 0.92rem; }
+.partlist { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; }
+.partlist a { display: grid; grid-template-columns: 34px 1fr auto; gap: 8px; padding: 7px 8px; border-radius: 7px; text-decoration: none; color: var(--fg); }
+.partlist a:hover { background: var(--sunk); }
+.partlist .n { font: 600 0.74rem var(--font-mono); color: var(--accent); padding-top: 3px; }
+.partlist .m { font: 600 0.72rem var(--font-mono); color: var(--muted); padding-top: 3px; }
+.overview p, .overview li, .lesson p, .lesson li, .lab p, .lab li, .reference p, .reference li { max-width: 70ch; }
+.overview ul, .lesson ul, .lesson ol, .lab ul, .reference ul { padding-left: 1.2em; }
+.overview li, .lesson li, .lab li { margin: 0.3em 0; }
+.overview > h3:first-of-type { margin-top: 0.6em; }
+.recap { background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 14px 18px; margin-top: 1.2em; }
+.recap h3 { margin-top: 0; font-size: 1rem; }
+.sources { font-size: 0.88rem; color: var(--muted); }
+.sources h3 { color: var(--fg); }
+.sources li { margin: 0.25em 0; overflow-wrap: anywhere; }
+aside.rule { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; margin: 1.1em 0; max-width: 70ch; font-weight: 600; }
+aside.trap { background: var(--bad-soft); border-radius: 8px; padding: 10px 14px; margin: 1em 0; max-width: 70ch; font-size: 0.94rem; }
+aside.trap::before { content: "Trap"; display: block; font: 600 0.68rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--bad); }
+aside.home { background: var(--home-soft); border-radius: 8px; padding: 10px 14px; margin: 1em 0; max-width: 70ch; font-size: 0.94rem; }
+aside.home::before { content: "At home"; display: block; font: 600 0.68rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--home); }
+body.hide-home aside.home { display: none; }
+.labs { display: grid; gap: 18px; }
+.lab { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; min-width: 0; }
+.lab.done { border-color: var(--good); }
+.labhead { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.labhead h3 { margin: 0; }
+.labhead .meta { font: 600 0.72rem var(--font-mono); color: var(--muted); }
+.goal { color: var(--muted); }
+ol.steps { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 14px; counter-reset: step; }
+ol.steps > li { counter-increment: step; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 0 10px; margin: 0; max-width: none; }
+ol.steps > li > .tick { grid-row: 1 / span 30; }
+ol.steps > li > :not(.tick) { grid-column: 2; margin-top: 0; margin-bottom: 8px; min-width: 0; }
+ol.steps > li > :last-child { margin-bottom: 0; }
+.tick { appearance: none; -webkit-appearance: none; width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--sunk); cursor: pointer; display: grid; place-items: center; margin: 0; }
+.tick::before { content: counter(step); font: 600 0.78rem var(--font-mono); color: var(--muted); }
+.tick:checked { background: var(--good); border-color: var(--good); }
+.tick:checked::before { content: "\2713"; color: var(--surface); }
+p.expect { font-size: 0.92rem; border-left: 3px solid var(--t-cr); padding-left: 12px; color: var(--muted); }
+p.expect b { color: var(--fg); }
+details.check { border: 1px dashed var(--line); border-radius: 8px; padding: 10px 14px; margin-top: 12px; }
+details.check summary { cursor: pointer; font-weight: 600; }
+details.check[open] summary { margin-bottom: 6px; }
+.labfoot { display: flex; justify-content: flex-end; margin-top: 14px; }
+.lab.done .labfoot .btn { background: var(--good-soft); color: var(--good); border-color: var(--good); }
+.pager { display: flex; justify-content: space-between; gap: 10px; margin-top: 28px; }
+.pager .btn { max-width: 48%; }
+.pager .next { margin-left: auto; }
+
+/* calls */
+.drill { display: grid; gap: 14px; }
+.q { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 10px; }
+.q .qt { font-weight: 600; max-width: 70ch; }
+.opts { display: grid; gap: 7px; }
+.opt { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: transparent; color: var(--fg); font: inherit; font-size: 0.94rem; text-align: left; line-height: 1.45; }
+.opt:hover { border-color: var(--accent); }
+.opt .k { flex: 0 0 22px; font: 600 0.76rem var(--font-mono); color: var(--muted); padding-top: 2px; }
+.opt.right { border-color: var(--good); background: var(--good-soft); }
+.opt.wrong { border-color: var(--bad); background: var(--bad-soft); }
+.why { font-size: 0.92rem; color: var(--muted); border-left: 3px solid var(--line); padding-left: 12px; max-width: 70ch; }
+
+/* instruments */
+.tool { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin: 1em 0; display: grid; gap: 12px; min-width: 0; }
+.tool h4 { margin: 0; }
+.tool .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.tool label { display: grid; gap: 3px; font-size: 0.78rem; color: var(--muted); font-weight: 600; }
+.tool label input, .tool label select { width: 100%; }
+.bar { display: flex; height: 22px; border-radius: 5px; overflow: hidden; background: var(--sunk); }
+.bar span { display: block; height: 100%; min-width: 0; }
+.bar .in { background: var(--t-in); } .bar .out { background: var(--t-out); } .bar .cw { background: var(--t-cw); } .bar .cr { background: var(--t-cr); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; }
+.big { font: 700 1.5rem var(--font-display); font-variant-numeric: tabular-nums; }
+.verdict { font-weight: 600; }
+.note { font-size: 0.82rem; color: var(--muted); }
+
+/* diagrams: inline SVG drawn in the boxes-and-arrows style; every colour comes from the theme */
+figure.diagram { margin: 1.2em 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 10px; overflow-x: auto; }
+figure.diagram svg { display: block; width: 100%; height: auto; min-width: 520px; max-width: 760px; margin: 0 auto; font-family: var(--font-body); }
+figure.diagram figcaption { font-size: 0.84rem; color: var(--muted); margin-top: 8px; text-align: center; }
+.dg-box { fill: var(--sunk); stroke: var(--muted); stroke-width: 1.5; }
+.dg-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.dg-good { fill: var(--good-soft); stroke: var(--good); stroke-width: 1.5; }
+.dg-bad { fill: var(--bad-soft); stroke: var(--bad); stroke-width: 1.5; }
+.dg-ghost { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 6 4; }
+.dg-in { fill: var(--t-in); } .dg-out { fill: var(--t-out); } .dg-cw { fill: var(--t-cw); } .dg-cr { fill: var(--t-cr); }
+.dg-line { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.dg-line.dash { stroke-dasharray: 5 4; }
+.dg-line.hot { stroke: var(--accent); }
+.dg-head { fill: var(--muted); stroke: none; }
+.dg-head.hot { fill: var(--accent); }
+.dg-text { fill: var(--fg); font-size: 13px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+.dg-sub { fill: var(--muted); font-size: 11px; text-anchor: middle; dominant-baseline: middle; }
+.dg-label { fill: var(--muted); font-size: 11px; font-family: var(--font-mono); text-anchor: middle; dominant-baseline: middle; }
+.dg-on { fill: var(--surface); font-size: 12px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+.dg-left { text-anchor: start; } .dg-right { text-anchor: end; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+
+/* ---------- themes b to e: token overrides and a few shapes ---------- */
+/* a strip under the top bar instead of the left rail (b, d, e) */
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .app { grid-template-columns: minmax(0, 1fr); }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .side { z-index: 9; height: auto; flex-direction: row; align-items: center; gap: 12px; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px max(14px, env(safe-area-inset-right, 0px)) 6px max(14px, env(safe-area-inset-left, 0px)); overflow: visible; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) :is(.side-foot, .navlink .p) { display: none; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) #nav { flex-direction: row; overflow-x: auto; min-width: 0; flex: 1; scrollbar-width: none; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .navlink { grid-template-columns: auto auto; flex: 0 0 auto; white-space: nowrap; }
+:root:is([data-style="b"], [data-style="c"], [data-style="e"]) :is(.panel, .lab, .q, .tool, .codebox, .mcard, .btn, .opt, .copy, .bar, .navlink, input, textarea, select, details.check, aside.trap, aside.home, code, .recap, figure.diagram, .chip, .partlist a) { border-radius: var(--r, 2px); }
+
+/* b: Workbench. Editor greys, one cobalt accent, 2px corners, dense system type. */
+:root[data-style="b"] { --r: 2px; --bg: #f4f4f5; --surface: #ffffff; --sunk: #ececee; --fg: #1e1e1e; --muted: #5a5f66; --line: #d0d0d4; --accent: #2f6fe0; --accent-ink: #ffffff; --accent-soft: rgba(47, 111, 224, 0.1);
+  --t-in: #2f6fe0; --t-out: #a5641f; --t-cw: #8a4a81; --t-cr: #2f7a55; --good: #2f7a55; --good-soft: #e3f1ea; --bad: #b8404c; --bad-soft: #f8e4e6;
+  --font-display: "Segoe UI", system-ui, -apple-system, sans-serif; --font-body: "Segoe UI", system-ui, -apple-system, sans-serif; --font-mono: "Cascadia Code", Consolas, "Courier New", monospace; }
+:root[data-style="b"][data-mode="dark"] { --bg: #1e1e1e; --surface: #252526; --sunk: #181818; --fg: #d4d4d4; --muted: #a8adb4; --line: #3c3c3c; --accent: #4c8dff; --accent-ink: #ffffff; --accent-soft: rgba(76, 141, 255, 0.14);
+  --t-in: #4c8dff; --t-out: #c0813f; --t-cw: #a8689f; --t-cr: #6fae8c; --good: #6fae8c; --good-soft: rgba(111, 174, 140, 0.12); --bad: #e0707c; --bad-soft: rgba(224, 112, 124, 0.1); }
+:root[data-style="b"] body { font-size: 14px; line-height: 1.5; }
+:root[data-style="b"] .side { background: var(--sunk); padding-block: 4px; }
+:root[data-style="b"] .navlink.active { background: transparent; box-shadow: inset 0 -2px 0 var(--accent); border-radius: 0; }
+:root[data-style="b"] :is(h1, h2, h3, h4) { font-weight: 600; letter-spacing: 0; }
+:root[data-style="b"] h2 { font-size: 1.35rem; } :root[data-style="b"] h3 { font-size: 1.05rem; }
+:root[data-style="b"] .lab { border-left: 3px solid var(--accent); }
+:root[data-style="b"] .lab.done { border-left-color: var(--good); }
+:root[data-style="b"] .tick { border-radius: 2px; width: 24px; height: 24px; }
+:root[data-style="b"] .bar { height: 14px; }
+
+/* c: Blueprint. Drafting-sheet blues on a faint grid, mono headings, dashed frames, square corners. */
+:root[data-style="c"] { --r: 0px; --bg: #eaf1f8; --surface: #f7fafd; --sunk: #dbe6f2; --fg: #0f2a47; --muted: #476483; --line: #b3c7dc; --accent: #0b5cad; --accent-ink: #ffffff; --accent-soft: #d5e5f6;
+  --t-in: #0b5cad; --t-out: #b0560c; --t-cw: #6b3fb0; --t-cr: #1d7a55; --good: #1d7a55; --good-soft: #d9efe4; --bad: #a8372f; --bad-soft: #f6dedb;
+  --font-display: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; }
+:root[data-style="c"][data-mode="dark"] { --bg: #0f2540; --surface: #143052; --sunk: #0b1c31; --fg: #e8f1fb; --muted: #9db8d6; --line: #2d5484; --accent: #7fd4ff; --accent-ink: #06213a; --accent-soft: #1b426e;
+  --t-in: #7fd4ff; --t-out: #ffb86b; --t-cw: #d7a6ff; --t-cr: #8fe3b0; --good: #8fe3b0; --good-soft: #17463f; --bad: #ff9d94; --bad-soft: #4a2a3a; }
+:root[data-style="c"] body { background-image: linear-gradient(color-mix(in srgb, var(--line) 30%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--line) 30%, transparent) 1px, transparent 1px); background-size: 28px 28px; }
+:root[data-style="c"] :is(h1, h2, h3, h4) { text-transform: uppercase; letter-spacing: 0.03em; font-weight: 600; }
+:root[data-style="c"] h1 { font-size: clamp(1.5rem, 3.6vw, 2.1rem); }
+:root[data-style="c"] h2 { font-size: 1.35rem; } :root[data-style="c"] h3 { font-size: 0.98rem; }
+:root[data-style="c"] :is(.lab, .tool, .panel, .q, .mcard, figure.diagram) { border-style: dashed; border-color: var(--accent); }
+:root[data-style="c"] .side { background: var(--bg); border-right-style: dashed; }
+:root[data-style="c"] .tick { border-radius: 0; transform: rotate(45deg) scale(0.8); } :root[data-style="c"] .tick::before { transform: rotate(-45deg); }
+
+/* d: Classroom. Big friendly type, a coloured module banner, soft round cards, raspberry accent. */
+:root[data-style="d"] { --bg: #ffffff; --surface: #f5f6fa; --sunk: #e9ecf4; --fg: #151a2d; --muted: #565d78; --line: #dfe3ee; --accent: #c2255c; --accent-ink: #ffffff; --accent-soft: #fde8f0;
+  --t-in: #2a66b3; --t-out: #c2255c; --t-cw: #7446bd; --t-cr: #25784c;
+  --font-display: "Nunito", "Segoe UI", system-ui, sans-serif; }
+:root[data-style="d"][data-mode="dark"] { --bg: #16141c; --surface: #201d29; --sunk: #110f16; --fg: #f1eef7; --muted: #a8a2b8; --line: #342f42; --accent: #ff7aa8; --accent-ink: #2a0a17; --accent-soft: #3d1c2b;
+  --t-in: #6ea9ee; --t-out: #ff7aa8; --t-cw: #b396f0; --t-cr: #6cc795; }
+:root[data-style="d"] body { font-size: 17px; }
+:root[data-style="d"] :is(h1, h2, h3, h4) { font-weight: 800; }
+:root[data-style="d"] h2 { font-size: 2rem; }
+:root[data-style="d"] .mhead { background: var(--accent); color: var(--accent-ink); padding: 26px 28px; border-radius: 20px; }
+:root[data-style="d"] .mhead :is(.kicker, .meta) { color: inherit; opacity: 0.9; }
+:root[data-style="d"] .mhead .chip { color: inherit; border-color: currentColor; }
+:root[data-style="d"] :is(.lab, .tool, .panel, .q, .mcard, figure.diagram, .recap) { border: 0; border-radius: 20px; padding: 22px 24px; }
+:root[data-style="d"] .navlink { border-radius: 999px; padding: 6px 12px; }
+:root[data-style="d"] .tick { width: 36px; height: 36px; } :root[data-style="d"] ol.steps > li { grid-template-columns: 40px minmax(0, 1fr); }
+:root[data-style="d"] .bar { height: 30px; border-radius: 999px; }
+:root[data-style="d"] .btn { border-radius: 999px; }
+
+/* e: Console. Everything monospaced, hard rules, amber accent, no rounding, headings marked like Markdown. */
+:root[data-style="e"] { --r: 0px; --bg: #f5f5f2; --surface: #f5f5f2; --sunk: #e9e9e4; --fg: #141414; --muted: #5c5c55; --line: #2a2a28; --accent: #8a5a00; --accent-ink: #ffffff; --accent-soft: #f1e6c8;
+  --t-in: #1f5fa8; --t-out: #b34700; --t-cw: #7a3fb5; --t-cr: #1f7a4a; --good: #1f7a4a; --good-soft: #dcefe2; --bad: #a8372f; --bad-soft: #f6dedb;
+  --font-display: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; --font-body: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; }
+:root[data-style="e"][data-mode="dark"] { --bg: #141210; --surface: #141210; --sunk: #1e1b17; --fg: #f2e9d8; --muted: #a89c86; --line: #5a5246; --accent: #ffb000; --accent-ink: #141210; --accent-soft: #3a2c0a;
+  --t-in: #7ab8ff; --t-out: #ff8f4d; --t-cw: #c79bff; --t-cr: #7ee0a0; --good: #7ee0a0; --good-soft: #1b3324; --bad: #ff9d94; --bad-soft: #3d201d; }
+:root[data-style="e"] body { font-size: 14px; }
+:root[data-style="e"] :is(h1, h2, h3, h4) { font-weight: 600; letter-spacing: 0; }
+:root[data-style="e"] h1 { font-size: clamp(1.4rem, 3.4vw, 1.9rem); }
+:root[data-style="e"] h2 { font-size: 1.3rem; } :root[data-style="e"] h3 { font-size: 1rem; }
+:root[data-style="e"] .mhead h2::before, :root[data-style="e"] .mhead h1::before { content: "# "; color: var(--accent); }
+:root[data-style="e"] :is(.lesson, .overview, .reference) h3::before { content: "## "; color: var(--accent); }
+:root[data-style="e"] .tick { border-radius: 0; border-width: 1px; border-color: var(--line); }
+:root[data-style="e"] .bar { height: 18px; border: 1px solid var(--line); }
+:root[data-style="e"] .navlink.active { background: var(--fg); color: var(--bg); } :root[data-style="e"] .navlink.active .n { color: inherit; }
+
+/* ---------- Mermaid diagrams, pre-rendered to SVG at build time. Layout is Mermaid's; every colour is the theme's. ---------- */
+figure.diagram svg.mm { font-family: "Segoe UI", system-ui, Arial, sans-serif; min-width: 0; max-height: 620px; }
+figure.diagram.map svg.mm { max-width: 1000px; max-height: 1150px; }
+svg.mm text, svg.mm tspan { fill: var(--fg) !important; stroke: none !important; }
+svg.mm .node > :is(rect, circle, ellipse, polygon, path), svg.mm .label-container, svg.mm :is(rect.actor, .actor-box, .labelBox, .activation0, .activation1, .activation2), svg.mm .statediagram-state :is(rect, path).basic, svg.mm .classGroup rect, svg.mm .er.entityBox { fill: var(--sunk) !important; stroke: var(--muted) !important; }
+svg.mm .node .label rect, svg.mm .cluster-label rect { fill: none !important; stroke: none !important; }
+svg.mm :is(.edgeLabel rect, rect.background, .labelBkg, .edgeLabel .label rect) { fill: var(--surface) !important; stroke: none !important; opacity: 1 !important; }
+svg.mm :is(.flowchart-link, .transition, .relation, .messageLine0, .messageLine1, .edgePath path, .actor-line, .loopLine, line.divider, .edge-thickness-normal) { stroke: var(--muted) !important; }
+svg.mm :is(.flowchart-link, .transition, .relation, .edgePath path) { fill: none !important; }
+svg.mm marker :is(path, circle, polygon), svg.mm :is(.arrowMarkerPath, .arrowheadPath) { fill: var(--muted) !important; stroke: var(--muted) !important; }
+svg.mm .cluster > :is(rect, polygon, path), svg.mm .statediagram-cluster rect, svg.mm rect.rect { fill: color-mix(in srgb, var(--surface) 55%, transparent) !important; stroke: var(--line) !important; }
+svg.mm :is(.note, .state-note) :is(rect, path), svg.mm rect.note, svg.mm g.note > rect { fill: var(--accent-soft) !important; stroke: var(--accent) !important; }
+svg.mm :is(.state-start, .start-state, circle.state-start) { fill: var(--fg) !important; stroke: var(--fg) !important; }
+svg.mm :is(.end-state-outer, .state-end) { fill: var(--surface) !important; stroke: var(--fg) !important; }
+svg.mm .end-state-inner { fill: var(--fg) !important; stroke: var(--fg) !important; }
+svg.mm .node:is(.hot) > :is(rect, circle, ellipse, polygon, path) { fill: var(--accent-soft) !important; stroke: var(--accent) !important; }
+svg.mm .node:is(.good, .found) > :is(rect, circle, ellipse, polygon, path) { fill: var(--good-soft) !important; stroke: var(--good) !important; }
+svg.mm .node.bad > :is(rect, circle, ellipse, polygon, path) { fill: var(--bad-soft) !important; stroke: var(--bad) !important; }
+svg.mm .node:is(.info, .prac) > :is(rect, circle, ellipse, polygon, path) { fill: color-mix(in srgb, var(--t-in) 14%, var(--surface)) !important; stroke: var(--t-in) !important; }
+svg.mm .node:is(.alt, .adv) > :is(rect, circle, ellipse, polygon, path) { fill: color-mix(in srgb, var(--t-cw) 14%, var(--surface)) !important; stroke: var(--t-cw) !important; }
+svg.mm .node.ghost > :is(rect, circle, ellipse, polygon, path) { fill: none !important; stroke: var(--line) !important; stroke-dasharray: 6 4; }
+
+</style>
+</head>
+<body>
+<div class="top">
+  <a class="brand" href="index.html">AI/LLM Bootcamp</a>
+  <span class="crumb" id="crumb"></span>
+  <label class="themepick">Theme: <select id="theme" aria-label="Theme"></select></label>
+</div>
+<div class="app">
+  <aside class="side">
+    <nav id="nav" aria-label="Parts of this module"></nav>
+    <div class="side-foot">
+      
+      <a href="index.html">All modules</a>
+    </div>
+  </aside>
+  <main>
+<section class="module" id="m21" data-title="Where Claude Code runs" data-sub="Terminal, VS Code, JetBrains, desktop and web compared" data-level="foundation" data-prereq="" data-minutes="0"><div class="overview"><p class="lede">This module is being written. Check back shortly.</p></div><div class="labs"></div><script type="application/json" class="drill">[]</script></section>
+    <section class="view" id="view-share" hidden>
+      <div>
+        <div class="kicker">Export and share</div>
+        <h2>Hand this module on</h2>
+        <p class="lede">This module is a complete page on its own: briefing, labs, judgment calls and cheat sheet. It names no organization, host, account or internal tool, and every lab runs on plain Claude Code in a scratch folder.</p>
+      </div>
+      <div class="panel">
+        <h3>1. The link</h3>
+        <p>When you are reading this on claude.ai, use Share on this page. A viewer needs only the link. Each module has its own link, so you can send one module to one person. Their progress stays in their own browser and is never visible to you.</p>
+        <h3>2. One HTML file</h3>
+        <p>This module is also the single self-contained file <code>m21-surfaces.html</code>. It needs no server and no network: mail it, put it on a file share, or open it from a USB stick. Offline it falls back to system fonts; everything else is identical, diagrams and instruments included.</p>
+        <div class="row"><button class="btn" type="button" data-save="m21-surfaces.html">Save this module as a file</button><span class="note"></span></div>
+        <h3>3. The whole set</h3>
+        <p>All modules plus the catalogue page (<code>index.html</code>) form one folder of files that link to each other. Keep them together and the links between modules work offline. The same folder works behind any static web server with nothing to configure.</p>
+        <h3>Moving progress between copies</h3>
+        <p>The link, the file and a hosted copy each keep their own progress. Use the progress code on this module's overview to carry it across.</p>
+        
+      </div>
+    </section>
+    <div class="pager" id="pager"></div>
+  </main>
+</div>
+
+<script type="application/json" id="manifest">{"edition":"portable","kind":"file","self":"m21","catalogue":"index.html","modules":[{"id":"m1","title":"Context","sub":"What the model sees, and what it costs to show it","level":"foundation","prereq":[],"minutes":240,"lessons":6,"labs":5,"calls":5,"href":"m01-context.html"},{"id":"m2","title":"Tokens and their price","sub":"Input, output, cache write, cache read","level":"foundation","prereq":[],"minutes":220,"lessons":6,"labs":5,"calls":5,"href":"m02-tokens.html"},{"id":"m3","title":"Skills","sub":"Instructions that load only when needed","level":"practitioner","prereq":["m1"],"minutes":230,"lessons":6,"labs":5,"calls":5,"href":"m03-skills.html"},{"id":"m4","title":"Commands","sub":"Built-in and your own","level":"practitioner","prereq":["m1"],"minutes":245,"lessons":6,"labs":5,"calls":5,"href":"m04-commands.html"},{"id":"m5","title":"Hooks","sub":"Rules the model cannot talk its way past","level":"practitioner","prereq":[],"minutes":200,"lessons":6,"labs":5,"calls":5,"href":"m05-hooks.html"},{"id":"m6","title":"Plugins and marketplaces","sub":"Package it, publish it, control it","level":"advanced","prereq":["m3","m5"],"minutes":255,"lessons":5,"labs":5,"calls":5,"href":"m06-marketplaces.html"},{"id":"m7","title":"Headless runs and subagents","sub":"Claude Code as a program, and as a team","level":"practitioner","prereq":["m1","m2"],"minutes":220,"lessons":6,"labs":5,"calls":5,"href":"m07-agents.html"},{"id":"m8","title":"Orchestration","sub":"Briefs, handoffs, queues and the ways they fail","level":"advanced","prereq":["m7"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m08-orchestration.html"},{"id":"m9","title":"Telemetry","sub":"See tokens, cache and cost as they happen","level":"practitioner","prereq":["m2"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m09-telemetry.html"},{"id":"m10","title":"Cutting cost","sub":"The levers, and proof that each one worked","level":"advanced","prereq":["m2","m9"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m10-cost.html"},{"id":"m11","title":"Evals and A/B testing","sub":"Compare prompts, models and setups without fooling yourself","level":"advanced","prereq":["m2","m7"],"minutes":250,"lessons":6,"labs":5,"calls":5,"href":"m11-ab-testing.html"},{"id":"m12","title":"Session transcripts","sub":"The anatomy of the JSONL behind every session","level":"practitioner","prereq":["m1","m2"],"minutes":215,"lessons":6,"labs":5,"calls":5,"href":"m12-transcripts.html"},{"id":"m13","title":"Models and ways to teach them","sub":"Model tiers, retrieval, ingestion, fine-tuning and what you will actually use","level":"foundation","prereq":[],"minutes":230,"lessons":6,"labs":5,"calls":5,"href":"m13-models.html"},{"id":"m14","title":"Agent SDK and agent teams","sub":"Your own agent loop, and sessions that message each other","level":"advanced","prereq":["m7"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m14-agent-sdk.html"},{"id":"m15","title":"The wider ecosystem","sub":"Multiplexers, community skills and how to vet them","level":"practitioner","prereq":["m3"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m15-ecosystem.html"},{"id":"m16","title":"Security","sub":"Permissions, sandboxing, prompt injection and what you install","level":"practitioner","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m16-security.html"},{"id":"m17","title":"Daily workflow","sub":"Plan mode, rewind, worktrees, effort and git habits","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m17-workflow.html"},{"id":"m18","title":"Unattended and CI","sub":"GitHub Actions, review in the pipeline, scheduled runs","level":"advanced","prereq":["m7","m16"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m18-ci.html"},{"id":"m19","title":"Claude API building blocks","sub":"Tool use, structured outputs, vision, citations, batch, computer use","level":"practitioner","prereq":["m2"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m19-api.html"},{"id":"m20","title":"Writing for agents","sub":"Briefs, specs, handoffs and CLAUDE.md design","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m20-writing.html"},{"id":"m21","title":"Where Claude Code runs","sub":"Terminal, VS Code, JetBrains, desktop and web compared","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m21-surfaces.html"},{"id":"m22","title":"Sensitive data","sub":"PHI, PII and secrets: what leaves the machine and how to stop it","level":"practitioner","prereq":["m5","m16"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m22-sensitive-data.html"},{"id":"m23","title":"MCP: anatomy of the protocol","sub":"JSON-RPC, capabilities, transports, auth, and a server you build","level":"practitioner","prereq":["m1"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m23-mcp.html"},{"id":"m24","title":"MCP server or CLI tool","sub":"The same job both ways, measured in tokens and turns","level":"advanced","prereq":["m2","m23"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m24-mcp-or-cli.html"}]}</script>
+<script>
+/* AI/LLM Bootcamp page script. One file for the catalogue page and every module page.
+   Reads the manifest (module list, links, edition) that the build embeds, then:
+   - theme: a "Theme:" dropdown at the top right, remembered per viewer; light or dark follows the host page or the system
+   - module page: part navigation on the hash (#overview, #l1.., #labs, #calls, #ref, #share), lab step ticks, lab done,
+     drill answers, progress code. State is kept per module in localStorage, so each module page stands alone.
+   - catalogue page: module cards with level, time and prerequisites, a level filter, and progress where it can be read. */
+(function () {
+  'use strict';
+  var PRISTINE = ''; try { PRISTINE = '<!doctype html>\n' + document.documentElement.outerHTML; } catch (e) {}
+  var root = document.documentElement;
+  var MAN = { modules: [] }; try { MAN = JSON.parse(document.getElementById('manifest').textContent); } catch (e) {}
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function put(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function modById(id) { return MAN.modules.filter(function (x) { return x.id === id; })[0]; }
+  function num(id) { return +id.slice(1); }
+  function mins(n) { n = +n || 0; return n >= 60 ? (Math.round(n / 6) / 10) + ' h' : n + ' min'; }
+  function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+  function link(a, href) { if (href) a.href = href; return a; }
+
+  /* ---- theme ---- */
+  var THEMES = [['a', 'Meter'], ['b', 'Workbench'], ['c', 'Blueprint'], ['d', 'Classroom'], ['e', 'Console']];
+  var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null, forced = null;
+  function mode() { var t = forced || root.getAttribute('data-theme'); root.setAttribute('data-mode', t === 'dark' || (t !== 'light' && mq && mq.matches) ? 'dark' : 'light'); }
+  var sel = document.getElementById('theme');
+  function pick(s, keep) { if (!/^[a-e]$/.test(s)) s = 'a'; root.setAttribute('data-style', s); if (sel) sel.value = s; if (keep) put('ai-bootcamp-theme', s); }
+  if (sel) {
+    THEMES.forEach(function (t) { var o = el('option', '', t[1]); o.value = t[0]; sel.appendChild(o); });
+    sel.addEventListener('change', function () { pick(sel.value, true); });
+  }
+  var qs = /[?&]style=([1-5a-e])/.exec(location.search), qm = /[?&]mode=(light|dark)/.exec(location.search);
+  if (qm) forced = qm[1];
+  pick(qs ? (/\d/.test(qs[1]) ? 'abcde'.charAt(+qs[1] - 1) : qs[1]) : (get('ai-bootcamp-theme') || 'a'), false);
+  mode();
+  if (mq && mq.addEventListener) mq.addEventListener('change', mode);
+  try { new MutationObserver(mode).observe(root, { attributes: true, attributeFilter: ['data-theme'] }); } catch (e) {}
+
+  /* ---- code blocks: caption with a file name or "shell", plus a copy button ---- */
+  [].forEach.call(document.querySelectorAll('pre'), function (pre) {
+    var box = el('div', 'codebox'), c = el('div', 'cap');
+    c.appendChild(el('span', '', pre.getAttribute('data-file') ? 'file  ' + pre.getAttribute('data-file') : (pre.getAttribute('data-cap') || 'shell')));
+    var b = el('button', 'copy', 'Copy'); b.type = 'button';
+    b.addEventListener('click', function () {
+      var t = pre.textContent;
+      function pickText() { try { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = 'Selected'; } catch (e) {} }
+      try { navigator.clipboard.writeText(t).then(function () { b.textContent = 'Copied'; }, pickText); } catch (e) { pickText(); }
+      setTimeout(function () { b.textContent = 'Copy'; }, 1600);
+    });
+    c.appendChild(b); pre.parentNode.insertBefore(box, pre); box.appendChild(c); box.appendChild(pre);
+  });
+
+  function levelChip(lv) { return el('span', 'chip lv-' + lv, lv); }
+  function readState(id) { var S = { labs: {}, steps: {}, drill: [], seen: {} }; try { var r = JSON.parse(get('ai-bootcamp-v2-' + id) || 'null'); if (r && typeof r === 'object') { ['labs', 'steps', 'seen'].forEach(function (k) { if (r[k] && typeof r[k] === 'object') S[k] = r[k]; }); if (r.drill && r.drill.length != null) S.drill = r.drill; } } catch (e) {} return S; }
+  function doneCount(S) { var n = 0, k; for (k in S.labs) if (S.labs[k]) n++; (S.drill || []).forEach(function (x) { if (x != null) n++; }); return n; }
+
+  var hn = document.getElementById('home-notes');
+  function homeNotes() { var off = get('ai-bootcamp-home') === '0'; if (hn) hn.checked = !off; document.body.classList.toggle('hide-home', off); }
+  if (hn) hn.addEventListener('change', function () { put('ai-bootcamp-home', hn.checked ? '1' : '0'); homeNotes(); });
+  homeNotes();
+
+  /* ---- save a copy of this page as one file ---- */
+  /* Inside a hosted viewer the page may be given a save function; it is asked for once, at load. Everywhere else
+     (a file on disk, a plain web server) it stays null and the button uses an ordinary download link. */
+  var DL = null;
+  try {
+    if (window.claude && typeof window.claude.use === 'function') {
+      Promise.resolve(window.claude.use('downloads')).then(function (d) { DL = d || null; }, function () { DL = null; });
+    }
+  } catch (e) { DL = null; }
+  [].forEach.call(document.querySelectorAll('[data-save]'), function (b) {
+    b.addEventListener('click', function () {
+      var msg = b.parentNode.querySelector('.note') || b;
+      var name = b.getAttribute('data-save');
+      function say(t) { if (msg !== b) msg.textContent = t; }
+      function viaLink() {
+        try {
+          var a = el('a'); a.href = URL.createObjectURL(new Blob([PRISTINE], { type: 'text/html' })); a.download = name;
+          document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+          say('Saved as ' + name + ' if your browser allows downloads from this page. If nothing happened, use the file from the export set instead.');
+        } catch (e) { say('This page cannot start a download here. Use the file from the export set instead.'); }
+      }
+      if (DL && typeof DL.save === 'function') {
+        DL.save({ filename: name, data: PRISTINE }).then(function () { say('Saved as ' + name + '.'); }, function (err) {
+          var code = err && err.code;
+          if (code === 'declined') return;
+          if (code === 'rate_limited') { say('A save is already waiting for your answer. Wait a moment, then try again.'); return; }
+          viaLink();
+        });
+      } else { viaLink(); }
+    });
+  });
+
+  /* ================= catalogue page ================= */
+  var cards = document.getElementById('cards');
+  if (cards) {
+    var filter = get('ai-bootcamp-level') || 'all', fbar = document.getElementById('levels');
+    var draw = function () {
+      cards.textContent = '';
+      MAN.modules.forEach(function (m) {
+        if (filter !== 'all' && m.level !== filter) return;
+        var c = link(el(m.href ? 'a' : 'div', 'mcard'), m.href);
+        var top = el('div', 'chips'); top.appendChild(el('span', 'n', 'MODULE ' + num(m.id))); top.appendChild(levelChip(m.level)); top.appendChild(el('span', 'chip', mins(m.minutes))); c.appendChild(top);
+        c.appendChild(el('span', 't', m.title)); c.appendChild(el('span', 's', m.sub));
+        c.appendChild(el('span', 'pre', (m.lessons || 0) + ' lessons · ' + (m.labs || 0) + ' labs · ' + (m.prereq.length ? 'after ' + m.prereq.map(function (p) { var x = modById(p); return x ? num(p) + ' ' + x.title : p; }).join(', ') : 'no prerequisites')));
+        if (!m.href) c.appendChild(el('span', 'pre', 'Published as its own page; ask for the link or use the file set.'));
+        var S = readState(m.id), d = doneCount(S), total = (m.labs || 0) + (m.calls || 0);
+        if (d && total) { var mt = el('div', 'meter'), sp = el('span'); sp.style.width = Math.min(100, Math.round(100 * d / total)) + '%'; mt.appendChild(sp); c.appendChild(mt); }
+        cards.appendChild(c);
+      });
+      if (fbar) [].forEach.call(fbar.children, function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-level') === filter ? 'true' : 'false'); });
+    };
+    if (fbar) ['all', 'foundation', 'practitioner', 'advanced'].forEach(function (lv) {
+      var b = el('button', 'btn', lv === 'all' ? 'All levels' : cap(lv)); b.type = 'button'; b.setAttribute('data-level', lv);
+      b.addEventListener('click', function () { filter = lv; put('ai-bootcamp-level', lv); draw(); }); fbar.appendChild(b);
+    });
+    draw();
+    [].forEach.call(document.querySelectorAll('[data-mod]'), function (a) { var m = modById(a.getAttribute('data-mod')); if (m) { if (!a.textContent) a.textContent = num(m.id) + '. ' + m.title; link(a, m.href); } });
+    var tot = document.getElementById('totals');
+    if (tot) { var tl = 0, tm = 0; MAN.modules.forEach(function (m) { tl += m.labs || 0; tm += +m.minutes || 0; }); tot.textContent = MAN.modules.length + ' modules, ' + tl + ' labs, about ' + Math.round(tm / 60) + ' hours in all'; }
+    return;
+  }
+
+  /* ================= module page ================= */
+  var m = document.querySelector('section.module'); if (!m) return;
+  var id = m.id, me = modById(id) || { prereq: [], level: m.getAttribute('data-level') || '', minutes: m.getAttribute('data-minutes') }, KEY = 'ai-bootcamp-v2-' + id;
+  var S = readState(id);
+  function save() { put(KEY, JSON.stringify(S)); }
+  var nav = document.getElementById('nav'), pager = document.getElementById('pager'), crumb = document.getElementById('crumb'), share = document.getElementById('view-share');
+  var overview = m.querySelector('.overview'), labsEl = m.querySelector('.labs'), ref = m.querySelector('.reference');
+  var lessons = [].slice.call(m.querySelectorAll('.lesson')), labEls = [].slice.call(m.querySelectorAll('article.lab'));
+  var drill = el('div', 'drill'); m.appendChild(drill);
+  var qsn = []; try { qsn = JSON.parse(m.querySelector('script.drill').textContent); } catch (e) {}
+
+  var parts = [];
+  if (overview) parts.push({ key: 'overview', n: '', title: 'Overview', el: overview });
+  lessons.forEach(function (l, i) { parts.push({ key: 'l' + (i + 1), n: String(i + 1), title: l.getAttribute('data-title') || 'Lesson ' + (i + 1), el: l, kind: 'Lesson ' + (i + 1) + ' of ' + lessons.length, min: l.getAttribute('data-minutes') }); });
+  if (labsEl && labEls.length) parts.push({ key: 'labs', n: 'L', title: 'Labs', el: labsEl, kind: labEls.length + ' labs' });
+  if (qsn.length) parts.push({ key: 'calls', n: '?', title: 'Calls', el: drill, kind: qsn.length + ' judgment calls' });
+  if (ref && ref.children.length) parts.push({ key: 'ref', n: '#', title: 'Cheat sheet', el: ref, kind: 'Reference' });
+
+  /* header: full on the overview, slim on the other parts */
+  var head = el('div', 'mhead'), kick = el('div', 'kicker'), h = el('h1', '', m.getAttribute('data-title')), meta = el('div', 'meta'), chips = el('div', 'chips');
+  head.appendChild(kick); head.appendChild(h); head.appendChild(meta); head.appendChild(chips); m.insertBefore(head, m.firstChild);
+  chips.appendChild(levelChip(me.level || 'practitioner')); chips.appendChild(el('span', 'chip', mins(m.getAttribute('data-minutes'))));
+  chips.appendChild(el('span', 'chip', lessons.length + ' lessons')); chips.appendChild(el('span', 'chip', labEls.length + ' labs'));
+  (me.prereq || []).forEach(function (p) { var x = modById(p); if (x) chips.appendChild(link(el(x.href ? 'a' : 'span', 'chip'), x.href)).textContent = 'after ' + num(p) + ' ' + x.title; });
+  if (!(me.prereq || []).length) chips.appendChild(el('span', 'chip', 'no prerequisites'));
+
+  /* overview extras: the parts of this module, what to take next, the progress code */
+  if (overview) {
+    var pl = el('div', 'panel'); pl.appendChild(el('div', 'kicker', 'In this module')); var ul = el('ol', 'partlist');
+    parts.forEach(function (p) { if (p.key === 'overview') return; var li = el('li'), a = el('a'); a.href = '#' + p.key; a.appendChild(el('span', 'n', p.n)); a.appendChild(el('span', '', p.title)); a.appendChild(el('span', 'm', p.min ? p.min + ' min' : (p.kind || ''))); li.appendChild(a); ul.appendChild(li); });
+    pl.appendChild(ul); overview.appendChild(pl);
+    var nexts = MAN.modules.filter(function (x) { return x.prereq.indexOf(id) >= 0; });
+    if (nexts.length || MAN.catalogue) {
+      var nx = el('div', 'panel'); nx.appendChild(el('div', 'kicker', 'Where to go from here')); var row = el('div', 'chips'); row.style.marginTop = '8px';
+      nexts.forEach(function (x) { var a = link(el(x.href ? 'a' : 'span', 'chip'), x.href); a.textContent = num(x.id) + ' ' + x.title; row.appendChild(a); });
+      if (MAN.catalogue) { var ca = link(el('a', 'chip'), MAN.catalogue); ca.textContent = 'All modules'; row.appendChild(ca); }
+      nx.appendChild(row); overview.appendChild(nx);
+    }
+    var pp = el('div', 'panel'); pp.appendChild(el('div', 'kicker', 'Progress code'));
+    var pd = el('p', 'muted', 'Progress for this module lives in this browser only. To move it to another device or another copy of this page, copy the code here and load it there.'); pd.style.marginTop = '6px'; pp.appendChild(pd);
+    var pr = el('div', 'row'), pc = el('input'); pc.type = 'text'; pc.setAttribute('aria-label', 'Progress code'); pc.style.cssText = 'flex:1;min-width:200px;font-family:var(--font-mono);font-size:0.8rem';
+    var b1 = el('button', 'btn', 'Copy mine'), b2 = el('button', 'btn', 'Load'), pm = el('p', 'note'); b1.type = b2.type = 'button'; pm.style.marginBottom = '0';
+    pr.appendChild(pc); pr.appendChild(b1); pr.appendChild(b2); pp.appendChild(pr); pp.appendChild(pm); overview.appendChild(pp);
+    b1.addEventListener('click', function () {
+      try { pc.value = 'AIB2.' + id + '.' + btoa(unescape(encodeURIComponent(JSON.stringify(S)))); } catch (e) { pm.textContent = 'Could not build the code.'; return; }
+      pc.select(); try { navigator.clipboard.writeText(pc.value).then(function () { pm.textContent = 'Copied.'; }, function () { pm.textContent = 'Selected. Copy it with Ctrl+C.'; }); } catch (e) { pm.textContent = 'Selected. Copy it with Ctrl+C.'; }
+    });
+    b2.addEventListener('click', function () {
+      try { var v = pc.value.trim(), pre = 'AIB2.' + id + '.'; if (v.indexOf(pre) !== 0) throw 0; var o = JSON.parse(decodeURIComponent(escape(atob(v.slice(pre.length))))); if (!o || typeof o !== 'object') throw 0; put(KEY, JSON.stringify(o)); location.reload(); }
+      catch (e) { pm.textContent = 'That is not a progress code for this module. It starts with AIB2.' + id + '.'; }
+    });
+  }
+
+  /* labs */
+  labEls.forEach(function (lab, li) {
+    var lh = el('div', 'labhead'); lh.appendChild(el('h3', '', 'Lab ' + (li + 1) + '  ' + lab.getAttribute('data-title'))); lh.appendChild(el('span', 'meta', lab.getAttribute('data-minutes') + ' min')); lab.insertBefore(lh, lab.firstChild);
+    [].forEach.call(lab.querySelectorAll('ol.steps > li'), function (step, si) {
+      var c = el('input', 'tick'); c.type = 'checkbox'; c.setAttribute('aria-label', 'Step ' + (si + 1) + ' done'); c.checked = (S.steps[lab.id] || []).indexOf(si) >= 0;
+      c.addEventListener('change', function () { var a = (S.steps[lab.id] || []).filter(function (x) { return x !== si; }); if (c.checked) a.push(si); S.steps[lab.id] = a; save(); });
+      step.insertBefore(c, step.firstChild);
+    });
+    var foot = el('div', 'labfoot'), btn = el('button', 'btn'); btn.type = 'button';
+    function paint() { var d = !!S.labs[lab.id]; lab.classList.toggle('done', d); btn.textContent = d ? 'Done. Undo' : 'Mark lab done'; }
+    btn.addEventListener('click', function () { if (S.labs[lab.id]) delete S.labs[lab.id]; else S.labs[lab.id] = 1; save(); paint(); progress(); });
+    foot.appendChild(btn); lab.appendChild(foot); paint();
+  });
+
+  /* calls */
+  qsn.forEach(function (q, qi) {
+    var box = el('div', 'q'); box.appendChild(el('div', 'qt', (qi + 1) + '. ' + q.q));
+    var opts = el('div', 'opts'), why = el('div', 'why', q.why); why.hidden = true;
+    var btns = q.o.map(function (o, oi) {
+      var b = el('button', 'opt'); b.type = 'button'; b.appendChild(el('span', 'k', 'ABCD'.charAt(oi))); b.appendChild(el('span', '', o));
+      b.addEventListener('click', function () { S.drill[qi] = oi; save(); mark(); progress(); }); opts.appendChild(b); return b;
+    });
+    function mark() { var a = S.drill[qi]; btns.forEach(function (b, oi) { b.classList.toggle('right', a != null && oi === q.a); b.classList.toggle('wrong', a === oi && oi !== q.a); }); why.hidden = a == null; }
+    box.appendChild(opts); box.appendChild(why); drill.appendChild(box); mark();
+  });
+  if (qsn.length) { var reset = el('button', 'btn', 'Clear my answers'); reset.type = 'button'; reset.style.justifySelf = 'start'; reset.addEventListener('click', function () { S.drill = []; save(); location.reload(); }); drill.appendChild(reset); }
+
+  /* navigation */
+  parts.forEach(function (p) {
+    var a = el('a', 'navlink'); a.href = '#' + p.key; a.appendChild(el('span', 'n', p.n || '·')); a.appendChild(el('span', '', p.title)); a.appendChild(el('span', 'p')); nav.appendChild(a); p.nav = a;
+  });
+  var shareNav = null;
+  if (share) { shareNav = el('a', 'navlink'); shareNav.href = '#share'; shareNav.appendChild(el('span', 'n', '\u2197')); shareNav.appendChild(el('span', '', 'Export and share')); shareNav.appendChild(el('span', 'p')); nav.appendChild(shareNav); }
+  function progress() {
+    parts.forEach(function (p) {
+      var t = p.nav.querySelector('.p'), txt = '', full = false;
+      if (p.key === 'labs') { var d = labEls.filter(function (l) { return S.labs[l.id]; }).length; txt = d ? d + '/' + labEls.length : ''; full = d === labEls.length; }
+      else if (p.key === 'calls') { var a = S.drill.filter(function (x) { return x != null; }).length; txt = a ? a + '/' + qsn.length : ''; full = a === qsn.length; }
+      else if (S.seen[p.key]) { txt = '✓'; full = true; }
+      t.textContent = txt; t.classList.toggle('full', full);
+    });
+  }
+  function route() {
+    var key = (location.hash || '#overview').slice(1), isShare = key === 'share' && share;
+    var cur = parts.filter(function (p) { return p.key === key; })[0]; if (!cur && !isShare) cur = parts[0];
+    m.hidden = !!isShare; if (share) share.hidden = !isShare;
+    if (shareNav) shareNav.classList.toggle('active', !!isShare);
+    parts.forEach(function (p) { p.el.hidden = p !== cur; p.nav.classList.toggle('active', p === cur); });
+    if (cur) {
+      var first = cur.key === 'overview';
+      kick.textContent = 'Module ' + num(id) + (first ? ' · ' + cap(me.level || '') : ' · ' + m.getAttribute('data-title'));
+      h.textContent = first ? m.getAttribute('data-title') : cur.title;
+      meta.textContent = first ? m.getAttribute('data-sub') : (cur.kind || '') + (cur.min ? ' · about ' + cur.min + ' min' : '');
+      chips.hidden = !first;
+      if (/^l\d+$/.test(cur.key) && !S.seen[cur.key]) { S.seen[cur.key] = 1; save(); }
+      if (crumb) crumb.textContent = 'Module ' + num(id) + ' · ' + m.getAttribute('data-title') + (first ? '' : ' · ' + cur.title);
+      var i = parts.indexOf(cur); pager.textContent = '';
+      if (i > 0) { var pv = el('a', 'btn', '← ' + parts[i - 1].title); pv.href = '#' + parts[i - 1].key; pager.appendChild(pv); }
+      if (i < parts.length - 1) { var nx2 = el('a', 'btn primary next', parts[i + 1].title + ' →'); nx2.href = '#' + parts[i + 1].key; pager.appendChild(nx2); }
+      try { cur.nav.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {}
+    } else { pager.textContent = ''; if (crumb) crumb.textContent = 'Export and share'; }
+    progress(); window.scrollTo(0, 0);
+  }
+  route(); window.addEventListener('hashchange', route);
+})();
+
+</script>
+<script>
+
+</script>
+
+</body>
+</html>

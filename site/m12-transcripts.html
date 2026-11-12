@@ -1,0 +1,464 @@
+<section class="module" id="m12" data-title="Session transcripts" data-sub="The anatomy of the JSONL behind every session" data-level="practitioner" data-prereq="m1,m2" data-minutes="215">
+  <div class="overview">
+    <p class="lede">Every Claude Code session writes a JSONL file: one JSON object per line, holding the conversation, the tool results, the token usage of each API call and a final cost record. It is the most complete record of what a session did and what it cost, and it sits on your disk in plain text. This module shows how to find it, read each line type, walk the message chain, add up usage without double counting, and where the format stops being trustworthy.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Locate the transcript of any session from its cwd and session id, and from a hook's <code>transcript_path</code>.</li>
+      <li>Name the line types in a transcript and the envelope fields shared by user, assistant and attachment lines.</li>
+      <li>Walk the <code>parentUuid</code> chain from the last line back to the first prompt.</li>
+      <li>Total a session's tokens by deduplicating on <code>message.id</code>, and reconcile the total against <code>total_cost_usd</code>.</li>
+      <li>Explain what resume, fork, compaction and subagents do to the files, and what each leaves out.</li>
+      <li>State what a transcript is good for, what it exposes about you, and why you must not build a long-lived tool on its format.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (subscription plan or API key). Measurements here were taken on Claude Code 2.1.322.</li>
+      <li>PowerShell 5.1 or later. The labs parse JSONL with <code>ConvertFrom-Json</code>.</li>
+      <li>A scratch folder, written <code>{{LAB}}/m12</code>.</li>
+    </ul>
+    <div class="recap"><h3>If you skipped the prerequisites</h3>
+      <p>Context: the model sees one growing message list per session, plus a system prompt and tool definitions that are resent with every request. Tokens: usage splits into four types, <span class="tok in">input</span> (uncached), <span class="tok out">output</span>, <span class="tok cw">cache write</span> and <span class="tok cr">cache read</span>. Cache reads are cheap, cache writes cost more than plain input (a 1-hour write costs twice the input price), and output is the most expensive per token. A tool-using turn makes several API calls, one per model step, and each call re-reads the whole prefix from cache. This is why a short task can show a large cache-read count and a tiny cost. A headless run with <code>--output-format json</code> returns a <code>usage</code> block and <code>total_cost_usd</code> for the whole run; the transcript holds the same numbers one request at a time.</p></div>
+  </div>
+
+  <div class="lesson" id="m12-l1" data-title="Where transcripts live" data-minutes="15">
+    <h3>The path</h3>
+    <p>Claude Code stores each session as <code>~/.claude/projects/&lt;project&gt;/&lt;session-id&gt;.jsonl</code>. The <code>&lt;project&gt;</code> folder name is the session's working directory with every non-alphanumeric character replaced by a hyphen. Observed on Claude Code 2.1.322: a session started in a folder ending <code>ai-bootcamp-labs\m12</code> was stored under a folder name ending <code>-ai-bootcamp-labs-m12</code>. The docs add that names over 200 characters are truncated and given a hash suffix.</p>
+    <p>Two environment variables move things. <code>CLAUDE_CONFIG_DIR</code> relocates the whole <code>~/.claude</code> tree, transcripts included. <code>CLAUDE_CODE_PROJECT_DIR_NAME</code> (2.1.234 and later, only together with <code>CLAUDE_CONFIG_DIR</code>) sets the project folder name yourself.</p>
+    <h3>Three ways to find the file</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Method</th><th>Works for</th><th>Note</th></tr>
+      <tr><td>Derive it: config dir, project name from cwd, session id</td><td>Any session you know the id of</td><td><code>claude -p ... --output-format json</code> returns <code>session_id</code></td></tr>
+      <tr><td>Read <code>transcript_path</code> from a hook's input</td><td>Live sessions</td><td>Present in every hook event's common input and in status line input</td></tr>
+      <tr><td><code>SubagentStop</code> hook, <code>agent_transcript_path</code></td><td>Subagent runs</td><td>Points under <code>&lt;session-id&gt;/subagents/agent-&lt;id&gt;.jsonl</code></td></tr>
+    </table></div>
+    <p>In the lab you compare the first two and see that they give the same path.</p>
+    <h3>What lives next to the file</h3>
+    <ul>
+      <li><code>&lt;session-id&gt;/subagents/</code>: one transcript per subagent run.</li>
+      <li><code>&lt;session-id&gt;/tool-results/</code>: large tool outputs spilled out of the main file.</li>
+      <li><code>file-history/&lt;session-id&gt;/</code>: the file snapshots used by checkpointing.</li>
+    </ul>
+    <h3>Retention</h3>
+    <p>The setting <code>cleanupPeriodDays</code> defaults to 30 days and has a minimum of 1; 0 is rejected as a validation error. The sweep deletes the session file, its <code>subagents</code> and <code>tool-results</code> folders, any <code>.orphaned-*</code> or <code>.superseded-*</code> copies, and the matching <code>file-history</code> folder. If you want to keep transcripts for audit, copy them out before the sweep, or raise the setting.</p>
+    <aside class="rule">A transcript is a file you can find without asking Claude Code: derive the path, or have a hook hand it to you.</aside>
+    <aside class="trap">Headless <code>-p</code> sessions write transcripts too, but they do not appear in the interactive resume picker. Missing from the picker does not mean missing from disk. <code>--no-session-persistence</code> (print mode only) is the flag that suppresses the file.</aside>
+  </div>
+
+  <div class="lesson" id="m12-l2" data-title="Line types and the envelope" data-minutes="20">
+    <h3>The docs say little, on purpose</h3>
+    <p>The Claude Code docs state that the entry format is internal and changes between versions, and point you to <code>/export</code> and the script interfaces instead. Everything in this lesson about line types is therefore observed on Claude Code 2.1.322 on a subscription login, from lab sessions. Treat the names as a snapshot.</p>
+    <h3>Line types seen</h3>
+    <p>A two-tool headless run (Glob, then Read) produced 41 lines of these types:</p>
+    <div class="tablewrap"><table>
+      <tr><th>type</th><th class="num">Lines</th><th>What it holds</th></tr>
+      <tr><td><code>attachment</code></td><td class="num">13</td><td>Context the harness injected: environment, model, skill listing, deferred tools, date, session context, a snapshot of the system prompt</td></tr>
+      <tr><td><code>api-request-blob</code></td><td class="num">5</td><td>Message bodies sent to the API, keyed by a hash</td></tr>
+      <tr><td><code>assistant</code></td><td class="num">4</td><td>One content block of a model response per line</td></tr>
+      <tr><td><code>user</code></td><td class="num">3</td><td>The prompt, and each tool result</td></tr>
+      <tr><td><code>last-prompt</code></td><td class="num">3</td><td><code>lastPrompt</code> and <code>leafUuid</code>, the newest line in the chain</td></tr>
+      <tr><td><code>session-owner</code></td><td class="num">3</td><td>Account and organization ids (private)</td></tr>
+      <tr><td><code>atis-latch</code></td><td class="num">3</td><td>Internal marker</td></tr>
+      <tr><td><code>queue-operation</code></td><td class="num">2</td><td>Prompt enqueue and dequeue with the prompt text</td></tr>
+      <tr><td><code>api-request</code></td><td class="num">2</td><td>One per API call: <code>id</code>, <code>querySource</code>, <code>params</code> (model, betas, <code>max_tokens</code>, thinking, effort), <code>tail</code> hashes, <code>cacheControl</code></td></tr>
+      <tr><td><code>api-request-shape</code></td><td class="num">1</td><td>System prompt and tool definitions, keyed by <code>shapeHash</code></td></tr>
+      <tr><td><code>tools-used</code></td><td class="num">1</td><td>List of tools the session used</td></tr>
+      <tr><td><code>cost-state</code></td><td class="num">1</td><td>Last line: <code>totalCostUSD</code>, durations, <code>modelUsage</code> per model</td></tr>
+    </table></div>
+    <p>Only <code>user</code>, <code>assistant</code> and <code>attachment</code> are conversation lines. The rest is bookkeeping and request reconstruction data.</p>
+    <h3>The envelope</h3>
+    <p>User, assistant and attachment lines share these fields: <code>parentUuid</code>, <code>isSidechain</code>, <code>type</code>, <code>uuid</code>, <code>timestamp</code>, <code>userType</code>, <code>entrypoint</code> (<code>sdk-cli</code> for a headless run), <code>cwd</code>, <code>sessionId</code>, <code>version</code> and <code>gitBranch</code>. Outside a git repo, <code>gitBranch</code> read <code>HEAD</code>.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Line</th><th>Extra fields</th></tr>
+      <tr><td><code>user</code></td><td><code>message</code>, <code>promptId</code>, <code>permissionMode</code>, <code>promptSource</code>, <code>turnOrigin</code>, <code>turnPosition</code> (<code>promptIndex</code>, <code>turnIndex</code>)</td></tr>
+      <tr><td><code>user</code> (tool result)</td><td><code>toolUseResult</code> (structured result, for example a file path and line count), <code>sourceToolAssistantUUID</code>, <code>permissionDecision</code></td></tr>
+      <tr><td><code>assistant</code></td><td><code>message</code>, <code>requestId</code>, <code>requestRef</code>, <code>apiBlockIndex</code>, <code>requestedModel</code>, <code>promptCacheRequested</code>, <code>effort</code></td></tr>
+    </table></div>
+    <h3>assistant.message</h3>
+    <p>The <code>message</code> object mirrors an API response: <code>model</code>, <code>id</code> (<code>msg_...</code>), <code>content</code>, <code>stop_reason</code> and <code>usage</code>. The key observation: each assistant line carries exactly one content block, either <code>thinking</code>, <code>text</code> or <code>tool_use</code>. A response with a thinking block and a tool call becomes two lines that share one <code>message.id</code> and one identical <code>usage</code> object. Lesson 4 turns this into a trap.</p>
+    <h3>Privacy</h3>
+    <p>Two kinds of line hold identity. <code>session-owner</code> carries an account id and an organization id. A <code>session_context</code> attachment carried the signed-in email address in clear. Neither appears in this module; examples use <code>11111111-2222-...</code> and <code>user@example.com</code>. The docs state transcripts are plaintext, not encrypted at rest, protected by operating system permissions only, and that they include file contents, command output, pasted text, the system prompt, tool definitions and CLAUDE.md. A credential printed by any tool lands in the file.</p>
+    <aside class="rule">Redact before sharing a transcript: owner ids, email, anything a tool printed.</aside>
+    <aside class="trap">Do not paste a transcript, or a line of one, into a ticket or a chat. The first line you copy may be an identity line.</aside>
+  </div>
+
+  <div class="lesson" id="m12-l3" data-title="The parentUuid chain" data-minutes="15">
+    <h3>A linked list, not an array</h3>
+    <p>Each conversation line has a <code>uuid</code> and a <code>parentUuid</code>. The first line has a null parent; every other line points at the line before it. File order is usually the same as chain order, but the file is an append-only log and the chain is the truth. A <code>last-prompt</code> line records <code>leafUuid</code>, the newest conversation line, so you can start there and walk backward to rebuild the exact message list.</p>
+    <pre data-cap="pseudo"><code>$byId = @{}; foreach ($l in $lines) { if ($l.uuid) { $byId[$l.uuid] = $l } }
+$cur = $byId[$leafUuid]
+while ($cur) { $cur; $cur = $byId[$cur.parentUuid] }   # newest to oldest</code></pre>
+<figure class="diagram">
+<pre class="mermaid">flowchart LR
+  leaf["last-prompt: leafUuid"]:::hot --> n3["Line 3: parentUuid = line 2"]
+  n3 --> n2["Line 2: parentUuid = line 1"]
+  n2 --> n1["Line 1: parentUuid = null"]
+  r["Tool-result user line"] -. "sourceToolAssistantUUID" .-> n2
+</pre>
+  <figcaption>Start at the leaf and follow parentUuid backward to the null parent to rebuild the message list.</figcaption>
+</figure>
+    <h3>Why the chain matters</h3>
+    <ul>
+      <li>Parallel tool calls: if the model emits two <code>tool_use</code> blocks in one response, they are two assistant lines. Observed: the tool-result user line for the first call sat between the two assistant lines in the parent chain. File order and chain order are both worth checking.</li>
+      <li>Tool results link back: a tool-result user line carries <code>sourceToolAssistantUUID</code>, the assistant line whose <code>tool_use</code> it answers.</li>
+      <li>Branches: a chain can fork when a conversation is rewound or resumed from an earlier point. The older branch stays in the file; only the branch ending at the leaf is what the model sees next.</li>
+      <li><code>isSidechain</code> marks lines that belong to a side conversation such as a subagent rather than the main thread.</li>
+    </ul>
+    <h3>Outline view</h3>
+    <p>For debugging, reduce each chain line to one row: timestamp, type, and the first 60 characters of text, the tool name, or the tool result summary. That is a faithful replay of a session in a screenful, and it is what lab 2 builds.</p>
+    <aside class="rule">To reconstruct a session, start at the leaf and follow <code>parentUuid</code>; do not trust line order alone.</aside>
+    <aside class="trap">Counting lines is not counting turns. In the lab, <code>num_turns</code> was 6 while the file had 5 <code>api-request</code> lines and 9 assistant lines.</aside>
+  </div>
+
+  <div class="lesson" id="m12-l4" data-title="Usage per response and the double-count trap" data-minutes="20">
+    <h3>Where the numbers are</h3>
+    <p>Every assistant line carries <code>message.usage</code>: <code>input_tokens</code>, <code>output_tokens</code>, <code>cache_creation_input_tokens</code>, <code>cache_read_input_tokens</code>, a <code>cache_creation</code> object splitting 1-hour and 5-minute writes, <code>service_tier</code>, and a few more fields. The last line of the file, <code>cost-state</code>, has the session's <code>totalCostUSD</code> and a <code>modelUsage</code> object per model.</p>
+    <h3>The trap</h3>
+    <p>The SDK cost-tracking doc says that assistant messages from one response share a <code>message.id</code> and identical usage, and that you must deduplicate by id. The transcript shows why. In a lab run with five API calls, three responses had a thinking block plus a tool call and one had two parallel tool calls, so there were nine assistant lines for five message ids.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Response</th><th>Blocks</th><th class="num">Output</th><th class="num">Cache write</th><th class="num">Cache read</th></tr>
+      <tr><td>A</td><td>tool_use, tool_use</td><td class="num">170</td><td class="num">7,238</td><td class="num">14,517</td></tr>
+      <tr><td>B</td><td>thinking, tool_use</td><td class="num">398</td><td class="num">303</td><td class="num">21,755</td></tr>
+      <tr><td>C</td><td>thinking, tool_use</td><td class="num">279</td><td class="num">444</td><td class="num">22,058</td></tr>
+      <tr><td>D</td><td>thinking, tool_use</td><td class="num">241</td><td class="num">388</td><td class="num">22,502</td></tr>
+      <tr><td>E</td><td>text</td><td class="num">111</td><td class="num">271</td><td class="num">22,890</td></tr>
+    </table></div>
+    <p>Each response had 2 uncached input tokens. Summed once per <code>message.id</code>: input 10, output 1,199, cache write 8,644 (all 1-hour), cache read 103,722. Those four numbers matched <code>result.usage</code> from the headless JSON and the <code>cost-state</code> line exactly. Summing every assistant line instead counts responses A to D twice and overstates the session.</p>
+<figure class="diagram">
+<pre class="mermaid">sequenceDiagram
+  participant API as API response
+  participant T as Transcript file
+  participant S as Your sum
+  API->>T: Assistant line 1, message id M1, usage U
+  API->>T: Assistant line 2, message id M1, usage U
+  T->>S: Sum every line: U counted twice
+  T->>S: Sum once per message id: U counted once
+</pre>
+  <figcaption>One response with two blocks becomes two assistant lines that share a message id and identical usage.</figcaption>
+</figure>
+    <h3>Reconciling the price</h3>
+    <p>At the Haiku 5.5 list prices used in the lab, per million tokens ($0.10 input, $0.50 output, $0.20 for a 1-hour cache write, $0.01 for a cache read), the deduplicated totals price to $0.00336652, equal to the run's <code>total_cost_usd</code>. The price check works only with the right sum, which makes it a good test of your script.</p>
+    <p>The SDK doc also says per-step <code>output_tokens</code> can be a placeholder from the start of the stream. On Claude Code 2.1.322 the transcript values were final in this lab: the deduplicated output matched the final result. Verify on your version before relying on either behavior.</p>
+    <h3>Pasting one line into the cost meter</h3>
+    <p>The meter below takes a <code>usage</code> block. Paste the <code>usage</code> object of one assistant line, pick the model, and read the cost of that single API call.</p>
+    <div class="tool" data-tool="cost"></div>
+    <aside class="rule">Group assistant lines by <code>message.id</code>, take one usage per id, then sum.</aside>
+    <aside class="trap">Subscription plans and API keys read the same transcript. On a plan the dollar figure is list-price equivalent, not a charge; the number that matters there is the share of your window the tokens consumed. The token counts are the same either way.</aside>
+  </div>
+
+  <div class="lesson" id="m12-l5" data-title="Compaction, resume, fork and subagents" data-minutes="20">
+    <h3>Resume and continue</h3>
+    <p><code>--resume</code> takes a session id, a name, or an absolute path to a <code>.jsonl</code>. <code>--continue</code> resumes the most recent session in the folder; headless runs are excluded from a plain <code>--continue</code> but included in <code>claude -p --continue</code>. <code>--session-id</code> lets you choose the uuid up front. Resuming appends to the same file, so two terminals resuming one id interleave their lines into one transcript.</p>
+    <p><code>--fork-session</code>, used with resume, starts a new session id with a copy of the history, so the original file stays as it was.</p>
+    <h3>Compaction</h3>
+    <p>When context fills, or on <code>/compact</code>, the history is replaced by a summary in what the model sees. The transcript is a log, so the older lines are still in the file unless garbage collection removes them. <code>CLAUDE_CODE_TRANSCRIPT_LOCAL_GC=1</code> (2.1.287 and later) makes a file over 5 MB drop pre-compaction history after a compaction. I did not observe a compaction marker line type in the lab runs, so the module does not name one. If you need to know, run a compaction on a throwaway session and diff the type counts.</p>
+    <h3>Subagents</h3>
+    <p>Each subagent run gets its own transcript at <code>&lt;session-id&gt;/subagents/agent-&lt;id&gt;.jsonl</code>, and the <code>SubagentStop</code> hook receives the path as <code>agent_transcript_path</code>. The cost-tracking doc says <code>result.usage</code> excludes subagent usage, while <code>total_cost_usd</code> and <code>modelUsage</code> include it. A total built only from the main file therefore undercounts a session that used subagents. Observed on 2.1.322 (lab 4): <code>modelUsage</code> equalled the main file plus the subagent file field for field, while the top-level <code>result.usage</code> matched neither.</p>
+<figure class="diagram">
+<pre class="mermaid">flowchart TD
+  s["Session folder"] --> m["Main transcript file"]
+  s --> sub["subagents folder"]
+  sub --> a1["agent-id-1.jsonl"]
+  sub --> a2["agent-id-2.jsonl"]
+  m --> t["Cost: main file plus subagent files"]:::hot
+  a1 --> t
+  a2 --> t
+</pre>
+  <figcaption>Each subagent run has its own file, so a total built from the main file alone undercounts.</figcaption>
+</figure>
+    <div class="tablewrap"><table>
+      <tr><th>Event</th><th>Files</th><th>Cost-accounting effect</th></tr>
+      <tr><td>Resume</td><td>Same file, lines appended</td><td>New requests add to the same file; sum only what you want</td></tr>
+      <tr><td>Resume with fork</td><td>New file, copied history</td><td>Copied lines repeat old usage; do not sum across both files</td></tr>
+      <tr><td>Compaction</td><td>Same file</td><td>The summary request is a real API call and costs tokens</td></tr>
+      <tr><td>Subagent</td><td>Extra file under the session folder</td><td>Main file alone undercounts</td></tr>
+    </table></div>
+    <aside class="rule">Cost for a session is the main file plus its subagent files, deduplicated by <code>message.id</code> within each file.</aside>
+    <aside class="trap">A forked session copies history. Summing every transcript in a project folder counts the shared prefix once per fork.</aside>
+  </div>
+
+  <div class="lesson" id="m12-l6" data-title="What transcripts are for, and their limits" data-minutes="15">
+    <h3>Uses</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Use</th><th>What you read</th><th>Caveat</th></tr>
+      <tr><td>Cost accounting</td><td>Deduplicated usage per session and per model; <code>cost-state</code></td><td>Cache-read volume dwarfs everything else; look at cache writes and output for what drove cost</td></tr>
+      <tr><td>Audit</td><td>Every <code>tool_use</code> with its input, the result, and <code>permissionDecision</code></td><td>Plaintext, deletable by the user and swept by retention</td></tr>
+      <tr><td>Debugging</td><td>Outline of the chain; which tool failed; what the model saw</td><td>The file can lag a live session</td></tr>
+      <tr><td>Evals</td><td>Tool-call sequences compared across runs</td><td>The format is not a stable schema</td></tr>
+    </table></div>
+    <h3>Limits</h3>
+    <ul>
+      <li>The format is undocumented and internal. The docs say it changes between versions. The fields in this module are observed on Claude Code 2.1.322; write scripts that check for a field and fail loudly, not ones that assume it.</li>
+      <li>The transcript is written asynchronously. Inside a Stop hook, use <code>last_assistant_message</code> from the hook input; the file may not hold the last line yet.</li>
+      <li>Retention is 30 days by default.</li>
+      <li>Telemetry is the supported channel for continuous cost and usage metrics; the transcript is for after-the-fact forensics on one session.</li>
+    </ul>
+    <h3>Controls</h3>
+    <p><code>claude purge &lt;path&gt;</code> removes stored sessions (<code>--dry-run</code> to preview, <code>--yes</code> to skip the prompt). <code>CLAUDE_CODE_SKIP_PROMPT_HISTORY=1</code> keeps prompts out of the history in any mode. If a credential has been printed in a session, rotate the credential; purging the file does not undo exposure.</p>
+    <aside class="rule">Use transcripts to explain one session after the fact; use telemetry for ongoing numbers.</aside>
+    <aside class="trap">A parser built on the 2.1.322 line types will break silently on a version that renames them. Pin the version in the script's output and test on a fresh session after every upgrade.</aside>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m12-lab1" data-title="Find and dissect a transcript" data-minutes="20">
+      <p class="goal">You run a two-tool headless session, find its transcript two ways, and count the line types in it.</p>
+      <ol class="steps">
+        <li><p>Create a project with a data file and a SessionStart hook that saves its own input. The hook is how you will see <code>transcript_path</code>.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m12/.claude | Out-Null
+Set-Location {{LAB}}/m12
+@'
+id,host,status
+101,web-01,open
+102,web-02,closed
+103,db-01,open
+'@ | Set-Content -Encoding utf8 tickets.csv
+@'
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "shell": "powershell",
+        "command": "[Console]::In.ReadToEnd() | Set-Content -Encoding utf8 hook-input.json" } ] }
+    ]
+  }
+}
+'@ | Set-Content -Encoding utf8 .claude/settings.json</code></pre></li>
+        <li><p>Run a tiny headless task. <code>--setting-sources project</code> and <code>--strict-mcp-config</code> keep your personal settings, hooks and MCP servers out of the measurement; every lab here uses them.</p>
+          <pre><code>claude -p "Use Glob to find the .csv files in this folder, then Read tickets.csv. Reply with the number of data rows only." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Glob,Read" --max-turns 5 --output-format json | Set-Content -Encoding utf8 run1.json
+$r = Get-Content run1.json -Raw | ConvertFrom-Json
+"session_id: $($r.session_id)  result: $($r.result)  num_turns: $($r.num_turns)  cost: $($r.total_cost_usd)"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>result: 3</code>, <code>num_turns: 3</code>, a cost of about 0.0015 dollars, and a uuid session id.</p></li>
+        <li><p>Derive the transcript path and compare it with the hook's.</p>
+          <pre><code>$cfg = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
+$proj = (Get-Location).Path -replace '[^A-Za-z0-9]', '-'
+$t = Join-Path $cfg "projects\$proj\$($r.session_id).jsonl"
+"derived: $t  exists: $(Test-Path $t)"
+$h = Get-Content hook-input.json -Raw | ConvertFrom-Json
+"hook:    $($h.transcript_path)  source: $($h.source)"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>exists: True</code>, the two paths identical, and <code>source: startup</code>.</p></li>
+        <li><p>Count the lines by type.</p>
+          <pre><code>$lines = Get-Content $t -Encoding UTF8 | ForEach-Object { $_ | ConvertFrom-Json }
+"lines: $($lines.Count)"
+$lines | Group-Object type | Sort-Object Count -Descending | Format-Table Count, Name -AutoSize | Out-String</code></pre>
+          <p class="expect"><b>Expected:</b> about 41 lines. Observed: attachment 13, api-request-blob 5, assistant 4, user 3, last-prompt 3, session-owner 3, atis-latch 3, queue-operation 2, api-request 2, and one each of cost-state, api-request-shape and tools-used. Your counts may differ slightly.</p></li>
+        <li><p>Print the top-level field names of the first line of each type.</p>
+          <pre><code>foreach ($g in ($lines | Group-Object type)) {
+  "== $($g.Name)"
+  ($g.Group[0].PSObject.Properties | ForEach-Object { $_.Name }) -join ', '
+}</code></pre>
+          <p class="expect"><b>Expected:</b> <code>user</code> shows <code>parentUuid, isSidechain, promptId, type, message, uuid, timestamp, ...</code>; <code>assistant</code> shows <code>requestId, requestRef, requestedModel, ...</code>; <code>cost-state</code> shows <code>totalCostUSD</code> and <code>modelUsage</code>; <code>session-owner</code> shows two id fields. Do not copy their values anywhere.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Which lines are conversation lines? <b>user, assistant and attachment: they have <code>uuid</code> and <code>parentUuid</code>.</b></p>
+        <p>Why does the count of assistant lines not equal the number of API calls? <b>Each line holds one content block, so one response can span several lines. Count <code>api-request</code> lines or distinct <code>message.id</code> values instead.</b></p>
+        <p>Which line would you never share? <b><code>session-owner</code>, and any <code>session_context</code> attachment, since they hold account and email identity.</b></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m12-lab2" data-title="Walk the chain and reconcile the cost" data-minutes="25">
+      <p class="goal">You rebuild a session outline from the <code>parentUuid</code> chain, then show that a deduplicated usage total equals the run's reported usage and cost while an all-lines total does not.</p>
+      <ol class="steps">
+        <li><p>Run a task with a repeated tool call, locate the transcript and load its lines (same method as lab 1).</p>
+          <pre><code>Set-Location {{LAB}}/m12
+claude -p "Use Glob to find the .csv files in this folder, then Read tickets.csv, then Read it again. Reply with the number of data rows only." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Glob,Read" --max-turns 6 --output-format json | Set-Content -Encoding utf8 run2.json
+$r = Get-Content run2.json -Raw | ConvertFrom-Json
+$cfg = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
+$t = Join-Path $cfg "projects\$((Get-Location).Path -replace '[^A-Za-z0-9]', '-')\$($r.session_id).jsonl"
+$lines = Get-Content $t -Encoding UTF8 | ForEach-Object { $_ | ConvertFrom-Json }</code></pre></li>
+        <li><p>Walk from the leaf back to the root, reverse, and print one row per user or assistant line. The root has a null parent, so the loop must stop there.</p>
+          <pre><code>$leaf = ($lines | Where-Object type -eq 'last-prompt' | Select-Object -Last 1).leafUuid
+$byId = @{}; foreach ($l in $lines) { if ($l.uuid) { $byId[$l.uuid] = $l } }
+$chain = @(); $cur = $byId[$leaf]
+while ($cur) { $chain += $cur; if ($cur.parentUuid) { $cur = $byId[$cur.parentUuid] } else { $cur = $null } }
+[array]::Reverse($chain)
+foreach ($c in $chain) {
+  if ($c.type -ne 'user' -and $c.type -ne 'assistant') { continue }
+  $b = $c.message.content
+  if ($b -is [string]) { $s = "text: $b" } else { $x = $b[0]
+    $s = switch ($x.type) { 'text' { "text: $($x.text)" } 'tool_use' { "tool_use: $($x.name)" } 'tool_result' { 'tool_result' } default { $x.type } } }
+  if ($s.Length -gt 60) { $s = $s.Substring(0, 60) }
+  '{0} {1,-9} {2}' -f $c.timestamp.Substring(11, 8), $c.type, $s
+}</code></pre>
+          <p class="expect"><b>Expected:</b> ten rows: the prompt, <code>tool_use: Glob</code>, a tool result, <code>tool_use: Read</code>, a tool result, a <code>thinking</code> row, <code>tool_use: Read</code>, a tool result, a <code>thinking</code> row, and <code>text: 3</code>. Timestamps are UTC, so they differ from your wall clock.</p></li>
+        <li><p>Total the usage twice, once over every assistant line and once with one usage per <code>message.id</code>, and compare with the run's own numbers.</p>
+          <pre><code>$asst = $lines | Where-Object { $_.type -eq 'assistant' }
+$all = $asst | ForEach-Object { $_.message.usage }
+$once = $asst | Group-Object { $_.message.id } | ForEach-Object { $_.Group[0].message.usage }
+"assistant lines: $($asst.Count)  distinct message ids: $(($asst | Group-Object { $_.message.id }).Count)"
+foreach ($n in @('input_tokens','output_tokens','cache_creation_input_tokens','cache_read_input_tokens')) {
+  '{0,-30} all-lines {1,7}  deduped {2,7}  result.usage {3,7}' -f $n, ($all | Measure-Object $n -Sum).Sum, ($once | Measure-Object $n -Sum).Sum, $r.usage.$n
+}</code></pre>
+          <p class="expect"><b>Expected:</b> 6 assistant lines, 3 distinct ids. The deduped column equals <code>result.usage</code> on every row (observed: input 6, output 307, cache read 66,037, cache write 0 because the prefix was already cached by the earlier run); the all-lines column is exactly double. Your numbers differ; the equality and the doubling do not.</p></li>
+        <li><p>Price the deduplicated usage at the Haiku 5.5 list prices per million tokens ($0.10 input, $0.50 output, $0.20 1-hour cache write, $0.01 cache read) and compare with the reported cost.</p>
+          <pre><code>$cs = $lines | Where-Object type -eq 'cost-state' | Select-Object -Last 1
+$p = ($once | Measure-Object input_tokens -Sum).Sum * 0.10 + ($once | Measure-Object output_tokens -Sum).Sum * 0.50 + ($once | Measure-Object cache_creation_input_tokens -Sum).Sum * 0.20 + ($once | Measure-Object cache_read_input_tokens -Sum).Sum * 0.01
+"priced from deduped usage: {0:N8}  total_cost_usd: {1}  cost-state: {2}" -f ($p / 1e6), $r.total_cost_usd, $cs.totalCostUSD</code></pre>
+          <p class="expect"><b>Expected:</b> three equal figures (observed 0.00081447 for all three).</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Why do the thinking rows in the outline sit beside tool-use rows with the same usage? <b>They are separate content blocks of one response, which share one <code>message.id</code> and one usage object.</b></p>
+        <p>Your all-lines total is not exactly double. What does that mean? <b>Some responses were a single block; only multi-block responses are repeated. Deduplicated is still the correct figure.</b></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m12-lab3" data-title="Resume and fork, and watch the files" data-minutes="20">
+      <p class="goal">You resume a session and fork it, and count the lines in each file to see which operation appends and which copies.</p>
+      <ol class="steps">
+        <li><p>Run a first turn, resume it with a second prompt, then fork it with a third. The helper counts lines in a session's file.</p>
+          <pre><code>Set-Location {{LAB}}/m12
+$cfg = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
+$dir = Join-Path $cfg "projects\$((Get-Location).Path -replace '[^A-Za-z0-9]', '-')"
+function Count($id) { $f = Join-Path $dir "$id.jsonl"; if (Test-Path $f) { (Get-Content $f).Count } else { 'no file' } }
+
+$a = claude -p "Reply with the single word: red" --model haiku --setting-sources project --strict-mcp-config --max-turns 2 --output-format json | ConvertFrom-Json
+"first : id-A lines $(Count $a.session_id)  result: $($a.result)"
+$b = claude -p "What single word did I ask you to reply with? Answer with that word only." --resume $a.session_id --model haiku --setting-sources project --strict-mcp-config --max-turns 2 --output-format json | ConvertFrom-Json
+"resume: same id: $($b.session_id -eq $a.session_id)  A lines now $(Count $a.session_id)  result: $($b.result)"
+$c = claude -p "Repeat that word in capitals, nothing else." --resume $a.session_id --fork-session --model haiku --setting-sources project --strict-mcp-config --max-turns 2 --output-format json | ConvertFrom-Json
+"fork  : new id: $($c.session_id -ne $a.session_id)  A lines still $(Count $a.session_id)  fork lines $(Count $c.session_id)  result: $($c.result)"</code></pre>
+          <p class="expect"><b>Expected:</b> the first file has about 29 lines. Resume reports the same session id and the file grows (about 39 lines) while the model still answers <code>red</code>. The fork has a new id, answers <code>RED</code>, holds about 36 lines of its own, and the original file stays at its resumed size (about 39). Exact counts vary by version and run.</p></li>
+        <li><p>Compare the cached prefix on the resumed turn with the first turn.</p>
+          <pre><code>"cache read, first vs resume: $($a.usage.cache_read_input_tokens) vs $($b.usage.cache_read_input_tokens)"</code></pre>
+          <p class="expect"><b>Expected:</b> two similar figures, observed 17,191 and 17,665. Resume rebuilds the history from the file and the cache still serves the shared prefix.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Which operation changed the original file? <b>The resume appended to it; the fork wrote a new file and left the original alone.</b></p>
+        <p>You sum usage over both files. What goes wrong? <b>The fork's copied history repeats usage that the original already holds, so the shared prefix is counted twice.</b></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m12-lab4" data-title="Add up a session that used a subagent" data-minutes="20">
+      <p class="goal">You define a one-tool subagent, run it, and reconcile the main file plus the subagent file against <code>modelUsage</code>.</p>
+      <ol class="steps">
+        <li><p>Create the subagent definition in the project and run a task that delegates to it.</p>
+          <pre><code>Set-Location {{LAB}}/m12
+New-Item -ItemType Directory -Force .claude/agents | Out-Null
+@'
+---
+name: counter
+description: Counts the data rows of a CSV file. Use for any row-count request.
+tools: Read
+model: haiku
+---
+Read the file you are given and reply with the number of data rows (header excluded) and nothing else.
+'@ | Set-Content -Encoding utf8 .claude/agents/counter.md
+
+$r = claude -p "Use the counter subagent to count the data rows of tickets.csv. Reply with the number only." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Agent,Task,Read" --max-turns 6 --output-format json | ConvertFrom-Json
+"result: $($r.result)  num_turns: $($r.num_turns)  total_cost_usd: $($r.total_cost_usd)"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>result: 3</code> and a cost of about 0.002 dollars. (<code>Agent</code> and <code>Task</code> are both listed so the grant works whichever name your version gives the subagent tool.)</p></li>
+        <li><p>Find the subagent file and total each file with the deduplicating helper.</p>
+          <pre><code>$cfg = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
+$sdir = Join-Path $cfg "projects\$((Get-Location).Path -replace '[^A-Za-z0-9]', '-')\$($r.session_id)"
+$subs = @(Get-ChildItem (Join-Path $sdir 'subagents') -Filter *.jsonl)
+"subagent files: $($subs.Count)"
+function Sum($file) {
+  $a = Get-Content $file -Encoding UTF8 | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.type -eq 'assistant' }
+  $once = $a | Group-Object { $_.message.id } | ForEach-Object { $_.Group[0].message.usage }
+  $side = ($a | Where-Object isSidechain | Measure-Object).Count
+  [pscustomobject]@{ lines = @($a).Count; sidechain = $side; out = ($once | Measure-Object output_tokens -Sum).Sum; cr = ($once | Measure-Object cache_read_input_tokens -Sum).Sum; cw = ($once | Measure-Object cache_creation_input_tokens -Sum).Sum }
+}
+"main  : $(Sum (Join-Path (Split-Path $sdir) "$($r.session_id).jsonl") | ConvertTo-Json -Compress)"
+foreach ($s in $subs) { "agent : $(Sum $s.FullName | ConvertTo-Json -Compress)" }</code></pre>
+          <p class="expect"><b>Expected:</b> one subagent file. Observed: the main file had 3 assistant lines, none sidechain; the subagent file had 3 assistant lines, all <code>isSidechain</code>. Output tokens were about 201 for main and 187 for the agent.</p></li>
+        <li><p>Compare with what the run reported.</p>
+          <pre><code>"result.usage: out $($r.usage.output_tokens) cr $($r.usage.cache_read_input_tokens) cw $($r.usage.cache_creation_input_tokens)"
+foreach ($m in $r.modelUsage.PSObject.Properties) { "modelUsage $($m.Name): out $($m.Value.outputTokens) cr $($m.Value.cacheReadInputTokens) cw $($m.Value.cacheCreationInputTokens)" }</code></pre>
+          <p class="expect"><b>Expected:</b> <code>modelUsage</code> equals main plus agent on every field (observed output 388 = 201 + 187, cache read 63,382 = 61,321 + 2,061, cache write 7,968 = 5,734 + 2,234). The top-level <code>result.usage</code> was much smaller (output 3, cache read about 22,000) and matched neither file's total, so on this version do not use it as a whole-session figure when subagents are involved; use <code>modelUsage</code> or <code>total_cost_usd</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Which line tells you a transcript belongs to a subagent? <b><code>isSidechain</code> is true on every line, and the file sits under the session's <code>subagents</code> folder.</b></p>
+        <p>Which figure would you bill a session from? <b><code>modelUsage</code> or <code>total_cost_usd</code>, or the sum of the main and subagent files, each deduplicated.</b></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m12-lab5" data-title="Find the costliest request in your own session" data-minutes="25">
+      <p class="goal">You write a small script that lists the most expensive API requests of a transcript, test it on a lab session, then run it on one of your own recent sessions.</p>
+      <ol class="steps">
+        <li><p>Save the script. It deduplicates by <code>message.id</code>, prices each request at the Haiku 5.5 list prices used earlier (change the four numbers for another model), and stops with an error if the transcript has no assistant lines.</p>
+          <pre data-file="{{LAB}}/m12/top-requests.ps1"><code>param([Parameter(Mandatory)][string]$Path)
+$ErrorActionPreference = 'Stop'
+$a = Get-Content $Path -Encoding UTF8 | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.type -eq 'assistant' }
+if (-not $a) { throw 'no assistant lines: format may have changed' }
+$rows = $a | Group-Object { $_.message.id } | ForEach-Object {
+  $u = $_.Group[0].message.usage
+  [pscustomobject]@{
+    id    = $_.Name.Substring(0, 12)
+    model = $_.Group[0].message.model
+    out   = $u.output_tokens
+    cw    = $u.cache_creation_input_tokens
+    cr    = $u.cache_read_input_tokens
+    usd   = [math]::Round(($u.input_tokens * 0.10 + $u.output_tokens * 0.50 + $u.cache_creation_input_tokens * 0.20 + $u.cache_read_input_tokens * 0.01) / 1e6, 6)
+  } }
+$rows | Sort-Object usd -Descending | Select-Object -First 3 | Format-Table -AutoSize | Out-String
+"requests: $(@($rows).Count)  total usd: $([math]::Round(($rows | Measure-Object usd -Sum).Sum, 6))"</code></pre></li>
+        <li><p>Test it on the lab 1 transcript, whose path you saved or can re-derive.</p>
+          <pre><code>Set-Location {{LAB}}/m12
+powershell -NoProfile -File top-requests.ps1 -Path $t</code></pre>
+          <p class="expect"><b>Expected:</b> two requests (<code>$t</code> from lab 1; if you changed sessions, point it at lab 1's file), the first with about 4,500 cache-write tokens, and a total of about $0.0015, which equals lab 1's <code>total_cost_usd</code> (0.00148983).</p></li>
+        <li><p>Now run it on one of your own recent sessions. List the newest transcripts of a project, read nothing but this script's summary, and do not paste the output anywhere with identity in it (it prints only message-id prefixes, models and numbers).</p>
+          <pre><code>Get-ChildItem ~/.claude/projects/*/*.jsonl | Sort-Object LastWriteTime -Descending | Select-Object -First 5 FullName, Length
+powershell -NoProfile -File top-requests.ps1 -Path "&lt;one of the paths above&gt;"</code></pre>
+          <p class="expect"><b>Expected:</b> three rows. On a long interactive session the costliest request is usually one with a large cache write (a new file read, or the first request after a pause longer than the cache lifetime) rather than the longest answer.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Done when: you can name the costliest request of your session, say whether cache write or output made it costly, and the script total is within rounding of the session's reported cost.</p>
+        <p>The total is lower than the reported cost. Why? <b>The session used subagents (add their files), or the model differs from the one priced here.</b></p>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Locations and controls</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Item</th><th>Value</th></tr>
+      <tr><td>Session file</td><td><code>~/.claude/projects/&lt;project&gt;/&lt;session-id&gt;.jsonl</code></td></tr>
+      <tr><td>Project folder name</td><td>cwd with non-alphanumerics replaced by <code>-</code> (over 200 chars: truncated plus hash)</td></tr>
+      <tr><td>Subagent files</td><td><code>&lt;session-id&gt;/subagents/agent-&lt;id&gt;.jsonl</code></td></tr>
+      <tr><td>Spilled tool output</td><td><code>&lt;session-id&gt;/tool-results/</code></td></tr>
+      <tr><td><code>CLAUDE_CONFIG_DIR</code></td><td>Moves the whole config tree</td></tr>
+      <tr><td><code>CLAUDE_CODE_PROJECT_DIR_NAME</code></td><td>Names the project folder (2.1.234+, needs <code>CLAUDE_CONFIG_DIR</code>)</td></tr>
+      <tr><td><code>cleanupPeriodDays</code></td><td>Default 30, minimum 1</td></tr>
+      <tr><td><code>--no-session-persistence</code></td><td>Print mode: no transcript</td></tr>
+      <tr><td><code>CLAUDE_CODE_SKIP_PROMPT_HISTORY=1</code></td><td>No prompt history, any mode</td></tr>
+      <tr><td><code>CLAUDE_CODE_TRANSCRIPT_LOCAL_GC=1</code></td><td>Drop pre-compaction history in files over 5 MB (2.1.287+)</td></tr>
+      <tr><td><code>claude purge &lt;path&gt;</code></td><td><code>--dry-run</code>, <code>--yes</code>, <code>--all</code></td></tr>
+      <tr><td><code>--resume</code>, <code>--continue</code>, <code>--session-id</code>, <code>--fork-session</code></td><td>Resume by id, name or .jsonl path; latest; chosen uuid; new id with copied history</td></tr>
+    </table></div>
+    <h3>Line types (observed on 2.1.322)</h3>
+    <div class="tablewrap"><table>
+      <tr><th>type</th><th>Key fields</th></tr>
+      <tr><td><code>user</code></td><td>envelope, <code>message</code>, <code>promptId</code>, <code>permissionMode</code>, <code>toolUseResult</code>, <code>sourceToolAssistantUUID</code></td></tr>
+      <tr><td><code>assistant</code></td><td>envelope, <code>message{model,id,content,stop_reason,usage}</code>, <code>requestId</code>, <code>requestRef</code></td></tr>
+      <tr><td><code>attachment</code></td><td>envelope, <code>attachment.type</code></td></tr>
+      <tr><td><code>api-request</code></td><td><code>id</code>, <code>params</code>, <code>tail</code>, <code>cacheControl</code></td></tr>
+      <tr><td><code>last-prompt</code></td><td><code>lastPrompt</code>, <code>leafUuid</code></td></tr>
+      <tr><td><code>cost-state</code></td><td><code>totalCostUSD</code>, <code>modelUsage</code>, durations</td></tr>
+      <tr><td><code>session-owner</code></td><td>Account and organization ids (private)</td></tr>
+    </table></div>
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>Your total is about double the reported usage</td><td>Summed every assistant line</td><td>Deduplicate on <code>message.id</code></td></tr>
+      <tr><td>Total is below <code>total_cost_usd</code></td><td>Subagent files not included</td><td>Add <code>subagents/*.jsonl</code></td></tr>
+      <tr><td>Derived path does not exist</td><td>Wrong config dir, or project name rule differs</td><td>Use the hook's <code>transcript_path</code></td></tr>
+      <tr><td>Last reply missing in a Stop hook</td><td>Asynchronous write</td><td>Use <code>last_assistant_message</code></td></tr>
+      <tr><td>Old session is gone</td><td>Retention sweep</td><td>Raise <code>cleanupPeriodDays</code> or copy out</td></tr>
+      <tr><td>Parser breaks after upgrade</td><td>Internal format changed</td><td>Check fields, fail loudly, retest</td></tr>
+    </table></div>
+    <div class="sources"><h3>Sources</h3><ul>
+      <li>Sessions, https://code.claude.com/docs/en/sessions.md: resume, continue, fork, retention behavior.</li>
+      <li>The .claude directory, https://code.claude.com/docs/en/claude-directory.md: transcript location, project folder naming, cleanup, plaintext storage.</li>
+      <li>Hooks reference, https://code.claude.com/docs/en/hooks.md: <code>transcript_path</code>, <code>agent_transcript_path</code>, asynchronous writes.</li>
+      <li>Environment variables, https://code.claude.com/docs/en/env-vars.md: the transcript and history variables.</li>
+      <li>CLI reference, https://code.claude.com/docs/en/cli-reference.md: <code>--resume</code>, <code>--continue</code>, <code>--session-id</code>, <code>--fork-session</code>, <code>--no-session-persistence</code>, <code>purge</code>.</li>
+      <li>Agent SDK, track cost and usage, https://code.claude.com/docs/en/agent-sdk/cost-tracking.md: deduplicate by message id, usage with subagents.</li>
+      <li>Settings reference, https://code.claude.com/docs/en/settings-reference.md: <code>cleanupPeriodDays</code>.</li>
+    </ul><p>Measured: line types, envelope fields, the five-response usage table, the price reconciliation and the path comparison come from lab runs of 2026-11-11 on Claude Code 2.1.322.</p></div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "Your script sums usage over every assistant line of a transcript and reports roughly twice the tokens that the headless run's own JSON reported. What is the most likely cause?", "o": ["The JSON result excludes cache reads", "Responses with several content blocks produce several assistant lines that repeat the same usage", "The transcript stores each request twice for safety", "The cost-state line was added to the sum"], "a": 1, "why": "Each assistant line holds one content block, so a response with thinking plus a tool call spans two lines that share a message.id and identical usage. Group by message.id and take one usage per id. The totals then matched the run JSON exactly in the lab."},
+    {"q": "A session used two subagents. The main transcript's deduplicated usage is lower than the total_cost_usd implies. What do you do?", "o": ["Treat total_cost_usd as wrong", "Add the usage from the subagent transcripts under the session folder", "Multiply the main total by the number of subagents", "Resume the session to recompute"], "a": 1, "why": "result.usage excludes subagent usage, while total_cost_usd and modelUsage include it. Subagent runs have their own files under the session's subagents folder. Sum those, deduplicated by message.id within each file, and add."},
+    {"q": "You want a nightly job that parses transcripts for tool-call statistics and must keep working for a year. What is the right design?", "o": ["Hard-code the 2.1.322 field names; the format is stable", "Parse leniently, fail loudly on a missing field, record the version, and consider telemetry for the long-lived metrics", "Avoid JSON parsing and grep the text", "Pin the field names in a schema from the docs"], "a": 1, "why": "The docs say the entry format is internal and changes between versions, and there is no published schema to pin. A tolerant parser that errors visibly on a missing field, plus the version in its output, makes a break obvious. For continuous numbers, telemetry is the supported channel."},
+    {"q": "A colleague asks you to paste the first few lines of a transcript into a ticket to show a bug. What should you do first?", "o": ["Nothing; the first lines are only metadata", "Check for identity lines such as session-owner and session context attachments, and for printed secrets, and redact them", "Encrypt the file with the session id", "Run claude purge on it"], "a": 1, "why": "Transcripts are plaintext and hold account and organization ids, the signed-in email, file contents and anything a tool printed. Redact before sharing. Purging after the fact does not undo exposure of a printed credential."},
+    {"q": "In a Stop hook you try to read the final assistant message from transcript_path and it is sometimes missing. What is the right fix?", "o": ["Sleep for ten seconds before reading", "Use last_assistant_message from the hook input", "Re-run the session with --resume", "Delete the cache and retry"], "a": 1, "why": "The transcript is written asynchronously and may lag the live session. The Stop hook input includes last_assistant_message, which is current. Sleeping hides the race rather than removing it."}
+  ]</script>
+</section>

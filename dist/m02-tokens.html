@@ -1,0 +1,1665 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>html,body{height:100%}body{margin:0}img{max-width:100%}</style>
+<title>Tokens and their price · AI/LLM Bootcamp</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&family=Nunito:wght@700;800&display=swap">
+<style>
+/* AI/LLM Bootcamp. One stylesheet for the catalogue page and every module page.
+   Layout: a top bar (brand, where you are, theme picker), a part rail on the left (a strip in some themes and on phones),
+   one reading column that swaps parts on the hash.
+   The four token types keep one colour each everywhere, the way a utility meter keeps one colour per tariff.
+   Five themes: data-style a..e on the root (a = Meter is the base). data-mode light|dark is resolved in script. */
+:root {
+  --bg: #f1f3f6; --surface: #ffffff; --sunk: #e8ebf0; --fg: #17202b; --muted: #566273; --line: #d3d9e2;
+  --accent: #a4460d; --accent-ink: #ffffff; --accent-soft: #fbeadf;
+  --t-in: #2a66b3; --t-out: #b8500f; --t-cw: #7446bd; --t-cr: #25784c;
+  --good: #25784c; --good-soft: #e0f1e7; --bad: #a8372f; --bad-soft: #f8e3e1; --home: #7446bd; --home-soft: #efe8fa;
+  --font-display: "Archivo", "Segoe UI Semibold", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, "SF Mono", monospace;
+  --top-h: 46px;
+}
+:root[data-mode="dark"] {
+  --bg: #11151b; --surface: #19202a; --sunk: #0d1116; --fg: #e5e9ef; --muted: #98a4b3; --line: #2b3542;
+  --accent: #f09460; --accent-ink: #1d0f05; --accent-soft: #3a2415;
+  --t-in: #6ea9ee; --t-out: #f09460; --t-cw: #b396f0; --t-cr: #6cc795;
+  --good: #6cc795; --good-soft: #17301f; --bad: #e6837b; --bad-soft: #3a1f1d; --home: #b396f0; --home-soft: #261f38; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+script, pre.mermaid { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.6; margin: 0; }
+a { color: var(--accent); }
+h1, h2, h3, h4 { font-family: var(--font-display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(1.9rem, 4.6vw, 2.7rem); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.6rem; font-weight: 700; }
+h3 { font-size: 1.15rem; font-weight: 700; margin-top: 1.7em; }
+h4 { font-size: 1rem; font-weight: 700; margin-top: 1.2em; }
+p { margin: 0.7em 0; }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--sunk); padding: 0.08em 0.32em; border-radius: 4px; overflow-wrap: anywhere; }
+.codebox { margin: 0.7em 0; border: 1px solid var(--line); border-radius: 8px; background: var(--sunk); min-width: 0; }
+.codebox .cap { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--line); font: 600 0.72rem var(--font-mono); color: var(--muted); }
+.codebox pre { margin: 0; padding: 11px 13px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.5; }
+.codebox pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: normal; }
+.copy { font: 600 0.72rem var(--font-body); padding: 3px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
+.copy:hover { color: var(--fg); }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* top bar */
+.top { position: sticky; top: 0; z-index: 12; height: var(--top-h); display: flex; align-items: center; gap: 14px; background: var(--surface); border-bottom: 1px solid var(--line); padding: 0 max(14px, env(safe-area-inset-right, 0px)) 0 max(14px, env(safe-area-inset-left, 0px)); }
+.brand { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; text-decoration: none; color: var(--fg); white-space: nowrap; }
+.crumb { font-size: 0.86rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.themepick { margin-left: auto; display: flex; align-items: center; gap: 6px; font: 600 0.8rem var(--font-body); color: var(--muted); white-space: nowrap; }
+.themepick select { font: 600 0.8rem var(--font-body); padding: 4px 6px; }
+
+/* frame */
+.app { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: calc(100vh - var(--top-h)); }
+.app.solo { grid-template-columns: minmax(0, 1fr); }
+.side { position: sticky; top: var(--top-h); align-self: start; height: calc(100vh - var(--top-h)); overflow-y: auto; background: var(--surface); border-right: 1px solid var(--line); padding: 16px 12px 18px max(12px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 14px; }
+#nav { display: flex; flex-direction: column; gap: 2px; }
+.navlink { display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; align-items: center; text-decoration: none; color: var(--fg); font-size: 0.9rem; padding: 6px 8px; border-radius: 7px; line-height: 1.3; }
+.navlink:hover { background: var(--sunk); }
+.navlink.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.navlink .n { font: 600 0.74rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.navlink .p { font: 600 0.68rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.navlink .p.full { color: var(--good); }
+.side-foot { margin-top: auto; display: grid; gap: 6px; font-size: 0.85rem; padding: 0 8px; }
+.side-foot label { display: flex; gap: 8px; align-items: center; color: var(--muted); cursor: pointer; }
+main { min-width: 0; padding-block: 30px 72px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.view, section.module, .pager { max-width: 780px; margin: 0 auto; min-width: 0; }
+.view, section.module { display: grid; gap: 20px; }
+.view.wide { max-width: 1040px; }
+.view > *, section.module > * { min-width: 0; }
+@media (max-width: 860px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { z-index: 9; height: auto; flex-direction: row; align-items: center; gap: 10px; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px max(14px, env(safe-area-inset-right, 0px)) 6px max(14px, env(safe-area-inset-left, 0px)); overflow: visible; }
+  .side-foot { display: none; }
+  #nav { flex-direction: row; overflow-x: auto; scrollbar-width: none; min-width: 0; flex: 1; }
+  #nav::-webkit-scrollbar { display: none; }
+  .navlink { grid-template-columns: auto auto; flex: 0 0 auto; white-space: nowrap; padding: 5px 9px; }
+  .navlink .p { display: none; }
+  main { padding-block: 22px 56px; }
+  .crumb { display: none; }
+}
+
+/* shared pieces */
+.kicker { font: 600 0.72rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); }
+.muted { color: var(--muted); }
+.lede { font-size: 1.08rem; color: var(--muted); max-width: 66ch; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; min-width: 0; }
+.panel > h3:first-child { margin-top: 0; }
+.btn { font: 600 0.9rem var(--font-body); padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; text-decoration: none; display: inline-block; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+input[type="text"], input[type="number"], textarea, select { font: inherit; font-size: 0.92rem; color: var(--fg); background: var(--sunk); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; min-width: 0; }
+textarea { width: 100%; min-height: 96px; resize: vertical; font-family: var(--font-mono); font-size: 0.8rem; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 0.74rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 0.84rem; }
+.tok { font: 600 0.78rem var(--font-mono); white-space: nowrap; }
+.tok::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; background: currentColor; }
+.tok.in { color: var(--t-in); } .tok.out { color: var(--t-out); } .tok.cw { color: var(--t-cw); } .tok.cr { color: var(--t-cr); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.chip { font: 600 0.7rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; text-decoration: none; }
+a.chip:hover { border-color: var(--accent); color: var(--accent); }
+.chip.lv-foundation { color: var(--t-cr); border-color: var(--t-cr); }
+.chip.lv-practitioner { color: var(--t-in); border-color: var(--t-in); }
+.chip.lv-advanced { color: var(--t-cw); border-color: var(--t-cw); }
+
+/* catalogue */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+.mcard { display: grid; gap: 6px; align-content: start; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; text-decoration: none; color: inherit; }
+a.mcard:hover { border-color: var(--accent); }
+.mcard .n { font: 600 0.72rem var(--font-mono); color: var(--accent); }
+.mcard .t { font-family: var(--font-display); font-weight: 700; font-size: 1.08rem; }
+.mcard .s { font-size: 0.86rem; color: var(--muted); }
+.mcard .pre { font-size: 0.8rem; color: var(--muted); }
+.meter { height: 6px; background: var(--sunk); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.meter span { display: block; height: 100%; width: 0; background: var(--good); }
+.howto { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 18px; }
+.howto b { display: block; font-family: var(--font-display); font-size: 1rem; }
+.howto div { font-size: 0.92rem; color: var(--muted); }
+.paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.paths .panel { padding: 14px 16px; }
+.paths b { font-family: var(--font-display); }
+.paths ol { margin: 6px 0 0; padding-left: 1.3em; font-size: 0.9rem; }
+
+/* module */
+.mhead { display: grid; gap: 8px; }
+.mhead .meta { color: var(--muted); font-size: 0.92rem; }
+.partlist { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; }
+.partlist a { display: grid; grid-template-columns: 34px 1fr auto; gap: 8px; padding: 7px 8px; border-radius: 7px; text-decoration: none; color: var(--fg); }
+.partlist a:hover { background: var(--sunk); }
+.partlist .n { font: 600 0.74rem var(--font-mono); color: var(--accent); padding-top: 3px; }
+.partlist .m { font: 600 0.72rem var(--font-mono); color: var(--muted); padding-top: 3px; }
+.overview p, .overview li, .lesson p, .lesson li, .lab p, .lab li, .reference p, .reference li { max-width: 70ch; }
+.overview ul, .lesson ul, .lesson ol, .lab ul, .reference ul { padding-left: 1.2em; }
+.overview li, .lesson li, .lab li { margin: 0.3em 0; }
+.overview > h3:first-of-type { margin-top: 0.6em; }
+.recap { background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 14px 18px; margin-top: 1.2em; }
+.recap h3 { margin-top: 0; font-size: 1rem; }
+.sources { font-size: 0.88rem; color: var(--muted); }
+.sources h3 { color: var(--fg); }
+.sources li { margin: 0.25em 0; overflow-wrap: anywhere; }
+aside.rule { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; margin: 1.1em 0; max-width: 70ch; font-weight: 600; }
+aside.trap { background: var(--bad-soft); border-radius: 8px; padding: 10px 14px; margin: 1em 0; max-width: 70ch; font-size: 0.94rem; }
+aside.trap::before { content: "Trap"; display: block; font: 600 0.68rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--bad); }
+aside.home { background: var(--home-soft); border-radius: 8px; padding: 10px 14px; margin: 1em 0; max-width: 70ch; font-size: 0.94rem; }
+aside.home::before { content: "At home"; display: block; font: 600 0.68rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--home); }
+body.hide-home aside.home { display: none; }
+.labs { display: grid; gap: 18px; }
+.lab { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; min-width: 0; }
+.lab.done { border-color: var(--good); }
+.labhead { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.labhead h3 { margin: 0; }
+.labhead .meta { font: 600 0.72rem var(--font-mono); color: var(--muted); }
+.goal { color: var(--muted); }
+ol.steps { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 14px; counter-reset: step; }
+ol.steps > li { counter-increment: step; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 0 10px; margin: 0; max-width: none; }
+ol.steps > li > .tick { grid-row: 1 / span 30; }
+ol.steps > li > :not(.tick) { grid-column: 2; margin-top: 0; margin-bottom: 8px; min-width: 0; }
+ol.steps > li > :last-child { margin-bottom: 0; }
+.tick { appearance: none; -webkit-appearance: none; width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--sunk); cursor: pointer; display: grid; place-items: center; margin: 0; }
+.tick::before { content: counter(step); font: 600 0.78rem var(--font-mono); color: var(--muted); }
+.tick:checked { background: var(--good); border-color: var(--good); }
+.tick:checked::before { content: "\2713"; color: var(--surface); }
+p.expect { font-size: 0.92rem; border-left: 3px solid var(--t-cr); padding-left: 12px; color: var(--muted); }
+p.expect b { color: var(--fg); }
+details.check { border: 1px dashed var(--line); border-radius: 8px; padding: 10px 14px; margin-top: 12px; }
+details.check summary { cursor: pointer; font-weight: 600; }
+details.check[open] summary { margin-bottom: 6px; }
+.labfoot { display: flex; justify-content: flex-end; margin-top: 14px; }
+.lab.done .labfoot .btn { background: var(--good-soft); color: var(--good); border-color: var(--good); }
+.pager { display: flex; justify-content: space-between; gap: 10px; margin-top: 28px; }
+.pager .btn { max-width: 48%; }
+.pager .next { margin-left: auto; }
+
+/* calls */
+.drill { display: grid; gap: 14px; }
+.q { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 10px; }
+.q .qt { font-weight: 600; max-width: 70ch; }
+.opts { display: grid; gap: 7px; }
+.opt { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: transparent; color: var(--fg); font: inherit; font-size: 0.94rem; text-align: left; line-height: 1.45; }
+.opt:hover { border-color: var(--accent); }
+.opt .k { flex: 0 0 22px; font: 600 0.76rem var(--font-mono); color: var(--muted); padding-top: 2px; }
+.opt.right { border-color: var(--good); background: var(--good-soft); }
+.opt.wrong { border-color: var(--bad); background: var(--bad-soft); }
+.why { font-size: 0.92rem; color: var(--muted); border-left: 3px solid var(--line); padding-left: 12px; max-width: 70ch; }
+
+/* instruments */
+.tool { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin: 1em 0; display: grid; gap: 12px; min-width: 0; }
+.tool h4 { margin: 0; }
+.tool .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.tool label { display: grid; gap: 3px; font-size: 0.78rem; color: var(--muted); font-weight: 600; }
+.tool label input, .tool label select { width: 100%; }
+.bar { display: flex; height: 22px; border-radius: 5px; overflow: hidden; background: var(--sunk); }
+.bar span { display: block; height: 100%; min-width: 0; }
+.bar .in { background: var(--t-in); } .bar .out { background: var(--t-out); } .bar .cw { background: var(--t-cw); } .bar .cr { background: var(--t-cr); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; }
+.big { font: 700 1.5rem var(--font-display); font-variant-numeric: tabular-nums; }
+.verdict { font-weight: 600; }
+.note { font-size: 0.82rem; color: var(--muted); }
+
+/* diagrams: inline SVG drawn in the boxes-and-arrows style; every colour comes from the theme */
+figure.diagram { margin: 1.2em 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 10px; overflow-x: auto; }
+figure.diagram svg { display: block; width: 100%; height: auto; min-width: 520px; max-width: 760px; margin: 0 auto; font-family: var(--font-body); }
+figure.diagram figcaption { font-size: 0.84rem; color: var(--muted); margin-top: 8px; text-align: center; }
+.dg-box { fill: var(--sunk); stroke: var(--muted); stroke-width: 1.5; }
+.dg-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.dg-good { fill: var(--good-soft); stroke: var(--good); stroke-width: 1.5; }
+.dg-bad { fill: var(--bad-soft); stroke: var(--bad); stroke-width: 1.5; }
+.dg-ghost { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 6 4; }
+.dg-in { fill: var(--t-in); } .dg-out { fill: var(--t-out); } .dg-cw { fill: var(--t-cw); } .dg-cr { fill: var(--t-cr); }
+.dg-line { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.dg-line.dash { stroke-dasharray: 5 4; }
+.dg-line.hot { stroke: var(--accent); }
+.dg-head { fill: var(--muted); stroke: none; }
+.dg-head.hot { fill: var(--accent); }
+.dg-text { fill: var(--fg); font-size: 13px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+.dg-sub { fill: var(--muted); font-size: 11px; text-anchor: middle; dominant-baseline: middle; }
+.dg-label { fill: var(--muted); font-size: 11px; font-family: var(--font-mono); text-anchor: middle; dominant-baseline: middle; }
+.dg-on { fill: var(--surface); font-size: 12px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+.dg-left { text-anchor: start; } .dg-right { text-anchor: end; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+
+/* ---------- themes b to e: token overrides and a few shapes ---------- */
+/* a strip under the top bar instead of the left rail (b, d, e) */
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .app { grid-template-columns: minmax(0, 1fr); }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .side { z-index: 9; height: auto; flex-direction: row; align-items: center; gap: 12px; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px max(14px, env(safe-area-inset-right, 0px)) 6px max(14px, env(safe-area-inset-left, 0px)); overflow: visible; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) :is(.side-foot, .navlink .p) { display: none; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) #nav { flex-direction: row; overflow-x: auto; min-width: 0; flex: 1; scrollbar-width: none; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .navlink { grid-template-columns: auto auto; flex: 0 0 auto; white-space: nowrap; }
+:root:is([data-style="b"], [data-style="c"], [data-style="e"]) :is(.panel, .lab, .q, .tool, .codebox, .mcard, .btn, .opt, .copy, .bar, .navlink, input, textarea, select, details.check, aside.trap, aside.home, code, .recap, figure.diagram, .chip, .partlist a) { border-radius: var(--r, 2px); }
+
+/* b: Workbench. Editor greys, one cobalt accent, 2px corners, dense system type. */
+:root[data-style="b"] { --r: 2px; --bg: #f4f4f5; --surface: #ffffff; --sunk: #ececee; --fg: #1e1e1e; --muted: #5a5f66; --line: #d0d0d4; --accent: #2f6fe0; --accent-ink: #ffffff; --accent-soft: rgba(47, 111, 224, 0.1);
+  --t-in: #2f6fe0; --t-out: #a5641f; --t-cw: #8a4a81; --t-cr: #2f7a55; --good: #2f7a55; --good-soft: #e3f1ea; --bad: #b8404c; --bad-soft: #f8e4e6;
+  --font-display: "Segoe UI", system-ui, -apple-system, sans-serif; --font-body: "Segoe UI", system-ui, -apple-system, sans-serif; --font-mono: "Cascadia Code", Consolas, "Courier New", monospace; }
+:root[data-style="b"][data-mode="dark"] { --bg: #1e1e1e; --surface: #252526; --sunk: #181818; --fg: #d4d4d4; --muted: #a8adb4; --line: #3c3c3c; --accent: #4c8dff; --accent-ink: #ffffff; --accent-soft: rgba(76, 141, 255, 0.14);
+  --t-in: #4c8dff; --t-out: #c0813f; --t-cw: #a8689f; --t-cr: #6fae8c; --good: #6fae8c; --good-soft: rgba(111, 174, 140, 0.12); --bad: #e0707c; --bad-soft: rgba(224, 112, 124, 0.1); }
+:root[data-style="b"] body { font-size: 14px; line-height: 1.5; }
+:root[data-style="b"] .side { background: var(--sunk); padding-block: 4px; }
+:root[data-style="b"] .navlink.active { background: transparent; box-shadow: inset 0 -2px 0 var(--accent); border-radius: 0; }
+:root[data-style="b"] :is(h1, h2, h3, h4) { font-weight: 600; letter-spacing: 0; }
+:root[data-style="b"] h2 { font-size: 1.35rem; } :root[data-style="b"] h3 { font-size: 1.05rem; }
+:root[data-style="b"] .lab { border-left: 3px solid var(--accent); }
+:root[data-style="b"] .lab.done { border-left-color: var(--good); }
+:root[data-style="b"] .tick { border-radius: 2px; width: 24px; height: 24px; }
+:root[data-style="b"] .bar { height: 14px; }
+
+/* c: Blueprint. Drafting-sheet blues on a faint grid, mono headings, dashed frames, square corners. */
+:root[data-style="c"] { --r: 0px; --bg: #eaf1f8; --surface: #f7fafd; --sunk: #dbe6f2; --fg: #0f2a47; --muted: #476483; --line: #b3c7dc; --accent: #0b5cad; --accent-ink: #ffffff; --accent-soft: #d5e5f6;
+  --t-in: #0b5cad; --t-out: #b0560c; --t-cw: #6b3fb0; --t-cr: #1d7a55; --good: #1d7a55; --good-soft: #d9efe4; --bad: #a8372f; --bad-soft: #f6dedb;
+  --font-display: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; }
+:root[data-style="c"][data-mode="dark"] { --bg: #0f2540; --surface: #143052; --sunk: #0b1c31; --fg: #e8f1fb; --muted: #9db8d6; --line: #2d5484; --accent: #7fd4ff; --accent-ink: #06213a; --accent-soft: #1b426e;
+  --t-in: #7fd4ff; --t-out: #ffb86b; --t-cw: #d7a6ff; --t-cr: #8fe3b0; --good: #8fe3b0; --good-soft: #17463f; --bad: #ff9d94; --bad-soft: #4a2a3a; }
+:root[data-style="c"] body { background-image: linear-gradient(color-mix(in srgb, var(--line) 30%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--line) 30%, transparent) 1px, transparent 1px); background-size: 28px 28px; }
+:root[data-style="c"] :is(h1, h2, h3, h4) { text-transform: uppercase; letter-spacing: 0.03em; font-weight: 600; }
+:root[data-style="c"] h1 { font-size: clamp(1.5rem, 3.6vw, 2.1rem); }
+:root[data-style="c"] h2 { font-size: 1.35rem; } :root[data-style="c"] h3 { font-size: 0.98rem; }
+:root[data-style="c"] :is(.lab, .tool, .panel, .q, .mcard, figure.diagram) { border-style: dashed; border-color: var(--accent); }
+:root[data-style="c"] .side { background: var(--bg); border-right-style: dashed; }
+:root[data-style="c"] .tick { border-radius: 0; transform: rotate(45deg) scale(0.8); } :root[data-style="c"] .tick::before { transform: rotate(-45deg); }
+
+/* d: Classroom. Big friendly type, a coloured module banner, soft round cards, raspberry accent. */
+:root[data-style="d"] { --bg: #ffffff; --surface: #f5f6fa; --sunk: #e9ecf4; --fg: #151a2d; --muted: #565d78; --line: #dfe3ee; --accent: #c2255c; --accent-ink: #ffffff; --accent-soft: #fde8f0;
+  --t-in: #2a66b3; --t-out: #c2255c; --t-cw: #7446bd; --t-cr: #25784c;
+  --font-display: "Nunito", "Segoe UI", system-ui, sans-serif; }
+:root[data-style="d"][data-mode="dark"] { --bg: #16141c; --surface: #201d29; --sunk: #110f16; --fg: #f1eef7; --muted: #a8a2b8; --line: #342f42; --accent: #ff7aa8; --accent-ink: #2a0a17; --accent-soft: #3d1c2b;
+  --t-in: #6ea9ee; --t-out: #ff7aa8; --t-cw: #b396f0; --t-cr: #6cc795; }
+:root[data-style="d"] body { font-size: 17px; }
+:root[data-style="d"] :is(h1, h2, h3, h4) { font-weight: 800; }
+:root[data-style="d"] h2 { font-size: 2rem; }
+:root[data-style="d"] .mhead { background: var(--accent); color: var(--accent-ink); padding: 26px 28px; border-radius: 20px; }
+:root[data-style="d"] .mhead :is(.kicker, .meta) { color: inherit; opacity: 0.9; }
+:root[data-style="d"] .mhead .chip { color: inherit; border-color: currentColor; }
+:root[data-style="d"] :is(.lab, .tool, .panel, .q, .mcard, figure.diagram, .recap) { border: 0; border-radius: 20px; padding: 22px 24px; }
+:root[data-style="d"] .navlink { border-radius: 999px; padding: 6px 12px; }
+:root[data-style="d"] .tick { width: 36px; height: 36px; } :root[data-style="d"] ol.steps > li { grid-template-columns: 40px minmax(0, 1fr); }
+:root[data-style="d"] .bar { height: 30px; border-radius: 999px; }
+:root[data-style="d"] .btn { border-radius: 999px; }
+
+/* e: Console. Everything monospaced, hard rules, amber accent, no rounding, headings marked like Markdown. */
+:root[data-style="e"] { --r: 0px; --bg: #f5f5f2; --surface: #f5f5f2; --sunk: #e9e9e4; --fg: #141414; --muted: #5c5c55; --line: #2a2a28; --accent: #8a5a00; --accent-ink: #ffffff; --accent-soft: #f1e6c8;
+  --t-in: #1f5fa8; --t-out: #b34700; --t-cw: #7a3fb5; --t-cr: #1f7a4a; --good: #1f7a4a; --good-soft: #dcefe2; --bad: #a8372f; --bad-soft: #f6dedb;
+  --font-display: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; --font-body: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; }
+:root[data-style="e"][data-mode="dark"] { --bg: #141210; --surface: #141210; --sunk: #1e1b17; --fg: #f2e9d8; --muted: #a89c86; --line: #5a5246; --accent: #ffb000; --accent-ink: #141210; --accent-soft: #3a2c0a;
+  --t-in: #7ab8ff; --t-out: #ff8f4d; --t-cw: #c79bff; --t-cr: #7ee0a0; --good: #7ee0a0; --good-soft: #1b3324; --bad: #ff9d94; --bad-soft: #3d201d; }
+:root[data-style="e"] body { font-size: 14px; }
+:root[data-style="e"] :is(h1, h2, h3, h4) { font-weight: 600; letter-spacing: 0; }
+:root[data-style="e"] h1 { font-size: clamp(1.4rem, 3.4vw, 1.9rem); }
+:root[data-style="e"] h2 { font-size: 1.3rem; } :root[data-style="e"] h3 { font-size: 1rem; }
+:root[data-style="e"] .mhead h2::before, :root[data-style="e"] .mhead h1::before { content: "# "; color: var(--accent); }
+:root[data-style="e"] :is(.lesson, .overview, .reference) h3::before { content: "## "; color: var(--accent); }
+:root[data-style="e"] .tick { border-radius: 0; border-width: 1px; border-color: var(--line); }
+:root[data-style="e"] .bar { height: 18px; border: 1px solid var(--line); }
+:root[data-style="e"] .navlink.active { background: var(--fg); color: var(--bg); } :root[data-style="e"] .navlink.active .n { color: inherit; }
+
+/* ---------- Mermaid diagrams, pre-rendered to SVG at build time. Layout is Mermaid's; every colour is the theme's. ---------- */
+figure.diagram svg.mm { font-family: "Segoe UI", system-ui, Arial, sans-serif; min-width: 0; max-height: 620px; }
+figure.diagram.map svg.mm { max-width: 1000px; max-height: 1150px; }
+svg.mm text, svg.mm tspan { fill: var(--fg) !important; stroke: none !important; }
+svg.mm .node > :is(rect, circle, ellipse, polygon, path), svg.mm .label-container, svg.mm :is(rect.actor, .actor-box, .labelBox, .activation0, .activation1, .activation2), svg.mm .statediagram-state :is(rect, path).basic, svg.mm .classGroup rect, svg.mm .er.entityBox { fill: var(--sunk) !important; stroke: var(--muted) !important; }
+svg.mm .node .label rect, svg.mm .cluster-label rect { fill: none !important; stroke: none !important; }
+svg.mm :is(.edgeLabel rect, rect.background, .labelBkg, .edgeLabel .label rect) { fill: var(--surface) !important; stroke: none !important; opacity: 1 !important; }
+svg.mm :is(.flowchart-link, .transition, .relation, .messageLine0, .messageLine1, .edgePath path, .actor-line, .loopLine, line.divider, .edge-thickness-normal) { stroke: var(--muted) !important; }
+svg.mm :is(.flowchart-link, .transition, .relation, .edgePath path) { fill: none !important; }
+svg.mm marker :is(path, circle, polygon), svg.mm :is(.arrowMarkerPath, .arrowheadPath) { fill: var(--muted) !important; stroke: var(--muted) !important; }
+svg.mm .cluster > :is(rect, polygon, path), svg.mm .statediagram-cluster rect, svg.mm rect.rect { fill: color-mix(in srgb, var(--surface) 55%, transparent) !important; stroke: var(--line) !important; }
+svg.mm :is(.note, .state-note) :is(rect, path), svg.mm rect.note, svg.mm g.note > rect { fill: var(--accent-soft) !important; stroke: var(--accent) !important; }
+svg.mm :is(.state-start, .start-state, circle.state-start) { fill: var(--fg) !important; stroke: var(--fg) !important; }
+svg.mm :is(.end-state-outer, .state-end) { fill: var(--surface) !important; stroke: var(--fg) !important; }
+svg.mm .end-state-inner { fill: var(--fg) !important; stroke: var(--fg) !important; }
+svg.mm .node:is(.hot) > :is(rect, circle, ellipse, polygon, path) { fill: var(--accent-soft) !important; stroke: var(--accent) !important; }
+svg.mm .node:is(.good, .found) > :is(rect, circle, ellipse, polygon, path) { fill: var(--good-soft) !important; stroke: var(--good) !important; }
+svg.mm .node.bad > :is(rect, circle, ellipse, polygon, path) { fill: var(--bad-soft) !important; stroke: var(--bad) !important; }
+svg.mm .node:is(.info, .prac) > :is(rect, circle, ellipse, polygon, path) { fill: color-mix(in srgb, var(--t-in) 14%, var(--surface)) !important; stroke: var(--t-in) !important; }
+svg.mm .node:is(.alt, .adv) > :is(rect, circle, ellipse, polygon, path) { fill: color-mix(in srgb, var(--t-cw) 14%, var(--surface)) !important; stroke: var(--t-cw) !important; }
+svg.mm .node.ghost > :is(rect, circle, ellipse, polygon, path) { fill: none !important; stroke: var(--line) !important; stroke-dasharray: 6 4; }
+
+</style>
+</head>
+<body>
+<div class="top">
+  <a class="brand" href="index.html">AI/LLM Bootcamp</a>
+  <span class="crumb" id="crumb"></span>
+  <label class="themepick">Theme: <select id="theme" aria-label="Theme"></select></label>
+</div>
+<div class="app">
+  <aside class="side">
+    <nav id="nav" aria-label="Parts of this module"></nav>
+    <div class="side-foot">
+      
+      <a href="index.html">All modules</a>
+    </div>
+  </aside>
+  <main>
+<section class="module" id="m2" data-title="Tokens and their price" data-sub="Input, output, cache write, cache read" data-level="foundation" data-prereq="" data-minutes="220">
+  <div class="overview">
+    <p class="lede">Every request to a Claude model is metered in four kinds of token, and their prices differ by a factor of up to 200 on the same model. The bill for an agent session is decided far more by the mix of those four than by the total count. This module teaches you to size text in tokens, read the meter on a real run, price it by hand, and see what makes the expensive kinds appear.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Estimate the token count of prose, JSON and log text from its size in bytes, with ratios you measured yourself.</li>
+      <li>Name the four token types, their usage fields and their price multipliers, and say which one dominates a given bill.</li>
+      <li>Price any <code>claude -p</code> result by hand from its <code>usage</code> block and match <code>total_cost_usd</code> to the last digit.</li>
+      <li>Predict whether a change to a prompt, a flag or a setting will cause a cache miss, and how much that miss costs.</li>
+      <li>Explain what <code>total_cost_usd</code> means on a subscription plan and on an API key, and where each kind of limit shows up.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key).</li>
+      <li>Windows PowerShell 5.1 or PowerShell 7.</li>
+      <li>About $0.02 of usage at Haiku prices for all five labs, or the equivalent share of a plan window.</li>
+    </ul>
+  </div>
+
+  <div class="lesson" id="m2-l1" data-title="What a token is and how to size text" data-minutes="15">
+    <h3>The unit the model reads and writes</h3>
+    <p>A model does not see characters or words. A tokenizer cuts the text into tokens: common words are one token, rare words split into pieces, and digits, punctuation, hex strings and identifiers break into many short tokens. Everything is counted in these units: the window size, the output limit, the rate limits and the price.</p>
+    <p>Current models have a 1M-token context window and a maximum output of 128k tokens per response. Both limits count tokens, so you need a way to turn "a 6 KB log excerpt" into a number before you paste it.</p>
+
+    <h3>Sizing rules, measured</h3>
+    <p>These ratios come from measurement, not from a rule of thumb: each sample was piped into a headless run and the growth of the prompt count was read from <code>usage</code> (you repeat this in the lab "Measure tokens per kilobyte"). Haiku 5.5 and Sonnet 5.5 gave identical counts for the same text.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Content</th><th class="num">Bytes per token</th><th class="num">Tokens per KB</th><th>Why</th></tr>
+      <tr><td>English prose (runbook narrative)</td><td class="num">3.5</td><td class="num">about 296</td><td>Common words are single tokens.</td></tr>
+      <tr><td>Compact JSON (records with ids, paths, numbers)</td><td class="num">2.0</td><td class="num">about 508</td><td>Quotes, braces, keys repeated on every record, numbers split up.</td></tr>
+      <tr><td>Application log (timestamps, hosts, hex request ids)</td><td class="num">1.8</td><td class="num">about 567</td><td>Timestamps and hex ids tokenize into many short pieces.</td></tr>
+    </table></div>
+    <p>So a 100 KB log file is not "about 25k tokens" as a prose ratio would suggest. It is closer to 57k. Machine-generated text costs roughly twice what prose of the same size costs, both in window space and in money.</p>
+
+    <h3>The fixed overhead of a session</h3>
+    <p>Before your prompt arrives, Claude Code sends its own system prompt, tool definitions and an environment block (working directory, platform, shell, git status). A headless run with no MCP servers and no personal settings measured about 21,700 prompt tokens for a one-word answer. Each MCP server, skill description and CLAUDE.md line adds to that. You pay for this overhead on every request, which is why caching matters so much: in that run about 14,500 tokens were already cached and only the rest was new.</p>
+    <pre data-cap="output"><code>input_tokens                : 2
+cache_creation_input_tokens : 7206
+cache_read_input_tokens     : 14517
+output_tokens               : 4</code></pre>
+    <p>The answer was four output tokens. The prompt side was over 21,000. For short tasks the overhead is the cost.</p>
+
+    <h3>Counting before you send</h3>
+    <p>The API offers a token counting endpoint. It is free and its result is an estimate. In Claude Code the practical counter is the run itself: the sum of <code>input_tokens</code>, <code>cache_creation_input_tokens</code> and <code>cache_read_input_tokens</code> is the full prompt the model read. Subtract a baseline run and you have the cost of whatever you added.</p>
+
+    <aside class="rule">Size machine output at about 2 bytes per token and prose at about 3.5, then measure when the number decides something.</aside>
+    <aside class="trap">Estimating a log or a JSON dump with the prose ratio underestimates it by about half. The window fills, or the bill grows, at twice the rate you planned.</aside>
+  </div>
+
+  <div class="lesson" id="m2-l2" data-title="The four token types" data-minutes="20">
+    <h3>Four meters, not one</h3>
+    <p>Every response carries a <code>usage</code> block with four counts. Each is billed at its own rate, expressed as a multiple of the model's base input price.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Type</th><th>What it counts</th><th>Usage field</th><th class="num">Price vs base input</th></tr>
+      <tr><td><span class="tok in">input</span></td><td>Prompt tokens after the last cache breakpoint: neither read from nor written to the cache.</td><td><code>input_tokens</code></td><td class="num">1x</td></tr>
+      <tr><td><span class="tok cw">cache write</span></td><td>Prompt tokens processed and stored so a later request can reuse them. Split by lifetime in <code>cache_creation.ephemeral_5m_input_tokens</code> and <code>cache_creation.ephemeral_1h_input_tokens</code>.</td><td><code>cache_creation_input_tokens</code></td><td class="num">1.25x (5 min) or 2x (1 hour)</td></tr>
+      <tr><td><span class="tok cr">cache read</span></td><td>Prompt tokens served from the cache.</td><td><code>cache_read_input_tokens</code></td><td class="num">0.1x; 0.05x on Opus 5.5 and Sonnet 5.5; 0.025x on Fable 5.2</td></tr>
+      <tr><td><span class="tok out">output</span></td><td>Everything the model generates, thinking included. The thinking share is in <code>output_tokens_details.thinking_tokens</code>.</td><td><code>output_tokens</code></td><td class="num">5x</td></tr>
+    </table></div>
+    <p>The full prompt the model read is <code>input_tokens + cache_creation_input_tokens + cache_read_input_tokens</code>. The <code>input_tokens</code> field alone is not the prompt size. In Claude Code it is usually a single-digit number, because Claude Code places a cache breakpoint at the end of the conversation and almost nothing sits after it.</p>
+
+<figure class="diagram">
+<svg class="mm mm-flowchart" role="img" id="mm784974f110c7" width="100%" xmlns="http://www.w3.org/2000/svg" style="max-width: 380px;" viewBox="4 4 380 474.4000244140625"><style>#mm784974f110c7{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;fill:#000000;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#mm784974f110c7 .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#mm784974f110c7 .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#mm784974f110c7 .error-icon{fill:#552222;}#mm784974f110c7 .error-text{fill:#552222;stroke:#552222;}#mm784974f110c7 .edge-thickness-normal{stroke-width:1px;}#mm784974f110c7 .edge-thickness-thick{stroke-width:3.5px;}#mm784974f110c7 .edge-pattern-solid{stroke-dasharray:0;}#mm784974f110c7 .edge-thickness-invisible{stroke-width:0;fill:none;}#mm784974f110c7 .edge-pattern-dashed{stroke-dasharray:3;}#mm784974f110c7 .edge-pattern-dotted{stroke-dasharray:2;}#mm784974f110c7 .marker{fill:#666;stroke:#666;}#mm784974f110c7 .marker.cross{stroke:#666;}#mm784974f110c7 svg{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;}#mm784974f110c7 p{margin:0;}#mm784974f110c7 .label{font-family:"Segoe UI",Arial,sans-serif;color:#000000;}#mm784974f110c7 .cluster-label text{fill:#333;}#mm784974f110c7 .cluster-label span{color:#333;}#mm784974f110c7 .cluster-label span p{background-color:transparent;}#mm784974f110c7 .label text,#mm784974f110c7 span{fill:#000000;color:#000000;}#mm784974f110c7 .node rect,#mm784974f110c7 .node circle,#mm784974f110c7 .node ellipse,#mm784974f110c7 .node polygon,#mm784974f110c7 .node path{fill:#eee;stroke:#999;stroke-width:1px;}#mm784974f110c7 .rough-node .label text,#mm784974f110c7 .node .label text,#mm784974f110c7 .image-shape .label,#mm784974f110c7 .icon-shape .label{text-anchor:middle;}#mm784974f110c7 .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#mm784974f110c7 .rough-node .label,#mm784974f110c7 .node .label,#mm784974f110c7 .image-shape .label,#mm784974f110c7 .icon-shape .label{text-align:center;}#mm784974f110c7 .node.clickable{cursor:pointer;}#mm784974f110c7 .root .anchor path{fill:#666!important;stroke-width:0;stroke:#666;}#mm784974f110c7 .arrowheadPath{fill:#333333;}#mm784974f110c7 .edgePaths .path{stroke:#666;stroke-width:1px;}#mm784974f110c7 .flowchart-link{stroke:#666;fill:none;}#mm784974f110c7 .edgeLabel{background-color:white;text-align:center;}#mm784974f110c7 .edgeLabel p{background-color:white;}#mm784974f110c7 .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mm784974f110c7 .labelBkg{background-color:rgba(255, 255, 255, 0.5);}#mm784974f110c7 .cluster rect{fill:hsl(0, 0%, 98.9215686275%);stroke:#707070;stroke-width:1px;}#mm784974f110c7 .cluster text{fill:#333;}#mm784974f110c7 .cluster span{color:#333;}#mm784974f110c7 .node .collapsed-indicator{fill:#707070;stroke:none;opacity:0.6;}#mm784974f110c7 .node .collapsed-separator{stroke:#707070;stroke-width:0.75px;}#mm784974f110c7 div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"Segoe UI",Arial,sans-serif;font-size:12px;background:hsl(-160, 0%, 93.3333333333%);border:1px solid #707070;border-radius:2px;pointer-events:none;z-index:100;}#mm784974f110c7 .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mm784974f110c7 rect.text{fill:none;stroke-width:0;}#mm784974f110c7 .icon-shape,#mm784974f110c7 .image-shape{background-color:white;text-align:center;}#mm784974f110c7 .icon-shape p,#mm784974f110c7 .image-shape p{background-color:white;padding:2px;}#mm784974f110c7 .icon-shape .label rect,#mm784974f110c7 .image-shape .label rect{opacity:0.5;background-color:white;fill:white;}#mm784974f110c7 .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#mm784974f110c7 .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#mm784974f110c7 .node .neo-node{stroke:#999;}#mm784974f110c7 [data-look="neo"].node rect,#mm784974f110c7 [data-look="neo"].cluster rect,#mm784974f110c7 [data-look="neo"].node polygon{stroke:url(#mm784974f110c7-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm784974f110c7 [data-look="neo"].swimlane.cluster rect{filter:none;}#mm784974f110c7 [data-look="neo"].node path{stroke:url(#mm784974f110c7-gradient);stroke-width:1px;}#mm784974f110c7 [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm784974f110c7 [data-look="neo"].node .neo-line path{stroke:#999;filter:none;}#mm784974f110c7 [data-look="neo"].node circle{stroke:url(#mm784974f110c7-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm784974f110c7 [data-look="neo"].node circle .state-start{fill:#000000;}#mm784974f110c7 [data-look="neo"].icon-shape .icon{fill:url(#mm784974f110c7-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm784974f110c7 [data-look="neo"].icon-shape .icon-neo path{stroke:url(#mm784974f110c7-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm784974f110c7 :root{--mermaid-font-family:"Segoe UI",Arial,sans-serif;}</style><g><marker id="mm784974f110c7_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mm784974f110c7_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mm784974f110c7_flowchart-v2-pointEnd-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="11.5" refY="7" markerUnits="userSpaceOnUse" markerWidth="10.5" markerHeight="14" orient="auto"><path d="M 0 0 L 11.5 7 L 0 14 z" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></path></marker><marker id="mm784974f110c7_flowchart-v2-pointStart-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="1" refY="7" markerUnits="userSpaceOnUse" markerWidth="11.5" markerHeight="14" orient="auto"><polygon points="0,7 11.5,14 11.5,0" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></polygon></marker><marker id="mm784974f110c7_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm784974f110c7_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm784974f110c7_flowchart-v2-circleEnd-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refY="5" refX="12.25" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm784974f110c7_flowchart-v2-circleStart-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-2" refY="5" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm784974f110c7_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mm784974f110c7_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mm784974f110c7_flowchart-v2-crossEnd-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="17.7" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5;"></path></marker><marker id="mm784974f110c7_flowchart-v2-crossStart-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="-3.5" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edges edgePaths"><path d="M164,211.6999969482422L176.92893218813452,211.6999969482422Q184,211.6999969482422 184,204.6289291363767L184,50.37106704892602Q184,43.29999923706055 191.07106781186548,43.29999923706055L220,43.29999923706055" id="mm784974f110c7-L_r_i_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 215.07167053222656 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_r_i_0" data-points="W3sieCI6MTY0LCJ5IjoyMTEuNjk5OTk2OTQ4MjQyMn0seyJ4IjoxODQsInkiOjIxMS42OTk5OTY5NDgyNDIyfSx7IngiOjE4NCwieSI6NDMuMjk5OTk5MjM3MDYwNTV9LHsieCI6MjI0LCJ5Ijo0My4yOTk5OTkyMzcwNjA1NX1d" data-look="neo" marker-end="url(#mm784974f110c7_flowchart-v2-pointEnd-margin)"></path><path d="M164,216.6999969482422L196.92893218813452,216.6999969482422Q204,216.6999969482422 204,209.6289291363767L204,161.77106476010766Q204,154.6999969482422 211.07106781186548,154.6999969482422L220,154.6999969482422" id="mm784974f110c7-L_r_w_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 108.67168426513672 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_r_w_0" data-points="W3sieCI6MTY0LCJ5IjoyMTYuNjk5OTk2OTQ4MjQyMn0seyJ4IjoyMDQsInkiOjIxNi42OTk5OTY5NDgyNDIyfSx7IngiOjIwNCwieSI6MTU0LjY5OTk5Njk0ODI0MjJ9LHsieCI6MjI0LCJ5IjoxNTQuNjk5OTk2OTQ4MjQyMn1d" data-look="neo" marker-end="url(#mm784974f110c7_flowchart-v2-pointEnd-margin)"></path><path d="M164,221.6999969482422L196.92893218813452,221.6999969482422Q204,221.6999969482422 204,228.77106476010766L204,276.6289291363767Q204,283.6999969482422 211.07106781186548,283.6999969482422L220,283.6999969482422" id="mm784974f110c7-L_r_c_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 108.67172241210938 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_r_c_0" data-points="W3sieCI6MTY0LCJ5IjoyMjEuNjk5OTk2OTQ4MjQyMn0seyJ4IjoyMDQsInkiOjIyMS42OTk5OTY5NDgyNDIyfSx7IngiOjIwNCwieSI6MjgzLjY5OTk5Njk0ODI0MjJ9LHsieCI6MjI0LCJ5IjoyODMuNjk5OTk2OTQ4MjQyMn1d" data-look="neo" marker-end="url(#mm784974f110c7_flowchart-v2-pointEnd-margin)"></path><path d="M164,226.6999969482422L176.92893218813452,226.6999969482422Q184,226.6999969482422 184,233.77106476010766L184,414.4289321881345Q184,421.5 191.07106781186548,421.5L220,421.5" id="mm784974f110c7-L_r_o_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 241.47171020507812 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_r_o_0" data-points="W3sieCI6MTY0LCJ5IjoyMjYuNjk5OTk2OTQ4MjQyMn0seyJ4IjoxODQsInkiOjIyNi42OTk5OTY5NDgyNDIyfSx7IngiOjE4NCwieSI6NDIxLjV9LHsieCI6MjI0LCJ5Ijo0MjEuNX1d" data-look="neo" marker-end="url(#mm784974f110c7_flowchart-v2-pointEnd-margin)"></path></g><g class="edgeLabels"></g><g class="nodes"><g class="node default" id="mm784974f110c7-flowchart-r-0" data-look="neo" transform="translate(88, 219.1999969482422)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">One</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> request</tspan></tspan></text></g></g></g><g class="node default info" id="mm784974f110c7-flowchart-i-1" data-look="neo" transform="translate(300, 43.29999923706055)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">input:</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> after</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> last</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">breakpoint,</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> 1x</tspan></tspan></text></g></g></g><g class="node default hot" id="mm784974f110c7-flowchart-w-3" data-look="neo" transform="translate(300, 154.6999969482422)"><rect class="basic label-container" style="" x="-76" y="-40.099998474121094" width="152" height="80.19999694824219"></rect><g class="label" style="" transform="translate(0, -28.099998474121094)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">cache</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> write:</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">stored</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> prefix,</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="2.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">1.25x</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> or</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> 2x</tspan></tspan></text></g></g></g><g class="node default good" id="mm784974f110c7-flowchart-c-5" data-look="neo" transform="translate(300, 283.6999969482422)"><rect class="basic label-container" style="" x="-76" y="-48.900001525878906" width="152" height="97.80000305175781"></rect><g class="label" style="" transform="translate(0, -36.900001525878906)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">cache</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> read:</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">served</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> from</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="2.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">cache,</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> 0.1x</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> or</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="3.2em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">less</tspan></tspan></text></g></g></g><g class="node default alt" id="mm784974f110c7-flowchart-o-7" data-look="neo" transform="translate(300, 421.5)"><rect class="basic label-container" style="" x="-76" y="-48.900001525878906" width="152" height="97.80000305175781"></rect><g class="label" style="" transform="translate(0, -36.900001525878906)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">output:</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">generated,</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="2.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">thinking</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="3.2em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">included,</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> 5x</tspan></tspan></text></g></g></g></g></g></g><defs><filter id="mm784974f110c7-drop-shadow" height="130%" width="130%"><feDropShadow dx="4" dy="4" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><defs><filter id="mm784974f110c7-drop-shadow-small" height="150%" width="150%"><feDropShadow dx="2" dy="2" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><linearGradient id="mm784974f110c7-gradient" gradientUnits="objectBoundingBox" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="hsl(0, 0%, 83.3333333333%)" stop-opacity="1"></stop><stop offset="100%" stop-color="hsl(0, 0%, 88.9215686275%)" stop-opacity="1"></stop></linearGradient></svg>
+  <figcaption>Each request splits into four counts, and each count is billed at its own multiple of the base input price.</figcaption>
+</figure>
+    <h3>Thinking is output</h3>
+    <p>Extended thinking tokens are billed as output and count toward the context window. In a measured run that asked Haiku for a 400-word explanation, <code>output_tokens</code> was 1,121 and <code>output_tokens_details.thinking_tokens</code> was 302. The cost matched only when all 1,121 were priced as output, so the thinking share is inside the output count, not on top of it.</p>
+
+    <h3>Why the mix matters more than the total</h3>
+    <p>An agent re-sends its whole conversation on every turn. Take one turn at a 150,000-token context on Opus 5.5 (input $4, output $20, 5-minute write $5, read $0.20 per million), adding 2,000 new tokens and writing a 1,500-token answer. The token total is the same in both columns. The bill is not.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Tokens</th><th class="num">Warm cache</th><th class="num">Cost</th><th class="num">Cold cache (expired)</th><th class="num">Cost</th></tr>
+      <tr><td><span class="tok cr">cache read</span></td><td class="num">150,000</td><td class="num">$0.030</td><td class="num">0</td><td class="num">$0</td></tr>
+      <tr><td><span class="tok cw">cache write</span></td><td class="num">2,000</td><td class="num">$0.010</td><td class="num">152,000</td><td class="num">$0.760</td></tr>
+      <tr><td><span class="tok out">output</span></td><td class="num">1,500</td><td class="num">$0.030</td><td class="num">1,500</td><td class="num">$0.030</td></tr>
+      <tr><td>Total</td><td class="num">153,500</td><td class="num">$0.070</td><td class="num">153,500</td><td class="num">$0.790</td></tr>
+    </table></div>
+    <p>The same turn costs about eleven times more when the cache has expired. In a healthy long session, cache read is the largest type by volume, often above 90 percent, while cost is spread across cache read, cache write and output. A session where cache write stays large turn after turn is a session where something keeps changing the prefix.</p>
+
+    <h3>Reading volume and cost separately</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Pattern in <code>usage</code></th><th>What it means</th></tr>
+      <tr><td>Cache read large, cache write small, every turn</td><td>Normal warm session. Cost tracks context size times the read rate.</td></tr>
+      <tr><td>Cache write large on one turn, then small again</td><td>One cache miss: first turn, model switch, compaction, or a return after the lifetime ran out.</td></tr>
+      <tr><td>Cache write large on every turn</td><td>The prefix changes each request: a timestamp or other varying text early in the prompt, or tool definitions changing.</td></tr>
+      <tr><td>Both cache counts zero</td><td>Nothing was cached: the prompt was under the minimum cacheable size, caching is disabled, or a gateway stripped the markers.</td></tr>
+      <tr><td>Output a large share of cost</td><td>Long answers or heavy thinking. Output is 5x input and 50x to 200x a cache read.</td></tr>
+    </table></div>
+    <aside class="rule">Read the four counts before the total: volume is mostly cache read, cost is mostly whatever is going wrong.</aside>
+    <aside class="trap">Treating <code>input_tokens</code> as the prompt size. In Claude Code it reads 2 while the model actually read 21,000 tokens.</aside>
+  </div>
+
+  <div class="lesson" id="m2-l3" data-title="The price table" data-minutes="20">
+    <h3>List prices per million tokens</h3>
+    <p>These are the API list prices for the current models on 2026-11-11. Output is five times input on every current model.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Model</th><th class="num">Input</th><th class="num">5-min write</th><th class="num">1-hour write</th><th class="num">Cache read</th><th class="num">Output</th></tr>
+      <tr><td>Fable 5.2</td><td class="num">$8</td><td class="num">$10</td><td class="num">$16</td><td class="num">$0.20</td><td class="num">$40</td></tr>
+      <tr><td>Opus 5.5</td><td class="num">$4</td><td class="num">$5</td><td class="num">$8</td><td class="num">$0.20</td><td class="num">$20</td></tr>
+      <tr><td>Sonnet 5.5</td><td class="num">$2</td><td class="num">$2.50</td><td class="num">$4</td><td class="num">$0.10</td><td class="num">$10</td></tr>
+      <tr><td>Haiku 5.5, prompt up to 100k tokens</td><td class="num">$0.10</td><td class="num">$0.125</td><td class="num">$0.20</td><td class="num">$0.01</td><td class="num">$0.50</td></tr>
+      <tr><td>Haiku 5.5, prompt over 100k tokens</td><td class="num">$0.50</td><td class="num">$0.625</td><td class="num">$1</td><td class="num">$0.05</td><td class="num">$2.50</td></tr>
+    </table></div>
+    <p>The cache read column is not a flat tenth. Opus 5.5 and Sonnet 5.5 read at 0.05x input and Fable 5.2 at 0.025x, so a long warm session on Opus 5.5 costs the same per read token as one on Fable 5.2.</p>
+
+    <h3>The Haiku 5.5 step at 100k</h3>
+    <p>Haiku 5.5 is the only current model with a long-context price. When a request's prompt passes 100,000 tokens, every rate for that request steps up fivefold, output included. The prompt length that decides it counts cache reads and cache writes, not just <code>input_tokens</code>. A warm turn at 99,000 tokens of cache read costs about $0.001; the same turn at 101,000 costs about $0.005. A Haiku agent in a 1M window that drifts past 100k pays the higher rate on every turn until the context shrinks again.</p>
+
+    <h3>What one bare run costs per model</h3>
+    <p>The same one-word headless run (about 21,700 prompt tokens, mostly cache) measured on two models, with a third computed from the same counts:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Model</th><th class="num">Cache write (1 hour)</th><th class="num">Cache read</th><th class="num"><code>total_cost_usd</code></th><th>Source</th></tr>
+      <tr><td>Haiku 5.5</td><td class="num">7,206</td><td class="num">14,517</td><td class="num">$0.0016</td><td>measured</td></tr>
+      <tr><td>Sonnet 5.5</td><td class="num">6,391</td><td class="num">14,517</td><td class="num">$0.0271</td><td>measured</td></tr>
+      <tr><td>Opus 5.5</td><td class="num">6,391</td><td class="num">14,517</td><td class="num">about $0.054</td><td>computed</td></tr>
+    </table></div>
+    <p>The model choice multiplies everything. A cheap model running an expensive pattern can still cost less than an expensive model running a good one, which is why the module "Cutting cost" treats model choice and cache hygiene together.</p>
+
+    <h3>Batch: half price for work that can wait</h3>
+    <p>The Message Batches API takes up to 100,000 requests or 256 MB per batch, returns results within 24 hours, and bills input and output at 50 percent off. The discount stacks with the cache multipliers and with the Haiku step. Batch is an API feature for jobs you submit yourself, such as classifying a ticket backlog overnight. It is not a Claude Code flag, and whether Claude Code itself can use it is not documented.</p>
+
+    <h3>Other things that change the rate</h3>
+    <ul>
+      <li>Thinking: billed as output at the output rate, as shown in the previous lesson.</li>
+      <li>Data residency: Claude Code multiplies the list price by 1.1 when a response reports <code>usage.inference_geo</code> as <code>"us"</code>. A normal run reports <code>"global"</code>.</li>
+      <li>Contracted rates: Claude Code computes every figure at list price unless the managed setting <code>modelPricing</code> carries your rates. <code>modelUsage.&lt;model&gt;.costBasis</code> reads <code>"list"</code> on a default install.</li>
+      <li>API rate limits: <code>cache_read_input_tokens</code> do not count toward the input-tokens-per-minute limit, so caching also buys throughput on an API key.</li>
+    </ul>
+    <aside class="rule">Look up four numbers for your model before you estimate anything: input, write, read and output. Input alone predicts nothing about an agent.</aside>
+    <aside class="trap">Running Haiku 5.5 with a large context because "Haiku is cheap". Past 100k prompt tokens it is five times its headline price, and every request in that state pays it.</aside>
+  </div>
+
+  <div class="lesson" id="m2-l4" data-title="How prompt caching works" data-minutes="25">
+    <h3>A prefix, matched exactly</h3>
+    <p>The API caches a request by its prefix. The prefix is assembled in a fixed order: <code>tools</code>, then <code>system</code>, then <code>messages</code>. A cache entry is a hash of everything up to a breakpoint, so the match is exact: one changed character at position N recomputes everything after N. There is no per-file or per-section caching.</p>
+    <p>Claude Code builds each request so the parts that rarely change come first:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Layer</th><th>Content</th><th>Changes when</th></tr>
+      <tr><td>System prompt</td><td>Core instructions, tool definitions</td><td>The set of loaded tool definitions changes</td></tr>
+      <tr><td>Project context</td><td>CLAUDE.md, auto memory, unscoped rules</td><td>Session start, <code>/clear</code>, <code>/compact</code></td></tr>
+      <tr><td>Conversation</td><td>Messages, responses, tool results</td><td>Every turn (appended at the end)</td></tr>
+    </table></div>
+
+    <h3>Breakpoints</h3>
+    <ul>
+      <li>A breakpoint is a <code>cache_control</code> marker on a content block. A request can carry at most 4. Breakpoints themselves cost nothing.</li>
+      <li>A cache write happens only at a breakpoint. On a read, the API checks the hash at the breakpoint and then walks back up to 20 blocks looking for an entry an earlier request wrote.</li>
+      <li>Automatic caching (one top-level <code>cache_control</code>) puts the breakpoint on the last cacheable block and moves it forward as the conversation grows. It uses one of the 4 slots.</li>
+      <li>A breakpoint on a block that changes every request (a timestamp, a request id) never hits: every request writes, none reads. Put the breakpoint on the last block that stays identical.</li>
+    </ul>
+
+    <h3>Lifetimes and their prices</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Lifetime</th><th>How to request it (API)</th><th class="num">Write price</th><th>Claude Code uses it for</th></tr>
+      <tr><td>5 minutes</td><td>default</td><td class="num">1.25x input</td><td>API key, usage credits and cloud providers; on a subscription, subagents, compaction and most other side requests</td></tr>
+      <tr><td>1 hour</td><td><code>"cache_control": {"type": "ephemeral", "ttl": "1h"}</code></td><td class="num">2x input</td><td>The main conversation on a subscription within plan usage</td></tr>
+    </table></div>
+    <p>A cache hit refreshes the lifetime at no extra cost, so a session that keeps working stays warm indefinitely. The lifetime runs from the start of the request that wrote or read the entry, not from the end of the response: a response that streams for 4 minutes leaves about 1 minute of a 5-minute entry.</p>
+<figure class="diagram">
+<svg class="mm mm-statediagram-v" role="img" id="mm7637f8c2995d" width="100%" xmlns="http://www.w3.org/2000/svg" style="max-width: 583.8125px;" viewBox="4 4 583.8125 456"><style>#mm7637f8c2995d{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;fill:#000000;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#mm7637f8c2995d .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#mm7637f8c2995d .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#mm7637f8c2995d .error-icon{fill:#552222;}#mm7637f8c2995d .error-text{fill:#552222;stroke:#552222;}#mm7637f8c2995d .edge-thickness-normal{stroke-width:1px;}#mm7637f8c2995d .edge-thickness-thick{stroke-width:3.5px;}#mm7637f8c2995d .edge-pattern-solid{stroke-dasharray:0;}#mm7637f8c2995d .edge-thickness-invisible{stroke-width:0;fill:none;}#mm7637f8c2995d .edge-pattern-dashed{stroke-dasharray:3;}#mm7637f8c2995d .edge-pattern-dotted{stroke-dasharray:2;}#mm7637f8c2995d .marker{fill:#666;stroke:#666;}#mm7637f8c2995d .marker.cross{stroke:#666;}#mm7637f8c2995d svg{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;}#mm7637f8c2995d p{margin:0;}#mm7637f8c2995d defs [id$="-barbEnd"]{fill:#000;stroke:#000;}#mm7637f8c2995d g.stateGroup text{fill:#999;stroke:none;font-size:10px;}#mm7637f8c2995d g.stateGroup text{fill:#000000;stroke:none;font-size:10px;}#mm7637f8c2995d g.stateGroup .state-title{font-weight:bolder;fill:#111111;}#mm7637f8c2995d g.stateGroup rect{fill:#eee;stroke:#999;}#mm7637f8c2995d g.stateGroup line{stroke:#666;stroke-width:1;}#mm7637f8c2995d .transition{stroke:#000;stroke-width:1;fill:none;}#mm7637f8c2995d .stateGroup .composit{fill:#ffffff;border-bottom:1px;}#mm7637f8c2995d .stateGroup .alt-composit{fill:#e0e0e0;border-bottom:1px;}#mm7637f8c2995d .state-note{stroke:#999;fill:#666;}#mm7637f8c2995d .state-note text{fill:#fff;stroke:none;font-size:10px;}#mm7637f8c2995d .stateLabel .box{stroke:none;stroke-width:0;fill:#eee;opacity:0.5;}#mm7637f8c2995d .edgeLabel .label rect{fill:#eee;opacity:0.5;}#mm7637f8c2995d .edgeLabel{background-color:white;text-align:center;}#mm7637f8c2995d .edgeLabel p{background-color:white;}#mm7637f8c2995d .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mm7637f8c2995d .edgeLabel .label text{fill:#000000;}#mm7637f8c2995d .label div .edgeLabel{color:#000000;}#mm7637f8c2995d .stateLabel text{fill:#111111;font-size:10px;font-weight:bold;}#mm7637f8c2995d .node circle.state-start{fill:#222;stroke:#222;}#mm7637f8c2995d .node .fork-join{fill:#222;stroke:#222;}#mm7637f8c2995d .node circle.state-end{fill:hsl(0, 0%, 83.3333333333%);stroke:#ffffff;stroke-width:1.5;}#mm7637f8c2995d .end-state-inner{fill:#ffffff;stroke-width:1.5;}#mm7637f8c2995d .node rect{fill:#eee;stroke:#000;stroke-width:1px;}#mm7637f8c2995d .node polygon{fill:#eee;stroke:#000;stroke-width:1px;}#mm7637f8c2995d [id$="-barbEnd"]{fill:#666;}#mm7637f8c2995d .statediagram-cluster rect{fill:#eee;stroke:#000;stroke-width:1px;}#mm7637f8c2995d .cluster-label,#mm7637f8c2995d .nodeLabel{color:#111111;}#mm7637f8c2995d .statediagram-cluster rect.outer{rx:5px;ry:5px;}#mm7637f8c2995d .statediagram-state .divider{stroke:#000;}#mm7637f8c2995d .statediagram-state .title-state{rx:5px;ry:5px;}#mm7637f8c2995d .statediagram-cluster.statediagram-cluster .inner{fill:#ffffff;}#mm7637f8c2995d .statediagram-cluster.statediagram-cluster-alt .inner{fill:#f4f4f4;}#mm7637f8c2995d .statediagram-cluster .inner{rx:0;ry:0;}#mm7637f8c2995d .statediagram-state rect.basic{rx:5px;ry:5px;}#mm7637f8c2995d .statediagram-state rect.divider{stroke-dasharray:10,10;fill:#f4f4f4;}#mm7637f8c2995d .note-edge{stroke-dasharray:5;}#mm7637f8c2995d .statediagram-note rect{fill:#666;stroke:#999;stroke-width:1px;rx:0;ry:0;}#mm7637f8c2995d .statediagram-note rect{fill:#666;stroke:#999;stroke-width:1px;rx:0;ry:0;}#mm7637f8c2995d .statediagram-note text{fill:#fff;}#mm7637f8c2995d .statediagram-note .nodeLabel{color:#fff;}#mm7637f8c2995d .statediagram .edgeLabel{color:red;}#mm7637f8c2995d [id$="-dependencyStart"],#mm7637f8c2995d [id$="-dependencyEnd"]{fill:#666;stroke:#666;stroke-width:1;}#mm7637f8c2995d .statediagramTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mm7637f8c2995d [data-look="neo"].statediagram-cluster rect{fill:#eee;stroke:url(#mm7637f8c2995d-gradient);stroke-width:1;}#mm7637f8c2995d [data-look="neo"].statediagram-cluster rect.outer{rx:5px;ry:5px;filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm7637f8c2995d .node .neo-node{stroke:#999;}#mm7637f8c2995d [data-look="neo"].node rect,#mm7637f8c2995d [data-look="neo"].cluster rect,#mm7637f8c2995d [data-look="neo"].node polygon{stroke:url(#mm7637f8c2995d-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm7637f8c2995d [data-look="neo"].swimlane.cluster rect{filter:none;}#mm7637f8c2995d [data-look="neo"].node path{stroke:url(#mm7637f8c2995d-gradient);stroke-width:1px;}#mm7637f8c2995d [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm7637f8c2995d [data-look="neo"].node .neo-line path{stroke:#999;filter:none;}#mm7637f8c2995d [data-look="neo"].node circle{stroke:url(#mm7637f8c2995d-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm7637f8c2995d [data-look="neo"].node circle .state-start{fill:#000000;}#mm7637f8c2995d [data-look="neo"].icon-shape .icon{fill:url(#mm7637f8c2995d-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm7637f8c2995d [data-look="neo"].icon-shape .icon-neo path{stroke:url(#mm7637f8c2995d-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm7637f8c2995d :root{--mermaid-font-family:"Segoe UI",Arial,sans-serif;}</style><g><defs><marker id="mm7637f8c2995d_stateDiagram-barbEnd" refX="19" refY="7" markerWidth="20" markerHeight="14" markerUnits="strokeWidth" orient="auto"><path d="M 19,7 L11,14 L13,7 L11,0 Z"></path></marker></defs><defs><marker id="mm7637f8c2995d_stateDiagram-barbEnd-margin" refX="17" refY="7" markerWidth="20" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto"><path d="M 19,7 L11,14 L13,7 L11,0 Z" fill="#000"></path></marker></defs><g class="root"><g class="clusters"></g><g class="edges edgePaths"><path d="M381.203125,26L381.203125,125.5" id="mm7637f8c2995d-edge0" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 99.5 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge0" data-points="W3sieCI6MzgxLjIwMzEyNSwieSI6MjZ9LHsieCI6MzgxLjIwMzEyNSwieSI6MTMxfV0=" data-look="neo" marker-end="url(#mm7637f8c2995d_stateDiagram-barbEnd-margin)"></path><path d="M361.8697916666667,168L361.8697916666667,180.92893218813452Q361.8697916666667,188 354.7987238548012,188L285.7741928118655,188Q278.703125,188 278.703125,195.07106781186548L278.703125,267.5" id="mm7637f8c2995d-edge1" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 177.33840942382812 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge1" data-points="W3sieCI6MzYxLjg2OTc5MTY2NjY2NjcsInkiOjE2OH0seyJ4IjozNjEuODY5NzkxNjY2NjY2NywieSI6MTg4fSx7IngiOjI3OC43MDMxMjUsInkiOjE4OH0seyJ4IjoyNzguNzAzMTI1LCJ5IjoyNzN9XQ==" data-look="neo" marker-end="url(#mm7637f8c2995d_stateDiagram-barbEnd-margin)"></path><path d="M210.703125,289.3333333333333L192.86979166666669,289.3333333333333Q190.703125,289.3333333333333 190.703125,291.5L190.703125,291.5Q190.703125,293.6666666666667 192.86979166666669,293.6666666666667L205.203125,293.6666666666667" id="mm7637f8c2995d-edge2" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 37.200706481933594 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge2" data-points="W3sieCI6MjEwLjcwMzEyNSwieSI6Mjg5LjMzMzMzMzMzMzMzMzN9LHsieCI6MTkwLjcwMzEyNSwieSI6Mjg5LjMzMzMzMzMzMzMzMzN9LHsieCI6MTkwLjcwMzEyNSwieSI6MjkzLjY2NjY2NjY2NjY2Njd9LHsieCI6MjEwLjcwMzEyNSwieSI6MjkzLjY2NjY2NjY2NjY2Njd9XQ==" data-look="neo" marker-end="url(#mm7637f8c2995d_stateDiagram-barbEnd-margin)"></path><path d="M278.703125,310L278.703125,387.9289321881345Q278.703125,395 285.7741928118655,395L354.7987238548012,395Q361.8697916666667,395 361.8697916666667,402.0710678118655L361.8697916666667,409.5" id="mm7637f8c2995d-edge3" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 177.33837890625 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge3" data-points="W3sieCI6Mjc4LjcwMzEyNSwieSI6MzEwfSx7IngiOjI3OC43MDMxMjUsInkiOjM5NX0seyJ4IjozNjEuODY5NzkxNjY2NjY2NywieSI6Mzk1fSx7IngiOjM2MS44Njk3OTE2NjY2NjY3LCJ5Ijo0MTV9XQ==" data-look="neo" marker-end="url(#mm7637f8c2995d_stateDiagram-barbEnd-margin)"></path><path d="M400.53645833333337,415L400.53645833333337,402.0710678118655Q400.53645833333337,395 407.60752614519885,395L476.6320571881345,395Q483.703125,395 483.703125,387.9289321881345L483.703125,362.5L483.703125,220.5L483.703125,195.07106781186548Q483.703125,188 476.6320571881345,188L407.60752614519885,188Q400.53645833333337,188 400.53645833333337,180.92893218813452L400.53645833333337,173.5" id="mm7637f8c2995d-edge4" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 397.1767578125 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge4" data-points="W3sieCI6NDAwLjUzNjQ1ODMzMzMzMzM3LCJ5Ijo0MTV9LHsieCI6NDAwLjUzNjQ1ODMzMzMzMzM3LCJ5IjozOTV9LHsieCI6NDgzLjcwMzEyNSwieSI6Mzk1fSx7IngiOjQ4My43MDMxMjUsInkiOjM2Mi41fSx7IngiOjQ4My43MDMxMjUsInkiOjIyMC41fSx7IngiOjQ4My43MDMxMjUsInkiOjE4OH0seyJ4Ijo0MDAuNTM2NDU4MzMzMzMzMzcsInkiOjE4OH0seyJ4Ijo0MDAuNTM2NDU4MzMzMzMzMzcsInkiOjE2OH1d" data-look="neo" marker-end="url(#mm7637f8c2995d_stateDiagram-barbEnd-margin)"></path></g><g class="edgeLabels"><g class="edgeLabel" transform="translate(380.7421875, 78.5)"><g class="label" data-id="edge0" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-48.0390625" y="-3" width="96.078125" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">"cache</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> write"</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(278.6875, 220.5)"><g class="label" data-id="edge1" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-51.984375" y="-3" width="103.96875" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">"lifetime</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> runs"</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(99.3515625, 291.5)"><g class="label" data-id="edge2" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-87.3515625" y="-3" width="174.703125" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">"cache</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> read</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> refreshes</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> it"</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(278.453125, 362.5)"><g class="label" data-id="edge3" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-72.75" y="-3" width="145.5" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">"no</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> request</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> in</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> time"</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(483.2578125, 291.5)"><g class="label" data-id="edge4" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-96.5546875" y="-3" width="193.109375" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">"next</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> request</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> writes</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> again"</tspan></tspan></text></g></g></g></g><g class="nodes"><g class="node default" id="mm7637f8c2995d-state-root_start-0" data-look="neo" transform="translate(381.203125, 19)"><circle class="state-start" r="7" width="14" height="14"></circle></g><g class="node  statediagram-state" id="mm7637f8c2995d-state-Written-4" data-look="neo" transform="translate(381.203125, 149.5)"><rect class="basic label-container" style="" rx="5" ry="5" x="-68" y="-18.5" width="136" height="37"></rect><g class="label" style="" transform="translate(-60, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Written</tspan></tspan></text></g></g></g><g class="node  statediagram-state" id="mm7637f8c2995d-state-Warm-3" data-look="neo" transform="translate(278.703125, 291.5)"><rect class="basic label-container" style="" rx="5" ry="5" x="-68" y="-18.5" width="136" height="37"></rect><g class="label" style="" transform="translate(-60, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Warm</tspan></tspan></text></g></g></g><g class="node  statediagram-state" id="mm7637f8c2995d-state-Expired-4" data-look="neo" transform="translate(381.203125, 433.5)"><rect class="basic label-container" style="" rx="5" ry="5" x="-68" y="-18.5" width="136" height="37"></rect><g class="label" style="" transform="translate(-60, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Expired</tspan></tspan></text></g></g></g></g></g></g><defs><filter id="mm7637f8c2995d-drop-shadow" height="130%" width="130%"><feDropShadow dx="4" dy="4" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><defs><filter id="mm7637f8c2995d-drop-shadow-small" height="150%" width="150%"><feDropShadow dx="2" dy="2" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><linearGradient id="mm7637f8c2995d-gradient" gradientUnits="objectBoundingBox" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="hsl(0, 0%, 83.3333333333%)" stop-opacity="1"></stop><stop offset="100%" stop-color="hsl(0, 0%, 88.9215686275%)" stop-opacity="1"></stop></linearGradient></svg>
+  <figcaption>A cache entry stays warm as long as requests keep reading it inside the lifetime; after expiry the next request pays the write price again.</figcaption>
+</figure>
+    <p>Caching pays for itself only after reuse. Counting the cost of the same prefix sent n times, in units of base input:</p>
+    <div class="tablewrap"><table>
+      <tr><th class="num">Uses</th><th class="num">No cache</th><th class="num">5-min cache (0.1x read)</th><th class="num">1-hour cache (0.1x read)</th></tr>
+      <tr><td class="num">1</td><td class="num">1.0</td><td class="num">1.25</td><td class="num">2.0</td></tr>
+      <tr><td class="num">2</td><td class="num">2.0</td><td class="num">1.35</td><td class="num">2.1</td></tr>
+      <tr><td class="num">3</td><td class="num">3.0</td><td class="num">1.45</td><td class="num">2.2</td></tr>
+      <tr><td class="num">10</td><td class="num">10.0</td><td class="num">2.15</td><td class="num">2.9</td></tr>
+    </table></div>
+    <p>The 1-hour lifetime is worth its double write price only when you idle between 5 and 60 minutes and come back. For bursts that never pause past 5 minutes it is pure overhead.</p>
+
+    <h3>What invalidates what</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Change</th><th>Tools</th><th>System</th><th>Messages</th></tr>
+      <tr><td>Tool definitions (names, descriptions, parameters)</td><td>miss</td><td>miss</td><td>miss</td></tr>
+      <tr><td>Web search or citations toggled, speed (fast mode) changed</td><td>kept</td><td>miss</td><td>miss</td></tr>
+      <tr><td><code>tool_choice</code> changed, images added or removed</td><td>kept</td><td>kept</td><td>miss</td></tr>
+      <tr><td>Thinking parameters or effort changed</td><td>model-specific</td><td>model-specific</td><td>miss</td></tr>
+    </table></div>
+    <p>In Claude Code terms, these cause a full or partial re-read: switching models (each model has its own cache), changing effort on older models (Opus 5.5, Sonnet 5.5, Haiku 5.5 and Fable 5.1 or later keep the cache on an API key or subscription), turning fast mode on or off, adding or removing tools when tool search is off, <code>/compact</code> (the conversation layer), and the first session after a Claude Code upgrade. Editing files, editing CLAUDE.md mid-session, changing permission mode, invoking skills and spawning a subagent keep the parent's cache.</p>
+    <p>The cache is effectively scoped to one machine and one directory, because the system prompt carries memory paths and the first message carries the working directory and git status. In the lab runs, about 14,500 tokens of tools and core instructions were shared across directories and the remaining 7,200 were written fresh in each new folder.</p>
+
+    <h3>Minimum size</h3>
+    <p>The minimum cacheable prompt is 512 tokens on current models. A shorter prefix is processed uncached with no error: both cache counts read zero. Claude Code's overhead is far above this, so the minimum only bites when you call the API directly with short prompts.</p>
+
+    <h3>Controls in Claude Code</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Control</th><th>Effect</th></tr>
+      <tr><td><code>promptCacheTtl</code> setting or <code>CLAUDE_CODE_PROMPT_CACHE_TTL</code></td><td><code>5m</code> or <code>1h</code> for the main conversation; <code>1h</code> works on an API key</td></tr>
+      <tr><td><code>subagentPromptCacheTtl</code> or <code>CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL</code></td><td>Same for subagents and other side requests</td></tr>
+      <tr><td><code>FORCE_PROMPT_CACHING_5M=1</code></td><td>Forces 5 minutes everywhere; overrides everything else</td></tr>
+      <tr><td><code>ENABLE_PROMPT_CACHING_1H=1</code></td><td>Requests 1 hour for both buckets</td></tr>
+      <tr><td><code>DISABLE_PROMPT_CACHING=1</code></td><td>Turns caching off (debugging only)</td></tr>
+    </table></div>
+    <aside class="rule">Put whatever varies at the end of the prompt, never at the start.</aside>
+    <aside class="trap">A script that passes a date or run id through <code>--append-system-prompt</code> changes the system layer on every run, so every run re-writes about 7,000 tokens instead of reading them.</aside>
+  </div>
+
+  <div class="lesson" id="m2-l5" data-title="Reading a real result" data-minutes="20">
+    <h3>The fields that carry cost</h3>
+    <p><code>claude -p "…" --output-format json</code> prints one JSON object. Three of its fields carry token and cost data, and they do not cover the same scope.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Scope</th><th>Subagents</th><th>On <code>--resume</code></th></tr>
+      <tr><td><code>usage</code></td><td>The main loop of this run, summed over its API calls</td><td>Excluded</td><td>This run only</td></tr>
+      <tr><td><code>modelUsage.&lt;model&gt;</code></td><td>Per model: <code>inputTokens</code>, <code>outputTokens</code>, <code>cacheReadInputTokens</code>, <code>cacheCreationInputTokens</code>, the 5m/1h split, <code>costUSD</code>, <code>costBasis</code></td><td>Included</td><td>Whole conversation so far</td></tr>
+      <tr><td><code>total_cost_usd</code></td><td>Sum of <code>costUSD</code> over all models</td><td>Included</td><td>Whole conversation so far</td></tr>
+    </table></div>
+    <p>The resume behaviour was measured: a task run cost $0.00210; resuming it with one more question gave a <code>usage</code> block for the new call alone (about 300 written, 22,100 read, 65 output) while <code>total_cost_usd</code> read $0.00242, the sum of both. Use <code>modelUsage</code> or <code>total_cost_usd</code> for accounting, and <code>usage</code> for "what did this call do".</p>
+    <p>Other fields worth knowing: <code>num_turns</code> (API round trips in the agent loop), <code>usage.iterations</code> (per-call counts), <code>usage.service_tier</code>, <code>usage.inference_geo</code>, <code>duration_ms</code> and <code>duration_api_ms</code>.</p>
+
+    <h3>A real result, trimmed</h3>
+    <pre data-cap="output"><code>{
+  "total_cost_usd": 0.00158857,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 7206,
+    "cache_read_input_tokens": 14517,
+    "output_tokens": 4,
+    "output_tokens_details": { "thinking_tokens": 0 },
+    "service_tier": "standard",
+    "cache_creation": { "ephemeral_1h_input_tokens": 7206, "ephemeral_5m_input_tokens": 0 },
+    "inference_geo": "global"
+  },
+  "modelUsage": {
+    "claude-haiku-5-5": { "costUSD": 0.00158857, "costBasis": "list", "contextWindow": 1000000, "maxOutputTokens": 128000 }
+  },
+  "num_turns": 1,
+  "result": "OK"
+}</code></pre>
+
+    <h3>Working the cost by hand</h3>
+    <p>Multiply each count by its rate for the model (Haiku 5.5, prompt under 100k) and add:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Type</th><th class="num">Tokens</th><th class="num">$ per million</th><th class="num">Cost</th></tr>
+      <tr><td><span class="tok cw">cache write, 1 hour</span></td><td class="num">7,206</td><td class="num">0.20</td><td class="num">$0.00144120</td></tr>
+      <tr><td><span class="tok cr">cache read</span></td><td class="num">14,517</td><td class="num">0.01</td><td class="num">$0.00014517</td></tr>
+      <tr><td><span class="tok in">input</span></td><td class="num">2</td><td class="num">0.10</td><td class="num">$0.00000020</td></tr>
+      <tr><td><span class="tok out">output</span></td><td class="num">4</td><td class="num">0.50</td><td class="num">$0.00000200</td></tr>
+      <tr><td>Total</td><td class="num">21,729</td><td></td><td class="num">$0.00158857</td></tr>
+    </table></div>
+    <p>The hand figure equals <code>total_cost_usd</code> to the last digit. When it does not, the usual reasons are: a write priced at the wrong lifetime (check the <code>cache_creation</code> split), the Haiku step (prompt over 100k), subagent spend that is in <code>total_cost_usd</code> but not in <code>usage</code>, or a resumed run whose total includes earlier spend.</p>
+    <p>Here 91 percent of the cost is the 1-hour cache write: a cold one-shot run pays for a cache it never reuses. Without caching the same prompt would have cost about $0.0022, so even this run came out ahead only because 14,517 tokens were already warm.</p>
+
+    <h3>The cost meter</h3>
+    <p>Paste a <code>claude -p</code> JSON result or just its <code>usage</code> block below and pick the model. The meter shows the four token types by volume and by cost, and what the same run would cost with and without caching.</p>
+    <div class="tool" data-tool="cost"></div>
+
+    <h3>Estimates, not invoices</h3>
+    <p><code>total_cost_usd</code> and <code>costUSD</code> are computed on your machine from a price table bundled with Claude Code. They drift from the real bill when prices change, when the installed version does not know a model, or when billing rules apply that the client cannot model. Use them for development insight and budgeting; the authoritative figure is the Console on an API key and the plan usage page on a subscription.</p>
+    <aside class="rule">Price a run by hand once per model you use; after that, trust the meter and check its split.</aside>
+    <aside class="trap">Summing <code>total_cost_usd</code> across a script that resumes the same session. Each resumed result already contains the earlier spend, so the sum counts it again.</aside>
+  </div>
+
+  <div class="lesson" id="m2-l6" data-title="Subscription versus API: same meter, different bill" data-minutes="15">
+    <h3>The tokens are identical, the bill is not</h3>
+    <p>The model, the tokenizer and the four token types are the same whichever way you sign in. What changes is what a token costs you and which limit stops you.</p>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>API key</th><th>Subscription plan</th></tr>
+      <tr><td>You pay</td><td>Per token, by type and model, at the price table</td><td>A flat monthly fee</td></tr>
+      <tr><td>What stops you</td><td>Rate limits per minute and the monthly spend cap of your tier</td><td>A 5-hour window (starts at your first message, resets fully 5 hours later) and weekly limits; Max and Ultra also have a weekly Fable limit</td></tr>
+      <tr><td><code>total_cost_usd</code></td><td>An estimate of what you will be billed</td><td>Notional: what the same tokens would cost at list price; nothing is charged</td></tr>
+      <tr><td>Main conversation cache lifetime</td><td>5 minutes (<code>ephemeral_5m_input_tokens</code>)</td><td>1 hour (<code>ephemeral_1h_input_tokens</code>) within plan usage; 5 minutes once usage credits are in use</td></tr>
+      <tr><td>A cheaper model saves</td><td>Dollars</td><td>Window share: more work before the limit</td></tr>
+      <tr><td>Cache reads</td><td>Billed at the read rate; do not count toward input rate limits</td><td>Count less against plan limits than uncached input</td></tr>
+      <tr><td>Where to look</td><td>The Console usage and cost pages</td><td><code>/usage</code>, and Settings &gt; Usage on claude.ai</td></tr>
+    </table></div>
+
+    <h3>Windows instead of dollars</h3>
+    <p>On a plan, there is no published exchange rate between tokens and window percent. What is documented: usage depends on model, context length, features and effort; cached content counts less; the session and weekly limits span all models, so switching models does not escape them. Claude.ai, the desktop app, IDE extensions and Claude Code all draw on one pool.</p>
+    <p><code>/usage</code> works headless and costs nothing: the run reports <code>num_turns</code> 0 and <code>total_cost_usd</code> 0. On a subscription its <code>result</code> starts with the window state:</p>
+    <pre data-cap="output"><code>You are currently using your subscription to power your Claude Code usage
+
+Current session: 12% used · resets Nov 11, 6:30pm
+Current week (all models): 40% used · resets Nov 12, 1am</code></pre>
+    <p>It goes on to list what contributed to usage on this machine (sessions run at once, context size, subagents, MCP servers), each with a share.</p>
+
+    <h3>Which lifetime you observe</h3>
+    <p>The <code>cache_creation</code> split tells you which regime a run was billed under. Every run in this module's labs, on a subscription login, wrote only <code>ephemeral_1h_input_tokens</code>. On an API key the same run writes <code>ephemeral_5m_input_tokens</code> unless you set <code>promptCacheTtl</code> to <code>1h</code>. That changes the arithmetic: a 1-hour write is 2x input against 1.25x for 5 minutes, so the same cold run shows a higher notional cost on a plan than it would bill on a key, and a resumed session after a 20-minute break is warm on the plan and cold on the key.</p>
+
+    <h3>Which one a run used</h3>
+    <ul>
+      <li>With <code>-p</code>, an API key in the environment is always used when present, and the run is billed as API usage even if you also have a plan. Interactive sessions ask once.</li>
+      <li>The stream-json init line reports <code>apiKeySource</code>; on a subscription login it reads <code>"none"</code>.</li>
+      <li><code>/status</code> shows the account and login method.</li>
+    </ul>
+    <aside class="rule">On a plan, budget in window percent and watch <code>/usage</code>; on a key, budget in dollars and reconcile against the Console.</aside>
+    <aside class="trap">A stray <code>ANTHROPIC_API_KEY</code> in a CI runner or a shell profile turns every headless run into paid API usage, silently, while you believe the plan covers it.</aside>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m2-lab1" data-title="Read the meter on one run and price it by hand" data-minutes="15">
+      <p class="goal">Run one headless prompt, find the four token counts, and reproduce <code>total_cost_usd</code> from the price table.</p>
+      <ol class="steps">
+        <li><p>Make the lab folder and move into it.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m2 | Out-Null
+Set-Location ~/bootcamp-labs/m2</code></pre></li>
+        <li><p>Run one prompt and keep the JSON result. Every headless run in this module carries <code>--setting-sources project</code> and <code>--strict-mcp-config</code>: the first keeps your personal settings and hooks out, the second loads no MCP servers. Without them your own configuration would change the token counts you measure.</p>
+          <pre><code>claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json | Set-Content -Encoding utf8 run1.json</code></pre>
+          <p class="expect"><b>Expected:</b> no screen output; <code>run1.json</code> holds one JSON object.</p></li>
+        <li><p>Print the four counts, the cache lifetime split and the meter.</p>
+          <pre><code>$r = Get-Content run1.json -Raw | ConvertFrom-Json
+$r.usage | Select-Object input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens
+$r.usage.cache_creation
+$r.total_cost_usd</code></pre>
+          <p class="expect"><b>Expected:</b> <code>input_tokens</code> 2, <code>cache_creation_input_tokens</code> about 7,200, <code>cache_read_input_tokens</code> about 14,500, <code>output_tokens</code> 4. On a subscription all the writes are under <code>ephemeral_1h_input_tokens</code> and <code>total_cost_usd</code> is about 0.0016. On an API key they are under <code>ephemeral_5m_input_tokens</code> and the cost is lower. The split between write and read depends on what was already warm; the sum stays about 21,700.</p></li>
+        <li><p>Price it by hand with the Haiku 5.5 rates (dollars per million, prompt under 100k).</p>
+          <pre><code>$in = 0.10; $out = 0.50; $w5 = 0.125; $w1 = 0.20; $rd = 0.01
+$u = $r.usage
+$cost = ($u.input_tokens * $in + $u.output_tokens * $out + $u.cache_creation.ephemeral_5m_input_tokens * $w5 + $u.cache_creation.ephemeral_1h_input_tokens * $w1 + $u.cache_read_input_tokens * $rd) / 1e6
+"by hand: {0:N8}" -f $cost
+"meter:   {0:N8}" -f $r.total_cost_usd</code></pre>
+          <p class="expect"><b>Expected:</b> two identical lines, for example <code>by hand: 0.00158857</code> and <code>meter:   0.00158857</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>Which token type is the largest share of the cost? <i>Cache write: about 91 percent on a subscription (1-hour writes at $0.20 per million). A one-word answer cost almost nothing to generate.</i></li>
+          <li>What is the full prompt size? <i><code>input_tokens + cache_creation_input_tokens + cache_read_input_tokens</code>, about 21,700. Not 2.</i></li>
+          <li>What would the same counts cost on Sonnet 5.5? <i>Write 7,206 x $4 + read 14,517 x $0.10 + output 4 x $10, per million: about $0.030, roughly 19 times the Haiku figure.</i></li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m2-lab2" data-title="Watch a cache write turn into a cache read, then break it" data-minutes="20">
+      <p class="goal">Run the same prompt repeatedly in a fresh folder, see the write become a read, then change one character of the system prompt and see the miss.</p>
+      <ol class="steps">
+        <li><p>Make a fresh subfolder. A new directory gives a new prefix, so the first run starts partly cold.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m2/cache | Out-Null
+Set-Location ~/bootcamp-labs/m2/cache</code></pre></li>
+        <li><p>Run the identical prompt twice, then twice with an appended system prompt, then once with one character of it changed.</p>
+          <pre><code>claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json | Set-Content -Encoding utf8 a.json
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json | Set-Content -Encoding utf8 b.json
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --append-system-prompt "House style: plain text." --output-format json | Set-Content -Encoding utf8 c.json
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --append-system-prompt "House style: plain text." --output-format json | Set-Content -Encoding utf8 d.json
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --append-system-prompt "House style: plain text!" --output-format json | Set-Content -Encoding utf8 e.json</code></pre></li>
+        <li><p>Tabulate the five runs.</p>
+          <pre><code>'a','b','c','d','e' | ForEach-Object {
+  $r = Get-Content "$_.json" -Raw | ConvertFrom-Json; $u = $r.usage
+  [pscustomobject]@{ run = $_; input = $u.input_tokens; cache_write = $u.cache_creation_input_tokens; cache_read = $u.cache_read_input_tokens; output = $u.output_tokens; cost = [math]::Round($r.total_cost_usd, 6) }
+} | Format-Table -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> close to this (observed):</p>
+          <pre data-cap="output"><code>run input cache_write cache_read output     cost
+--- ----- ----------- ---------- ------     ----
+a       2        7210      14517      4 0.001590
+b       2           0      21727      4 0.000219
+c       2        7216      14526      4 0.001591
+d       2           0      21742      4 0.000220
+e       2        7216      14526      4 0.001591</code></pre>
+          <p class="expect">Run b reads everything and costs about a seventh of run a. Runs c and e each rewrite about 7,200 tokens: the appended text sits in the system layer, so everything from there on misses, while the roughly 14,500 tokens of tools and core instructions before it still hit. In one of two trials, run b still wrote about 4,500 tokens; if you see that, run b once more and it reads in full.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>How many characters changed between d and e, and what did it cost? <i>One character. It turned a $0.00022 run into a $0.00159 run, about seven times more.</i></li>
+          <li>Why did c and e still read about 14,500 tokens? <i>The prefix order is tools, then system, then messages. The change sits after the tool definitions and core instructions, so the part before it still matches.</i></li>
+          <li>On an API key, how long would you have between runs before b turned into a write again? <i>5 minutes from the start of run a. On a subscription the main conversation gets 1 hour.</i></li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m2-lab3" data-title="See what output costs" data-minutes="15">
+      <p class="goal">Compare a one-word answer with a 400-word answer and measure the output share of the cost.</p>
+      <ol class="steps">
+        <li><p>From <code>~/bootcamp-labs/m2</code>, run a short and a long answer.</p>
+          <pre><code>Set-Location ~/bootcamp-labs/m2
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json | Set-Content -Encoding utf8 short.json
+claude -p "Explain in about 400 words how a DNS lookup works, from stub resolver to authoritative server." --model haiku --setting-sources project --strict-mcp-config --output-format json | Set-Content -Encoding utf8 long.json</code></pre></li>
+        <li><p>Compare them. The output share uses the Haiku 5.5 output price of $0.50 per million.</p>
+          <pre><code>'short','long' | ForEach-Object {
+  $r = Get-Content "$_.json" -Raw | ConvertFrom-Json; $u = $r.usage
+  [pscustomobject]@{ run = $_; cache_write = $u.cache_creation_input_tokens; cache_read = $u.cache_read_input_tokens; output = $u.output_tokens; thinking = $u.output_tokens_details.thinking_tokens; words = ($r.result -split '\s+').Count; cost = [math]::Round($r.total_cost_usd, 6); output_share = '{0:P0}' -f ($u.output_tokens * 0.50 / 1e6 / $r.total_cost_usd) }
+} | Format-Table -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> close to this (observed):</p>
+          <pre data-cap="output"><code>run   cache_write cache_read output thinking words     cost output_share
+---   ----------- ---------- ------ -------- -----     ---- ------------
+short           0      21723      4        0     1 0.000219 1%
+long         4550      17191   1121      302   416 0.001643 34%</code></pre>
+          <p class="expect">The short run reads its whole prompt from cache, warmed by the first lab. The long run writes about 4,500 tokens because a different prompt changes the first message, which also carries the environment block. Its output is about 1,100 tokens, about 300 of them thinking, and is about a third of the cost.</p></li>
+        <li><p>Check that thinking is billed inside <code>output_tokens</code>: price the long run by hand.</p>
+          <pre><code>$u = (Get-Content long.json -Raw | ConvertFrom-Json).usage
+"{0:N8}" -f (($u.cache_creation.ephemeral_1h_input_tokens * 0.20 + $u.cache_creation.ephemeral_5m_input_tokens * 0.125 + $u.cache_read_input_tokens * 0.01 + $u.input_tokens * 0.10 + $u.output_tokens * 0.50) / 1e6)</code></pre>
+          <p class="expect"><b>Expected:</b> the same figure as the long run's cost, about 0.00164. Adding the thinking tokens a second time would overshoot.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>What would the long run's output alone cost on Opus 5.5? <i>1,121 x $20 per million, about $0.022: more than thirteen times the whole Haiku run.</i></li>
+          <li>Which lever cuts this run's cost most on Haiku: shorter answer or no cache write? <i>The cache write (about 55 percent) edges out output (about 34 percent) here. In a warm multi-turn session the write disappears and output becomes the main lever.</i></li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m2-lab4" data-title="Measure tokens per kilobyte" data-minutes="25">
+      <p class="goal">Build three samples (prose, JSON, log), pipe each into a run, and compute tokens per KB from the growth of the prompt count.</p>
+      <ol class="steps">
+        <li><p>Make a subfolder and write the prose sample. The samples are plain ASCII on purpose: Windows PowerShell 5.1 pipes text to a native program as ASCII by default, so other characters would arrive as question marks.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m2/sizing | Out-Null
+Set-Location ~/bootcamp-labs/m2/sizing
+$prose = @'
+When the change window opened, the team drained traffic from the first web node and watched the error rate. Nothing moved for ten minutes, so they patched the kernel, rebooted, and let the load balancer bring the node back once its health check passed. The second node took longer: a stale mount held the shutdown for almost four minutes, which nobody had seen in the test environment. The runbook now says to unmount the archive share before the reboot, and to check for open handles first. By the end of the night all six nodes were on the new build, the dashboards were quiet, and the only open item was a ticket to find out why the mount had hung in the first place.
+Capacity planning works the same way every quarter. Someone pulls the peak numbers, someone else argues that last quarter was unusual, and the group settles on a figure that leaves a little headroom without buying hardware nobody will use. The useful part is not the number itself but the list of assumptions written next to it, because that list is what you check when the forecast turns out wrong.
+'@
+($prose + "`n") * 6 | Set-Content -Encoding ascii prose.txt</code></pre>
+          <p class="expect"><b>Expected:</b> <code>prose.txt</code> of 6,428 bytes. Repeating the passage does not change the ratio: a tokenizer does not compress repeats.</p></li>
+        <li><p>Write a JSON sample and a log sample. The fixed seed makes your files match the ones measured here.</p>
+          <pre><code>Get-Random -SetSeed 42 | Out-Null
+$rows = 1..60 | ForEach-Object { [ordered]@{ id = 1000 + $_; host = "web-0$($_ % 6 + 1)"; status = (200, 200, 200, 404, 500)[(Get-Random -Maximum 5)]; latency_ms = (Get-Random -Minimum 5 -Maximum 900); path = "/api/orders/$(Get-Random -Minimum 10000 -Maximum 99999)"; tags = @('prod', 'eu-west') } }
+$rows | ConvertTo-Json -Compress | Set-Content -Encoding ascii data.json
+$levels = 'INFO', 'INFO', 'INFO', 'WARN', 'ERROR'
+$t = [datetime]'2026-11-11T08:00:00'
+$lines = 1..90 | ForEach-Object { $t = $t.AddMilliseconds((Get-Random -Maximum 4000)); '{0:yyyy-MM-ddTHH:mm:ss.fffZ} {1,-5} web-0{2} GET /api/orders/{3} status={4} dur={5}ms req={6:x10}' -f $t, $levels[(Get-Random -Maximum 5)], (Get-Random -Minimum 1 -Maximum 7), (Get-Random -Minimum 10000 -Maximum 99999), (200, 200, 404, 500)[(Get-Random -Maximum 4)], (Get-Random -Minimum 3 -Maximum 900), (Get-Random -Maximum 2147483647) }
+$lines | Set-Content -Encoding ascii app.log
+Get-ChildItem prose.txt, data.json, app.log | Select-Object Name, Length</code></pre>
+          <p class="expect"><b>Expected:</b> <code>data.json</code> about 6,650 bytes and <code>app.log</code> about 8,700 bytes.</p></li>
+        <li><p>Run a baseline, then pipe each sample into the same prompt and compute the difference.</p>
+          <pre><code>function Get-PromptTokens($file) { $u = (Get-Content $file -Raw | ConvertFrom-Json).usage; $u.input_tokens + $u.cache_creation_input_tokens + $u.cache_read_input_tokens }
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json | Set-Content -Encoding utf8 base.json
+$base = Get-PromptTokens base.json
+'prose.txt', 'data.json', 'app.log' | ForEach-Object {
+  $f = $_
+  Get-Content $f -Raw | claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json | Set-Content -Encoding utf8 "$f.result.json"
+  $bytes = (Get-Item $f).Length; $delta = (Get-PromptTokens "$f.result.json") - $base
+  [pscustomobject]@{ file = $f; bytes = $bytes; tokens = $delta; tokens_per_KB = [math]::Round($delta / ($bytes / 1024)); bytes_per_token = [math]::Round($bytes / $delta, 1) }
+} | Format-Table -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> close to this (observed):</p>
+          <pre data-cap="output"><code>file      bytes tokens tokens_per_KB bytes_per_token
+----      ----- ------ ------------- ---------------
+prose.txt  6428   1856           296             3.5
+data.json  6651   3299           508               2
+app.log    8718   4827           567             1.8</code></pre>
+          <p class="expect">The baseline drifts by up to about 10 tokens between runs, which is noise against differences in the thousands. Piping adds no measurable wrapper: a one-character stdin moved the count by less than that noise.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>How many tokens would a 200 KB log of this shape add to a prompt? <i>About 200 x 567, so roughly 113,000. On Haiku 5.5 that alone crosses the 100k step.</i></li>
+          <li>Why does the log cost more per byte than the JSON, though both are machine text? <i>Timestamps with milliseconds and 10-digit hex request ids break into many short tokens; the JSON has more repeated keys, which tokenize well.</i></li>
+          <li>Does piping the file make it cheaper than pasting it into the prompt? <i>No. Piped stdin becomes part of the prompt and is counted the same way.</i></li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m2-lab5" data-title="Price a real session with the cost meter" data-minutes="30">
+      <p class="goal">Run a small multi-turn task, resume it, read the three cost fields, check your plan window, then do the same with a real task of your own and paste it into the meter.</p>
+      <ol class="steps">
+        <li><p>Make two small files to work on.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m2/own | Out-Null
+Set-Location ~/bootcamp-labs/m2/own
+@'
+deploy notes, 2026-11-10
+- web-01 patched, rebooted, healthy
+- web-02 stuck on a stale mount, unmounted by hand
+- db-01 not touched
+'@ | Set-Content -Encoding utf8 notes.txt
+@'
+open: find why the archive mount hung on web-02
+open: patch db-01 next window
+done: update the runbook reboot step
+'@ | Set-Content -Encoding utf8 todo.txt</code></pre></li>
+        <li><p>Run a task that needs tools. <code>--allowedTools "Read"</code> grants file reads only.</p>
+          <pre><code>claude -p "Read notes.txt and todo.txt and list the open items in one line each." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read" --max-turns 6 --output-format json | Set-Content -Encoding utf8 task.json
+$r = Get-Content task.json -Raw | ConvertFrom-Json
+"num_turns: $($r.num_turns)  cost: $($r.total_cost_usd)"
+$r.usage | Select-Object input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens</code></pre>
+          <p class="expect"><b>Expected:</b> <code>num_turns</code> about 3 and a cost about 0.0021. Cache read is about 36,000, more than the 21,700 overhead, because <code>usage</code> sums all three API calls and each one re-read the prefix. Cache write about 7,600, output about 440.</p></li>
+        <li><p>Resume the same session with one more question and compare <code>usage</code> with <code>modelUsage</code>.</p>
+          <pre><code>claude -p "Which open item is riskier? One sentence." --resume $r.session_id --model haiku --setting-sources project --strict-mcp-config --output-format json | Set-Content -Encoding utf8 task2.json
+$r2 = Get-Content task2.json -Raw | ConvertFrom-Json
+"cost: $($r2.total_cost_usd)"
+$r2.usage | Select-Object input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens
+$r2.modelUsage.PSObject.Properties | ForEach-Object { "$($_.Name): cw=$($_.Value.cacheCreationInputTokens) cr=$($_.Value.cacheReadInputTokens) out=$($_.Value.outputTokens) cost=$($_.Value.costUSD)" }</code></pre>
+          <p class="expect"><b>Expected:</b> <code>usage</code> shows only the new call: about 300 written, 22,100 read, 65 output. <code>modelUsage</code> and <code>total_cost_usd</code> show the whole conversation: about 7,900 written, 58,000 read, 500 output, cost about 0.0024, which is the first run's cost plus about 0.0003.</p></li>
+        <li><p>Check your plan window. This runs a local command and sends nothing to the model.</p>
+          <pre><code>$p = claude -p "/usage" --setting-sources project --strict-mcp-config --output-format json | ConvertFrom-Json
+"num_turns=$($p.num_turns) cost=$($p.total_cost_usd)"
+$p.result</code></pre>
+          <p class="expect"><b>Expected:</b> <code>num_turns=0 cost=0</code>. On a subscription the result starts with <code>Current session: N% used · resets …</code> and <code>Current week (all models): N% used · resets …</code>, then a breakdown of what contributed.</p></li>
+        <li><p>Paste the contents of <code>task2.json</code> into the cost meter in the lesson "Reading a real result" and pick Haiku 5.5. Then do the same for a real task of your own: in one of your repositories, run a headless task you would normally do by hand, with the same two isolation flags, read-only tools and a turn limit, and paste its result.</p>
+          <pre><code>Get-Content task2.json -Raw | Set-Clipboard
+claude -p "Summarise what changed in the last five commits." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Bash(git log *)" "Bash(git show *)" --max-turns 8 --output-format json | Set-Content -Encoding utf8 ~/bootcamp-labs/m2/mine.json</code></pre>
+          <p class="expect"><b>Expected:</b> on a small test repository with five commits the run took about 4 turns, read about 81,000 tokens from cache, wrote about 8,600, produced about 740 output tokens and cost about 0.0029; <code>permission_denials</code> listed two git commands outside the allowlist, which the model worked around. In the meter, cache read is the largest bar by volume and a different type, usually cache write or output, as the largest bar by cost. Its "with caching" figure matches <code>total_cost_usd</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>You are done when you can write down, for your own run in <code>mine.json</code>:</p>
+        <ul>
+          <li>The hand-priced cost, within 1 percent of <code>total_cost_usd</code>. <i>Use the lab 1 formula with the rates for the model in <code>modelUsage</code>. If it is off, check for subagent spend (in <code>modelUsage</code>, not in <code>usage</code>) or a second model in <code>modelUsage</code>.</i></li>
+          <li>The largest cost type and the one change that would shrink it. <i>Cache write: keep the prefix stable and stay within the lifetime. Output: ask for shorter answers or lower effort. Cache read: carry less context.</i></li>
+          <li>What the figure means for you. <i>On an API key it is the approximate charge. On a subscription it is notional, and the number that matters is the window percent from step 4.</i></li>
+        </ul>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Usage fields</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Meaning</th></tr>
+      <tr><td><code>usage.input_tokens</code></td><td>Uncached prompt tokens after the last breakpoint</td></tr>
+      <tr><td><code>usage.cache_creation_input_tokens</code></td><td>Prompt tokens written to the cache</td></tr>
+      <tr><td><code>usage.cache_creation.ephemeral_5m_input_tokens</code> / <code>ephemeral_1h_input_tokens</code></td><td>The write split by lifetime</td></tr>
+      <tr><td><code>usage.cache_read_input_tokens</code></td><td>Prompt tokens served from the cache</td></tr>
+      <tr><td><code>usage.output_tokens</code></td><td>Generated tokens, thinking included</td></tr>
+      <tr><td><code>usage.output_tokens_details.thinking_tokens</code></td><td>The thinking share of output</td></tr>
+      <tr><td><code>usage.iterations</code></td><td>Per-API-call counts within the run</td></tr>
+      <tr><td><code>modelUsage.&lt;model&gt;</code></td><td>Per-model totals including subagents and earlier resumed runs; <code>costUSD</code>, <code>costBasis</code></td></tr>
+      <tr><td><code>total_cost_usd</code></td><td>Client-side estimate at list price, whole conversation</td></tr>
+      <tr><td><code>num_turns</code></td><td>API round trips in the agent loop</td></tr>
+    </table></div>
+
+    <h3>Price multipliers (base input = 1)</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Type</th><th class="num">Multiplier</th></tr>
+      <tr><td><span class="tok in">input</span></td><td class="num">1</td></tr>
+      <tr><td><span class="tok cw">cache write, 5 min</span></td><td class="num">1.25</td></tr>
+      <tr><td><span class="tok cw">cache write, 1 hour</span></td><td class="num">2</td></tr>
+      <tr><td><span class="tok cr">cache read</span></td><td class="num">0.1 (Haiku 5.5); 0.05 (Opus 5.5, Sonnet 5.5); 0.025 (Fable 5.2)</td></tr>
+      <tr><td><span class="tok out">output</span></td><td class="num">5</td></tr>
+      <tr><td>Batch API</td><td class="num">0.5 on input and output</td></tr>
+      <tr><td>Haiku 5.5, prompt over 100k</td><td class="num">5 on every rate</td></tr>
+    </table></div>
+
+    <h3>Sizing</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Content</th><th class="num">Tokens per KB</th></tr>
+      <tr><td>Prose</td><td class="num">about 296</td></tr>
+      <tr><td>Compact JSON</td><td class="num">about 508</td></tr>
+      <tr><td>Log with timestamps and hex ids</td><td class="num">about 567</td></tr>
+      <tr><td>Claude Code headless overhead, no MCP</td><td class="num">about 21,700 tokens per request</td></tr>
+    </table></div>
+
+    <h3>Flags, commands and settings</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Item</th><th>Use</th></tr>
+      <tr><td><code>--output-format json</code></td><td>One JSON result with <code>usage</code>, <code>modelUsage</code>, <code>total_cost_usd</code></td></tr>
+      <tr><td><code>--setting-sources project --strict-mcp-config</code></td><td>Measure without personal settings, hooks or MCP servers</td></tr>
+      <tr><td><code>--append-system-prompt</code></td><td>Adds to the system layer; any change misses the cache from there on</td></tr>
+      <tr><td><code>--resume &lt;id&gt;</code></td><td>Continues a session; cost fields then include earlier spend</td></tr>
+      <tr><td><code>--max-budget-usd</code></td><td>Stops a headless run at a spend estimate</td></tr>
+      <tr><td><code>claude -p "/usage"</code></td><td>Plan windows and session cost; free, works headless</td></tr>
+      <tr><td><code>promptCacheTtl</code>, <code>subagentPromptCacheTtl</code></td><td><code>5m</code> or <code>1h</code> per bucket</td></tr>
+      <tr><td><code>CLAUDE_CODE_PROMPT_CACHE_TTL</code>, <code>FORCE_PROMPT_CACHING_5M</code>, <code>ENABLE_PROMPT_CACHING_1H</code>, <code>DISABLE_PROMPT_CACHING</code></td><td>Environment overrides for the cache lifetime</td></tr>
+      <tr><td><code>modelPricing</code> (managed setting)</td><td>Report costs at contracted rates instead of list</td></tr>
+    </table></div>
+
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>Cache write large on every turn</td><td>Varying text early in the prefix (date, run id in the system prompt), or tool set changing</td><td>Move varying text to the end of the user message; keep tools fixed for the session</td></tr>
+      <tr><td>First turn after a break is expensive</td><td>Cache lifetime expired (5 minutes on an API key)</td><td>Set <code>promptCacheTtl</code> to <code>1h</code> if you regularly idle 5 to 60 minutes; otherwise accept it</td></tr>
+      <tr><td>Expensive turn right after <code>/model</code></td><td>Each model has its own cache</td><td>Choose the model at session start</td></tr>
+      <tr><td>Haiku bill five times the estimate</td><td>Prompt over 100k tokens, counting cache reads and writes</td><td>Keep Haiku contexts under 100k: <code>/compact</code>, <code>/clear</code>, smaller inputs</td></tr>
+      <tr><td>Hand price does not match <code>total_cost_usd</code></td><td>Wrong write lifetime, subagent spend, resumed run, second model</td><td>Price from <code>modelUsage</code>, using the <code>cache_creation</code> split</td></tr>
+      <tr><td>Both cache counts zero</td><td>Prompt under 512 tokens, caching disabled, or a gateway dropping <code>cache_control</code></td><td>Check the environment variables and the gateway</td></tr>
+      <tr><td>Headless runs billed to the API despite a plan</td><td><code>ANTHROPIC_API_KEY</code> set; <code>-p</code> always uses it</td><td>Unset it where the plan should apply; check <code>apiKeySource</code></td></tr>
+      <tr><td>Daily totals double-counted</td><td>Summing <code>total_cost_usd</code> across resumed runs of one session</td><td>Take the last result per session</td></tr>
+    </table></div>
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+      <li>Claude API docs, "Pricing": <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener">platform.claude.com/docs/en/about-claude/pricing</a></li>
+      <li>Claude API docs, "Prompt caching": <a href="https://platform.claude.com/docs/en/build-with-claude/prompt-caching" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/prompt-caching</a></li>
+      <li>Claude Code docs, "Manage costs effectively": <a href="https://code.claude.com/docs/en/costs" target="_blank" rel="noopener">code.claude.com/docs/en/costs</a></li>
+      <li>Claude Code docs, "How Claude Code uses prompt caching": <a href="https://code.claude.com/docs/en/prompt-caching" target="_blank" rel="noopener">code.claude.com/docs/en/prompt-caching</a></li>
+      <li>Claude Code docs, "Track cost and usage": <a href="https://code.claude.com/docs/en/agent-sdk/cost-tracking" target="_blank" rel="noopener">code.claude.com/docs/en/agent-sdk/cost-tracking</a></li>
+      <li>Claude Code docs, "Environment variables": <a href="https://code.claude.com/docs/en/env-vars" target="_blank" rel="noopener">code.claude.com/docs/en/env-vars</a></li>
+      <li>Claude Code docs, "CLI reference": <a href="https://code.claude.com/docs/en/cli-reference" target="_blank" rel="noopener">code.claude.com/docs/en/cli-reference</a></li>
+      <li>Measured: every Expected line in the labs comes from a run on Claude Code 2.1.322 on 11 November 2026.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "A long Opus 5.5 session shows 1.8 million cache read tokens and 30,000 output tokens. You want to cut its cost. Which line of the bill is bigger?", "o": ["The cache reads, by a wide margin, because volume drives cost", "Neither: both are billed below the input rate", "The output: about $0.60 against about $0.36 for the reads", "They are equal, because output and cache read have the same multiplier"], "a": 2, "why": "Opus 5.5 reads cost $0.20 per million, so 1.8 million is about $0.36. Output costs $20 per million, so 30,000 is $0.60. Sixty times fewer tokens cost more: read the mix, not the volume."},
+    {"q": "A Haiku 5.5 agent runs at about 95,000 prompt tokens per turn. A colleague wants to paste a 15 KB log excerpt into its context for the rest of the session. What is the main cost concern?", "o": ["The log adds about 8,500 tokens and pushes the prompt past 100,000, so every rate on every later turn rises fivefold", "The log is billed as output because the model will quote it", "Logs cannot be cached, so it is billed as input on every turn", "There is no concern: Haiku has no long-context premium"], "a": 0, "why": "Logs run at about 567 tokens per KB, so 15 KB is about 8,500 tokens. Haiku 5.5 prices prompts over 100,000 tokens, counting cache reads and writes, at five times every rate including output. Summarise the log or trim the context first."},
+    {"q": "On an API key, a developer comes back to a large session after a 20-minute meeting and the first turn costs as much as the previous twenty. Nothing else changed. What explains it, and what is the lever?", "o": ["Claude Code compacted the session during the break; turn off compaction", "The model changed during the break; pin the model with --model", "The cache was invalidated by edits to CLAUDE.md; avoid editing it mid-session", "The 5-minute cache expired, so the whole context was rewritten; set promptCacheTtl to 1h if such breaks are routine"], "a": 3, "why": "API-key sessions get 5-minute cache writes on the main conversation. After 20 idle minutes the prefix is gone and the next turn writes it again at 1.25x input. A 1-hour lifetime costs 2x per write but survives breaks of up to an hour, which pays off when breaks are common. Mid-session CLAUDE.md edits do not invalidate the cache."},
+    {"q": "A nightly script runs claude -p a hundred times with --append-system-prompt \"Run id: RUN-ID\" so the logs can be matched later. Each run shows about 7,000 cache-write tokens and no hit beyond about 14,500 shared tokens. What is the best fix?", "o": ["Switch to the 1-hour cache lifetime so entries last longer", "Move the run id out of the system prompt into the end of the user prompt, or into the script's own log only", "Add more cache breakpoints so the run id is cached separately", "Disable prompt caching, since it does not help this workload"], "a": 1, "why": "The system layer comes before the messages, so a value that changes every run (here a fresh id per run) invalidates everything from that point on. A longer lifetime or more breakpoints cannot help, because the prefix never repeats. Varying text belongs at the end, or outside the prompt."},
+    {"q": "On a Max subscription, a day of headless runs adds up to $40 in total_cost_usd. Your manager asks whether you overspent. What is the accurate answer?", "o": ["Yes: subscription runs are billed at API rates on top of the fee", "It depends on whether the runs used the 1-hour cache, which is billed separately", "No money was charged for those runs within plan usage; the figure is a list-price estimate, and the limit that matters is the window percent shown by /usage", "The figure is wrong: total_cost_usd is always zero on a subscription"], "a": 2, "why": "total_cost_usd is a client-side estimate at list price. On a plan within its included usage it is notional; the real constraint is the 5-hour window and weekly limits. The exceptions are usage credits, billed at API rates once turned on and used, and an ANTHROPIC_API_KEY in the environment, which -p always uses."}
+  ]</script>
+</section>
+
+    <section class="view" id="view-share" hidden>
+      <div>
+        <div class="kicker">Export and share</div>
+        <h2>Hand this module on</h2>
+        <p class="lede">This module is a complete page on its own: briefing, labs, judgment calls and cheat sheet. It names no organization, host, account or internal tool, and every lab runs on plain Claude Code in a scratch folder.</p>
+      </div>
+      <div class="panel">
+        <h3>1. The link</h3>
+        <p>When you are reading this on claude.ai, use Share on this page. A viewer needs only the link. Each module has its own link, so you can send one module to one person. Their progress stays in their own browser and is never visible to you.</p>
+        <h3>2. One HTML file</h3>
+        <p>This module is also the single self-contained file <code>m02-tokens.html</code>. It needs no server and no network: mail it, put it on a file share, or open it from a USB stick. Offline it falls back to system fonts; everything else is identical, diagrams and instruments included.</p>
+        <div class="row"><button class="btn" type="button" data-save="m02-tokens.html">Save this module as a file</button><span class="note"></span></div>
+        <h3>3. The whole set</h3>
+        <p>All modules plus the catalogue page (<code>index.html</code>) form one folder of files that link to each other. Keep them together and the links between modules work offline. The same folder works behind any static web server with nothing to configure.</p>
+        <h3>Moving progress between copies</h3>
+        <p>The link, the file and a hosted copy each keep their own progress. Use the progress code on this module's overview to carry it across.</p>
+        
+      </div>
+    </section>
+    <div class="pager" id="pager"></div>
+  </main>
+</div>
+
+<script type="application/json" id="manifest">{"edition":"portable","kind":"file","self":"m2","catalogue":"index.html","modules":[{"id":"m1","title":"Context","sub":"What the model sees, and what it costs to show it","level":"foundation","prereq":[],"minutes":240,"lessons":6,"labs":5,"calls":5,"href":"m01-context.html"},{"id":"m2","title":"Tokens and their price","sub":"Input, output, cache write, cache read","level":"foundation","prereq":[],"minutes":220,"lessons":6,"labs":5,"calls":5,"href":"m02-tokens.html"},{"id":"m3","title":"Skills","sub":"Instructions that load only when needed","level":"practitioner","prereq":["m1"],"minutes":230,"lessons":6,"labs":5,"calls":5,"href":"m03-skills.html"},{"id":"m4","title":"Commands","sub":"Built-in and your own","level":"practitioner","prereq":["m1"],"minutes":245,"lessons":6,"labs":5,"calls":5,"href":"m04-commands.html"},{"id":"m5","title":"Hooks","sub":"Rules the model cannot talk its way past","level":"practitioner","prereq":[],"minutes":200,"lessons":6,"labs":5,"calls":5,"href":"m05-hooks.html"},{"id":"m6","title":"Plugins and marketplaces","sub":"Package it, publish it, control it","level":"advanced","prereq":["m3","m5"],"minutes":255,"lessons":5,"labs":5,"calls":5,"href":"m06-marketplaces.html"},{"id":"m7","title":"Headless runs and subagents","sub":"Claude Code as a program, and as a team","level":"practitioner","prereq":["m1","m2"],"minutes":220,"lessons":6,"labs":5,"calls":5,"href":"m07-agents.html"},{"id":"m8","title":"Orchestration","sub":"Briefs, handoffs, queues and the ways they fail","level":"advanced","prereq":["m7"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m08-orchestration.html"},{"id":"m9","title":"Telemetry","sub":"See tokens, cache and cost as they happen","level":"practitioner","prereq":["m2"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m09-telemetry.html"},{"id":"m10","title":"Cutting cost","sub":"The levers, and proof that each one worked","level":"advanced","prereq":["m2","m9"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m10-cost.html"},{"id":"m11","title":"Evals and A/B testing","sub":"Compare prompts, models and setups without fooling yourself","level":"advanced","prereq":["m2","m7"],"minutes":250,"lessons":6,"labs":5,"calls":5,"href":"m11-ab-testing.html"},{"id":"m12","title":"Session transcripts","sub":"The anatomy of the JSONL behind every session","level":"practitioner","prereq":["m1","m2"],"minutes":215,"lessons":6,"labs":5,"calls":5,"href":"m12-transcripts.html"},{"id":"m13","title":"Models and ways to teach them","sub":"Model tiers, retrieval, ingestion, fine-tuning and what you will actually use","level":"foundation","prereq":[],"minutes":230,"lessons":6,"labs":5,"calls":5,"href":"m13-models.html"},{"id":"m14","title":"Agent SDK and agent teams","sub":"Your own agent loop, and sessions that message each other","level":"advanced","prereq":["m7"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m14-agent-sdk.html"},{"id":"m15","title":"The wider ecosystem","sub":"Multiplexers, community skills and how to vet them","level":"practitioner","prereq":["m3"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m15-ecosystem.html"},{"id":"m16","title":"Security","sub":"Permissions, sandboxing, prompt injection and what you install","level":"practitioner","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m16-security.html"},{"id":"m17","title":"Daily workflow","sub":"Plan mode, rewind, worktrees, effort and git habits","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m17-workflow.html"},{"id":"m18","title":"Unattended and CI","sub":"GitHub Actions, review in the pipeline, scheduled runs","level":"advanced","prereq":["m7","m16"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m18-ci.html"},{"id":"m19","title":"Claude API building blocks","sub":"Tool use, structured outputs, vision, citations, batch, computer use","level":"practitioner","prereq":["m2"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m19-api.html"},{"id":"m20","title":"Writing for agents","sub":"Briefs, specs, handoffs and CLAUDE.md design","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m20-writing.html"},{"id":"m21","title":"Where Claude Code runs","sub":"Terminal, VS Code, JetBrains, desktop and web compared","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m21-surfaces.html"},{"id":"m22","title":"Sensitive data","sub":"PHI, PII and secrets: what leaves the machine and how to stop it","level":"practitioner","prereq":["m5","m16"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m22-sensitive-data.html"},{"id":"m23","title":"MCP: anatomy of the protocol","sub":"JSON-RPC, capabilities, transports, auth, and a server you build","level":"practitioner","prereq":["m1"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m23-mcp.html"},{"id":"m24","title":"MCP server or CLI tool","sub":"The same job both ways, measured in tokens and turns","level":"advanced","prereq":["m2","m23"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m24-mcp-or-cli.html"}]}</script>
+<script>
+/* AI/LLM Bootcamp page script. One file for the catalogue page and every module page.
+   Reads the manifest (module list, links, edition) that the build embeds, then:
+   - theme: a "Theme:" dropdown at the top right, remembered per viewer; light or dark follows the host page or the system
+   - module page: part navigation on the hash (#overview, #l1.., #labs, #calls, #ref, #share), lab step ticks, lab done,
+     drill answers, progress code. State is kept per module in localStorage, so each module page stands alone.
+   - catalogue page: module cards with level, time and prerequisites, a level filter, and progress where it can be read. */
+(function () {
+  'use strict';
+  var PRISTINE = ''; try { PRISTINE = '<!doctype html>\n' + document.documentElement.outerHTML; } catch (e) {}
+  var root = document.documentElement;
+  var MAN = { modules: [] }; try { MAN = JSON.parse(document.getElementById('manifest').textContent); } catch (e) {}
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function put(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function modById(id) { return MAN.modules.filter(function (x) { return x.id === id; })[0]; }
+  function num(id) { return +id.slice(1); }
+  function mins(n) { n = +n || 0; return n >= 60 ? (Math.round(n / 6) / 10) + ' h' : n + ' min'; }
+  function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+  function link(a, href) { if (href) a.href = href; return a; }
+
+  /* ---- theme ---- */
+  var THEMES = [['a', 'Meter'], ['b', 'Workbench'], ['c', 'Blueprint'], ['d', 'Classroom'], ['e', 'Console']];
+  var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null, forced = null;
+  function mode() { var t = forced || root.getAttribute('data-theme'); root.setAttribute('data-mode', t === 'dark' || (t !== 'light' && mq && mq.matches) ? 'dark' : 'light'); }
+  var sel = document.getElementById('theme');
+  function pick(s, keep) { if (!/^[a-e]$/.test(s)) s = 'a'; root.setAttribute('data-style', s); if (sel) sel.value = s; if (keep) put('ai-bootcamp-theme', s); }
+  if (sel) {
+    THEMES.forEach(function (t) { var o = el('option', '', t[1]); o.value = t[0]; sel.appendChild(o); });
+    sel.addEventListener('change', function () { pick(sel.value, true); });
+  }
+  var qs = /[?&]style=([1-5a-e])/.exec(location.search), qm = /[?&]mode=(light|dark)/.exec(location.search);
+  if (qm) forced = qm[1];
+  pick(qs ? (/\d/.test(qs[1]) ? 'abcde'.charAt(+qs[1] - 1) : qs[1]) : (get('ai-bootcamp-theme') || 'a'), false);
+  mode();
+  if (mq && mq.addEventListener) mq.addEventListener('change', mode);
+  try { new MutationObserver(mode).observe(root, { attributes: true, attributeFilter: ['data-theme'] }); } catch (e) {}
+
+  /* ---- code blocks: caption with a file name or "shell", plus a copy button ---- */
+  [].forEach.call(document.querySelectorAll('pre'), function (pre) {
+    var box = el('div', 'codebox'), c = el('div', 'cap');
+    c.appendChild(el('span', '', pre.getAttribute('data-file') ? 'file  ' + pre.getAttribute('data-file') : (pre.getAttribute('data-cap') || 'shell')));
+    var b = el('button', 'copy', 'Copy'); b.type = 'button';
+    b.addEventListener('click', function () {
+      var t = pre.textContent;
+      function pickText() { try { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = 'Selected'; } catch (e) {} }
+      try { navigator.clipboard.writeText(t).then(function () { b.textContent = 'Copied'; }, pickText); } catch (e) { pickText(); }
+      setTimeout(function () { b.textContent = 'Copy'; }, 1600);
+    });
+    c.appendChild(b); pre.parentNode.insertBefore(box, pre); box.appendChild(c); box.appendChild(pre);
+  });
+
+  function levelChip(lv) { return el('span', 'chip lv-' + lv, lv); }
+  function readState(id) { var S = { labs: {}, steps: {}, drill: [], seen: {} }; try { var r = JSON.parse(get('ai-bootcamp-v2-' + id) || 'null'); if (r && typeof r === 'object') { ['labs', 'steps', 'seen'].forEach(function (k) { if (r[k] && typeof r[k] === 'object') S[k] = r[k]; }); if (r.drill && r.drill.length != null) S.drill = r.drill; } } catch (e) {} return S; }
+  function doneCount(S) { var n = 0, k; for (k in S.labs) if (S.labs[k]) n++; (S.drill || []).forEach(function (x) { if (x != null) n++; }); return n; }
+
+  var hn = document.getElementById('home-notes');
+  function homeNotes() { var off = get('ai-bootcamp-home') === '0'; if (hn) hn.checked = !off; document.body.classList.toggle('hide-home', off); }
+  if (hn) hn.addEventListener('change', function () { put('ai-bootcamp-home', hn.checked ? '1' : '0'); homeNotes(); });
+  homeNotes();
+
+  /* ---- save a copy of this page as one file ---- */
+  /* Inside a hosted viewer the page may be given a save function; it is asked for once, at load. Everywhere else
+     (a file on disk, a plain web server) it stays null and the button uses an ordinary download link. */
+  var DL = null;
+  try {
+    if (window.claude && typeof window.claude.use === 'function') {
+      Promise.resolve(window.claude.use('downloads')).then(function (d) { DL = d || null; }, function () { DL = null; });
+    }
+  } catch (e) { DL = null; }
+  [].forEach.call(document.querySelectorAll('[data-save]'), function (b) {
+    b.addEventListener('click', function () {
+      var msg = b.parentNode.querySelector('.note') || b;
+      var name = b.getAttribute('data-save');
+      function say(t) { if (msg !== b) msg.textContent = t; }
+      function viaLink() {
+        try {
+          var a = el('a'); a.href = URL.createObjectURL(new Blob([PRISTINE], { type: 'text/html' })); a.download = name;
+          document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+          say('Saved as ' + name + ' if your browser allows downloads from this page. If nothing happened, use the file from the export set instead.');
+        } catch (e) { say('This page cannot start a download here. Use the file from the export set instead.'); }
+      }
+      if (DL && typeof DL.save === 'function') {
+        DL.save({ filename: name, data: PRISTINE }).then(function () { say('Saved as ' + name + '.'); }, function (err) {
+          var code = err && err.code;
+          if (code === 'declined') return;
+          if (code === 'rate_limited') { say('A save is already waiting for your answer. Wait a moment, then try again.'); return; }
+          viaLink();
+        });
+      } else { viaLink(); }
+    });
+  });
+
+  /* ================= catalogue page ================= */
+  var cards = document.getElementById('cards');
+  if (cards) {
+    var filter = get('ai-bootcamp-level') || 'all', fbar = document.getElementById('levels');
+    var draw = function () {
+      cards.textContent = '';
+      MAN.modules.forEach(function (m) {
+        if (filter !== 'all' && m.level !== filter) return;
+        var c = link(el(m.href ? 'a' : 'div', 'mcard'), m.href);
+        var top = el('div', 'chips'); top.appendChild(el('span', 'n', 'MODULE ' + num(m.id))); top.appendChild(levelChip(m.level)); top.appendChild(el('span', 'chip', mins(m.minutes))); c.appendChild(top);
+        c.appendChild(el('span', 't', m.title)); c.appendChild(el('span', 's', m.sub));
+        c.appendChild(el('span', 'pre', (m.lessons || 0) + ' lessons · ' + (m.labs || 0) + ' labs · ' + (m.prereq.length ? 'after ' + m.prereq.map(function (p) { var x = modById(p); return x ? num(p) + ' ' + x.title : p; }).join(', ') : 'no prerequisites')));
+        if (!m.href) c.appendChild(el('span', 'pre', 'Published as its own page; ask for the link or use the file set.'));
+        var S = readState(m.id), d = doneCount(S), total = (m.labs || 0) + (m.calls || 0);
+        if (d && total) { var mt = el('div', 'meter'), sp = el('span'); sp.style.width = Math.min(100, Math.round(100 * d / total)) + '%'; mt.appendChild(sp); c.appendChild(mt); }
+        cards.appendChild(c);
+      });
+      if (fbar) [].forEach.call(fbar.children, function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-level') === filter ? 'true' : 'false'); });
+    };
+    if (fbar) ['all', 'foundation', 'practitioner', 'advanced'].forEach(function (lv) {
+      var b = el('button', 'btn', lv === 'all' ? 'All levels' : cap(lv)); b.type = 'button'; b.setAttribute('data-level', lv);
+      b.addEventListener('click', function () { filter = lv; put('ai-bootcamp-level', lv); draw(); }); fbar.appendChild(b);
+    });
+    draw();
+    [].forEach.call(document.querySelectorAll('[data-mod]'), function (a) { var m = modById(a.getAttribute('data-mod')); if (m) { if (!a.textContent) a.textContent = num(m.id) + '. ' + m.title; link(a, m.href); } });
+    var tot = document.getElementById('totals');
+    if (tot) { var tl = 0, tm = 0; MAN.modules.forEach(function (m) { tl += m.labs || 0; tm += +m.minutes || 0; }); tot.textContent = MAN.modules.length + ' modules, ' + tl + ' labs, about ' + Math.round(tm / 60) + ' hours in all'; }
+    return;
+  }
+
+  /* ================= module page ================= */
+  var m = document.querySelector('section.module'); if (!m) return;
+  var id = m.id, me = modById(id) || { prereq: [], level: m.getAttribute('data-level') || '', minutes: m.getAttribute('data-minutes') }, KEY = 'ai-bootcamp-v2-' + id;
+  var S = readState(id);
+  function save() { put(KEY, JSON.stringify(S)); }
+  var nav = document.getElementById('nav'), pager = document.getElementById('pager'), crumb = document.getElementById('crumb'), share = document.getElementById('view-share');
+  var overview = m.querySelector('.overview'), labsEl = m.querySelector('.labs'), ref = m.querySelector('.reference');
+  var lessons = [].slice.call(m.querySelectorAll('.lesson')), labEls = [].slice.call(m.querySelectorAll('article.lab'));
+  var drill = el('div', 'drill'); m.appendChild(drill);
+  var qsn = []; try { qsn = JSON.parse(m.querySelector('script.drill').textContent); } catch (e) {}
+
+  var parts = [];
+  if (overview) parts.push({ key: 'overview', n: '', title: 'Overview', el: overview });
+  lessons.forEach(function (l, i) { parts.push({ key: 'l' + (i + 1), n: String(i + 1), title: l.getAttribute('data-title') || 'Lesson ' + (i + 1), el: l, kind: 'Lesson ' + (i + 1) + ' of ' + lessons.length, min: l.getAttribute('data-minutes') }); });
+  if (labsEl && labEls.length) parts.push({ key: 'labs', n: 'L', title: 'Labs', el: labsEl, kind: labEls.length + ' labs' });
+  if (qsn.length) parts.push({ key: 'calls', n: '?', title: 'Calls', el: drill, kind: qsn.length + ' judgment calls' });
+  if (ref && ref.children.length) parts.push({ key: 'ref', n: '#', title: 'Cheat sheet', el: ref, kind: 'Reference' });
+
+  /* header: full on the overview, slim on the other parts */
+  var head = el('div', 'mhead'), kick = el('div', 'kicker'), h = el('h1', '', m.getAttribute('data-title')), meta = el('div', 'meta'), chips = el('div', 'chips');
+  head.appendChild(kick); head.appendChild(h); head.appendChild(meta); head.appendChild(chips); m.insertBefore(head, m.firstChild);
+  chips.appendChild(levelChip(me.level || 'practitioner')); chips.appendChild(el('span', 'chip', mins(m.getAttribute('data-minutes'))));
+  chips.appendChild(el('span', 'chip', lessons.length + ' lessons')); chips.appendChild(el('span', 'chip', labEls.length + ' labs'));
+  (me.prereq || []).forEach(function (p) { var x = modById(p); if (x) chips.appendChild(link(el(x.href ? 'a' : 'span', 'chip'), x.href)).textContent = 'after ' + num(p) + ' ' + x.title; });
+  if (!(me.prereq || []).length) chips.appendChild(el('span', 'chip', 'no prerequisites'));
+
+  /* overview extras: the parts of this module, what to take next, the progress code */
+  if (overview) {
+    var pl = el('div', 'panel'); pl.appendChild(el('div', 'kicker', 'In this module')); var ul = el('ol', 'partlist');
+    parts.forEach(function (p) { if (p.key === 'overview') return; var li = el('li'), a = el('a'); a.href = '#' + p.key; a.appendChild(el('span', 'n', p.n)); a.appendChild(el('span', '', p.title)); a.appendChild(el('span', 'm', p.min ? p.min + ' min' : (p.kind || ''))); li.appendChild(a); ul.appendChild(li); });
+    pl.appendChild(ul); overview.appendChild(pl);
+    var nexts = MAN.modules.filter(function (x) { return x.prereq.indexOf(id) >= 0; });
+    if (nexts.length || MAN.catalogue) {
+      var nx = el('div', 'panel'); nx.appendChild(el('div', 'kicker', 'Where to go from here')); var row = el('div', 'chips'); row.style.marginTop = '8px';
+      nexts.forEach(function (x) { var a = link(el(x.href ? 'a' : 'span', 'chip'), x.href); a.textContent = num(x.id) + ' ' + x.title; row.appendChild(a); });
+      if (MAN.catalogue) { var ca = link(el('a', 'chip'), MAN.catalogue); ca.textContent = 'All modules'; row.appendChild(ca); }
+      nx.appendChild(row); overview.appendChild(nx);
+    }
+    var pp = el('div', 'panel'); pp.appendChild(el('div', 'kicker', 'Progress code'));
+    var pd = el('p', 'muted', 'Progress for this module lives in this browser only. To move it to another device or another copy of this page, copy the code here and load it there.'); pd.style.marginTop = '6px'; pp.appendChild(pd);
+    var pr = el('div', 'row'), pc = el('input'); pc.type = 'text'; pc.setAttribute('aria-label', 'Progress code'); pc.style.cssText = 'flex:1;min-width:200px;font-family:var(--font-mono);font-size:0.8rem';
+    var b1 = el('button', 'btn', 'Copy mine'), b2 = el('button', 'btn', 'Load'), pm = el('p', 'note'); b1.type = b2.type = 'button'; pm.style.marginBottom = '0';
+    pr.appendChild(pc); pr.appendChild(b1); pr.appendChild(b2); pp.appendChild(pr); pp.appendChild(pm); overview.appendChild(pp);
+    b1.addEventListener('click', function () {
+      try { pc.value = 'AIB2.' + id + '.' + btoa(unescape(encodeURIComponent(JSON.stringify(S)))); } catch (e) { pm.textContent = 'Could not build the code.'; return; }
+      pc.select(); try { navigator.clipboard.writeText(pc.value).then(function () { pm.textContent = 'Copied.'; }, function () { pm.textContent = 'Selected. Copy it with Ctrl+C.'; }); } catch (e) { pm.textContent = 'Selected. Copy it with Ctrl+C.'; }
+    });
+    b2.addEventListener('click', function () {
+      try { var v = pc.value.trim(), pre = 'AIB2.' + id + '.'; if (v.indexOf(pre) !== 0) throw 0; var o = JSON.parse(decodeURIComponent(escape(atob(v.slice(pre.length))))); if (!o || typeof o !== 'object') throw 0; put(KEY, JSON.stringify(o)); location.reload(); }
+      catch (e) { pm.textContent = 'That is not a progress code for this module. It starts with AIB2.' + id + '.'; }
+    });
+  }
+
+  /* labs */
+  labEls.forEach(function (lab, li) {
+    var lh = el('div', 'labhead'); lh.appendChild(el('h3', '', 'Lab ' + (li + 1) + '  ' + lab.getAttribute('data-title'))); lh.appendChild(el('span', 'meta', lab.getAttribute('data-minutes') + ' min')); lab.insertBefore(lh, lab.firstChild);
+    [].forEach.call(lab.querySelectorAll('ol.steps > li'), function (step, si) {
+      var c = el('input', 'tick'); c.type = 'checkbox'; c.setAttribute('aria-label', 'Step ' + (si + 1) + ' done'); c.checked = (S.steps[lab.id] || []).indexOf(si) >= 0;
+      c.addEventListener('change', function () { var a = (S.steps[lab.id] || []).filter(function (x) { return x !== si; }); if (c.checked) a.push(si); S.steps[lab.id] = a; save(); });
+      step.insertBefore(c, step.firstChild);
+    });
+    var foot = el('div', 'labfoot'), btn = el('button', 'btn'); btn.type = 'button';
+    function paint() { var d = !!S.labs[lab.id]; lab.classList.toggle('done', d); btn.textContent = d ? 'Done. Undo' : 'Mark lab done'; }
+    btn.addEventListener('click', function () { if (S.labs[lab.id]) delete S.labs[lab.id]; else S.labs[lab.id] = 1; save(); paint(); progress(); });
+    foot.appendChild(btn); lab.appendChild(foot); paint();
+  });
+
+  /* calls */
+  qsn.forEach(function (q, qi) {
+    var box = el('div', 'q'); box.appendChild(el('div', 'qt', (qi + 1) + '. ' + q.q));
+    var opts = el('div', 'opts'), why = el('div', 'why', q.why); why.hidden = true;
+    var btns = q.o.map(function (o, oi) {
+      var b = el('button', 'opt'); b.type = 'button'; b.appendChild(el('span', 'k', 'ABCD'.charAt(oi))); b.appendChild(el('span', '', o));
+      b.addEventListener('click', function () { S.drill[qi] = oi; save(); mark(); progress(); }); opts.appendChild(b); return b;
+    });
+    function mark() { var a = S.drill[qi]; btns.forEach(function (b, oi) { b.classList.toggle('right', a != null && oi === q.a); b.classList.toggle('wrong', a === oi && oi !== q.a); }); why.hidden = a == null; }
+    box.appendChild(opts); box.appendChild(why); drill.appendChild(box); mark();
+  });
+  if (qsn.length) { var reset = el('button', 'btn', 'Clear my answers'); reset.type = 'button'; reset.style.justifySelf = 'start'; reset.addEventListener('click', function () { S.drill = []; save(); location.reload(); }); drill.appendChild(reset); }
+
+  /* navigation */
+  parts.forEach(function (p) {
+    var a = el('a', 'navlink'); a.href = '#' + p.key; a.appendChild(el('span', 'n', p.n || '·')); a.appendChild(el('span', '', p.title)); a.appendChild(el('span', 'p')); nav.appendChild(a); p.nav = a;
+  });
+  var shareNav = null;
+  if (share) { shareNav = el('a', 'navlink'); shareNav.href = '#share'; shareNav.appendChild(el('span', 'n', '\u2197')); shareNav.appendChild(el('span', '', 'Export and share')); shareNav.appendChild(el('span', 'p')); nav.appendChild(shareNav); }
+  function progress() {
+    parts.forEach(function (p) {
+      var t = p.nav.querySelector('.p'), txt = '', full = false;
+      if (p.key === 'labs') { var d = labEls.filter(function (l) { return S.labs[l.id]; }).length; txt = d ? d + '/' + labEls.length : ''; full = d === labEls.length; }
+      else if (p.key === 'calls') { var a = S.drill.filter(function (x) { return x != null; }).length; txt = a ? a + '/' + qsn.length : ''; full = a === qsn.length; }
+      else if (S.seen[p.key]) { txt = '✓'; full = true; }
+      t.textContent = txt; t.classList.toggle('full', full);
+    });
+  }
+  function route() {
+    var key = (location.hash || '#overview').slice(1), isShare = key === 'share' && share;
+    var cur = parts.filter(function (p) { return p.key === key; })[0]; if (!cur && !isShare) cur = parts[0];
+    m.hidden = !!isShare; if (share) share.hidden = !isShare;
+    if (shareNav) shareNav.classList.toggle('active', !!isShare);
+    parts.forEach(function (p) { p.el.hidden = p !== cur; p.nav.classList.toggle('active', p === cur); });
+    if (cur) {
+      var first = cur.key === 'overview';
+      kick.textContent = 'Module ' + num(id) + (first ? ' · ' + cap(me.level || '') : ' · ' + m.getAttribute('data-title'));
+      h.textContent = first ? m.getAttribute('data-title') : cur.title;
+      meta.textContent = first ? m.getAttribute('data-sub') : (cur.kind || '') + (cur.min ? ' · about ' + cur.min + ' min' : '');
+      chips.hidden = !first;
+      if (/^l\d+$/.test(cur.key) && !S.seen[cur.key]) { S.seen[cur.key] = 1; save(); }
+      if (crumb) crumb.textContent = 'Module ' + num(id) + ' · ' + m.getAttribute('data-title') + (first ? '' : ' · ' + cur.title);
+      var i = parts.indexOf(cur); pager.textContent = '';
+      if (i > 0) { var pv = el('a', 'btn', '← ' + parts[i - 1].title); pv.href = '#' + parts[i - 1].key; pager.appendChild(pv); }
+      if (i < parts.length - 1) { var nx2 = el('a', 'btn primary next', parts[i + 1].title + ' →'); nx2.href = '#' + parts[i + 1].key; pager.appendChild(nx2); }
+      try { cur.nav.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {}
+    } else { pager.textContent = ''; if (crumb) crumb.textContent = 'Export and share'; }
+    progress(); window.scrollTo(0, 0);
+  }
+  route(); window.addEventListener('hashchange', route);
+})();
+
+</script>
+<script>
+/* Instruments: cost meter, session cost model, A/B readout.
+   Mounted into every div.tool[data-tool] on the page. Prices from reference/facts-2026-11-11.md.
+   Pure functions are exported for node tests; mounting is skipped without a DOM. */
+(function () {
+  'use strict';
+
+  /* ---------- prices (USD per million tokens) ---------- */
+  var MODELS = {
+    opus: { label: 'Opus 5.5', inp: 4, out: 20, cr: 0.05 },
+    sonnet: { label: 'Sonnet 5.5', inp: 2, out: 10, cr: 0.05 },
+    haiku: { label: 'Haiku 5.5', inp: 0.1, out: 0.5, cr: 0.1, stepAt: 100000, inpHi: 0.5, outHi: 2.5 },
+    fable: { label: 'Fable 5.2', inp: 8, out: 40, cr: 0.025 }
+  };
+  var ORDER = ['opus', 'sonnet', 'haiku', 'fable'];
+  var CW5 = 1.25, CW1 = 2;
+
+  /* per-token rates for a model at a given prompt length (input + cache read + cache write) */
+  function rates(model, prompt) {
+    var m = MODELS[model] || MODELS.sonnet;
+    var hi = m.stepAt != null && prompt > m.stepAt;
+    var inp = (hi ? m.inpHi : m.inp) / 1e6, out = (hi ? m.outHi : m.out) / 1e6;
+    return { inp: inp, out: out, cr: inp * m.cr, cw5: inp * CW5, cw1: inp * CW1, hi: hi };
+  }
+
+  function num(x) { x = Number(x); return isFinite(x) && x > 0 ? x : 0; }
+
+  /* ---------- formatting ---------- */
+  function sep(s) { return s.replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  function fmtInt(n) { n = Math.round(Number(n) || 0); return (n < 0 ? '-' : '') + sep(String(Math.abs(n))); }
+  function fmtUSD(x) {
+    x = Number(x) || 0;
+    var a = Math.abs(x), s = a < 1 ? a.toFixed(4) : a.toFixed(2), p = s.split('.');
+    return (x < 0 ? '-$' : '$') + sep(p[0]) + '.' + p[1];
+  }
+  function fmtPct(f) { return (Math.round((Number(f) || 0) * 1000) / 10).toFixed(1) + '%'; }
+  function fmtNum(x, d) { x = Number(x) || 0; var s = Math.abs(x).toFixed(d), p = s.split('.'); return (x < 0 ? '-' : '') + sep(p[0]) + (p[1] ? '.' + p[1] : ''); }
+
+  /* ---------- 1. cost meter ---------- */
+  var USAGE_FIELDS = ['input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens', 'output_tokens'];
+  function hasUsageFields(o) {
+    if (!o || typeof o !== 'object') return false;
+    for (var i = 0; i < USAGE_FIELDS.length; i++) if (o[USAGE_FIELDS[i]] != null) return true;
+    return false;
+  }
+
+  /* model id or alias to a priced model key, or null when it is not one of the four current ones */
+  function mapModel(id) {
+    var s = String(id || '').toLowerCase();
+    if (/^(opus|sonnet|haiku|fable)$/.test(s)) return s;
+    var m = /(opus|sonnet|haiku)[-_ .]?5[-_.]5(?!\d)/.exec(s);
+    if (m) return m[1];
+    if (/(fable|mythos)[-_ .]?5[-_.]2(?!\d)/.test(s)) return 'fable';
+    return null;
+  }
+
+  function pickUsage(o) {
+    if (!o || typeof o !== 'object') return null;
+    if (o.usage && typeof o.usage === 'object') return o.usage;
+    if (o.message && o.message.usage && typeof o.message.usage === 'object') return o.message.usage;
+    if (hasUsageFields(o)) return o;
+    return null;
+  }
+
+  /* lenient parse: a full result object, a bare usage object, an array or stream-json lines */
+  function parseInput(text) {
+    var s = String(text == null ? '' : text).trim();
+    if (!s) return { error: 'Paste a JSON result or a usage object.' };
+    var obj = null, cands = [], i;
+    try { obj = JSON.parse(s); } catch (e) {
+      var a = s.indexOf('{'), b = s.lastIndexOf('}');
+      if (a >= 0 && b > a) { try { obj = JSON.parse(s.slice(a, b + 1)); } catch (e2) { obj = null; } }
+      if (obj == null) {
+        var lines = s.split(/\r?\n/);
+        for (i = 0; i < lines.length; i++) { try { var l = JSON.parse(lines[i]); if (l && typeof l === 'object') cands.push(l); } catch (e3) { /* skip */ } }
+      }
+    }
+    if (obj != null) cands = Object.prototype.toString.call(obj) === '[object Array]' ? obj : [obj];
+    var src = null;
+    for (i = cands.length - 1; i >= 0; i--) if (cands[i] && cands[i].type === 'result' && pickUsage(cands[i])) { src = cands[i]; break; }
+    if (!src) for (i = cands.length - 1; i >= 0; i--) if (pickUsage(cands[i])) { src = cands[i]; break; }
+    if (!src) return { error: obj == null && !cands.length ? 'That is not valid JSON.' : 'No usage object found (expected input_tokens, output_tokens and the cache fields).' };
+    var res = { usage: pickUsage(src), totalCost: null, model: null, models: 0 };
+    if (typeof src.total_cost_usd === 'number' && isFinite(src.total_cost_usd)) res.totalCost = src.total_cost_usd;
+    if (src.modelUsage && typeof src.modelUsage === 'object') {
+      var best = -1;
+      for (var k in src.modelUsage) {
+        if (!Object.prototype.hasOwnProperty.call(src.modelUsage, k)) continue;
+        res.models++;
+        var mk = mapModel(k), mu = src.modelUsage[k] || {}, c = num(mu.costUSD);
+        if (mk && c > best) { best = c; res.model = mk; }
+      }
+    }
+    if (!res.model) res.model = mapModel(src.model || (src.message && src.message.model));
+    return res;
+  }
+
+  /* token counts with the cache write split into 5-minute and 1-hour parts; ttl decides only when the split is absent */
+  function normUsage(u, ttl) {
+    u = u || {};
+    var c = (u.cache_creation && typeof u.cache_creation === 'object') ? u.cache_creation : {};
+    var s5 = num(c.ephemeral_5m_input_tokens), s1 = num(c.ephemeral_1h_input_tokens), split = s5 + s1 > 0;
+    var cw = num(u.cache_creation_input_tokens) || (s5 + s1), cw5, cw1;
+    if (split) { var rest = Math.max(0, cw - s5 - s1); cw5 = s5 + (ttl === '1h' ? 0 : rest); cw1 = s1 + (ttl === '1h' ? rest : 0); }
+    else if (ttl === '1h') { cw5 = 0; cw1 = cw; } else { cw5 = cw; cw1 = 0; }
+    return { input: num(u.input_tokens), cw: cw5 + cw1, cw5: cw5, cw1: cw1, cr: num(u.cache_read_input_tokens), output: num(u.output_tokens), split: split };
+  }
+
+  function costUsage(u, model, ttl) {
+    var n = normUsage(u, ttl), prompt = n.input + n.cw + n.cr, r = rates(model, prompt);
+    var c = { input: n.input * r.inp, cw: n.cw5 * r.cw5 + n.cw1 * r.cw1, cr: n.cr * r.cr, output: n.output * r.out };
+    c.total = c.input + c.cw + c.cr + c.output;
+    var noCache = prompt * r.inp + n.output * r.out;
+    return { tokens: n, cost: c, total: c.total, noCache: noCache, saving: noCache > 0 ? (noCache - c.total) / noCache : 0, prompt: prompt, rates: r, hi: r.hi };
+  }
+
+  /* ---------- 2. session cost model ---------- */
+  /* k cold restarts spread evenly over turns 2..T */
+  function restartTurns(T, k) {
+    T = Math.max(1, Math.floor(T)); k = Math.max(0, Math.min(Math.floor(k) || 0, T - 1));
+    var out = [];
+    for (var j = 1; j <= k; j++) out.push(1 + Math.round(j * T / (k + 1)));
+    return out;
+  }
+
+  function sessionRun(p, k) {
+    var T = Math.max(1, Math.floor(num(p.turns)) || 1), prefix = num(p.prefix), add = num(p.added), outT = num(p.output);
+    var caching = p.caching !== false, ttl = p.ttl === '1h' ? '1h' : '5m';
+    var cold = {}, rt = restartTurns(T, k);
+    for (var i = 0; i < rt.length; i++) cold[rt[i]] = 1;
+    var tk = { input: 0, cw: 0, cr: 0, output: 0 }, cs = { input: 0, cw: 0, cr: 0, output: 0 }, noCache = 0, first = 0, last = 0;
+    for (var t = 1; t <= T; t++) {
+      var H = prefix + (t - 1) * (add + outT), prompt = H + add, r = rates(p.model, prompt), cwr = ttl === '1h' ? r.cw1 : r.cw5, turn;
+      noCache += prompt * r.inp + outT * r.out;
+      if (!caching) { tk.input += prompt; cs.input += prompt * r.inp; turn = prompt * r.inp; }
+      else if (t === 1 || cold[t]) { tk.cw += prompt; cs.cw += prompt * cwr; turn = prompt * cwr; }
+      else { var rd = H - outT, wr = add + outT; tk.cr += rd; tk.cw += wr; cs.cr += rd * r.cr; cs.cw += wr * cwr; turn = rd * r.cr + wr * cwr; } // the previous answer is new to the cache, so it is written along with this turn's input
+      tk.output += outT; cs.output += outT * r.out; turn += outT * r.out;
+      if (t === 1) first = turn;
+      if (t === T) last = turn;
+    }
+    var total = cs.input + cs.cw + cs.cr + cs.output;
+    return { turns: T, tokens: tk, cost: cs, total: total, noCache: noCache, saving: noCache > 0 ? (noCache - total) / noCache : 0, first: first, last: last, restartTurns: caching ? rt : [] };
+  }
+
+  function sessionModel(p) {
+    var k = p.caching === false ? 0 : num(p.restarts);
+    var r = sessionRun(p, k);
+    r.restartExtra = r.restartTurns.length ? r.total - sessionRun(p, 0).total : 0;
+    return r;
+  }
+
+  /* ---------- 3. A/B readout ---------- */
+  function parseAB(text) {
+    var lines = String(text == null ? '' : text).split(/\r?\n/), pairs = [], bad = [], seen = false, header = false;
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i].trim();
+      if (!l) continue;
+      var f = l.split(/[\s,;]+/).filter(function (x) { return x !== ''; });
+      var ok = f.length === 2 && /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(f[0]) && /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(f[1]);
+      if (ok) pairs.push([Number(f[0]), Number(f[1])]);
+      else if (!seen) header = true;
+      else bad.push(i + 1);
+      seen = true;
+    }
+    return { pairs: pairs, bad: bad, header: header };
+  }
+
+  /* exact two-sided sign test: k wins of n non-tied pairs, p = 0.5 */
+  function signTest(k, n) {
+    n = Math.floor(n); k = Math.floor(k);
+    if (n <= 0) return 1;
+    var lo = Math.min(k, n - k), sum = 0, j;
+    if (n <= 1000) {
+      var term = Math.pow(2, -n);
+      for (j = 0; j <= lo; j++) { sum += term; term = term * (n - j) / (j + 1); }
+    } else {
+      var lt = -n * Math.LN2;
+      for (j = 0; j <= lo; j++) { sum += Math.exp(lt); lt += Math.log(n - j) - Math.log(j + 1); }
+    }
+    return Math.min(1, 2 * sum);
+  }
+
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  /* 95% paired bootstrap percentile interval of the mean difference */
+  function bootstrapCI(diffs, B, seed) {
+    var n = diffs.length; B = B || 10000;
+    if (!n) return [0, 0];
+    var rnd = mulberry32(seed == null ? 20261111 : seed), means = new Array(B);
+    for (var b = 0; b < B; b++) {
+      var s = 0;
+      for (var i = 0; i < n; i++) s += diffs[Math.floor(rnd() * n)];
+      means[b] = s / n;
+    }
+    means.sort(function (x, y) { return x - y; });
+    return [means[Math.floor(0.025 * B)], means[Math.ceil(0.975 * B) - 1]];
+  }
+
+  function abAnalyze(pairs) {
+    var n = pairs.length, sa = 0, sb = 0, wa = 0, wb = 0, ties = 0, diffs = [];
+    for (var i = 0; i < n; i++) {
+      var a = pairs[i][0], b = pairs[i][1];
+      sa += a; sb += b; diffs.push(b - a);
+      if (b > a) wb++; else if (a > b) wa++; else ties++;
+    }
+    var r = { n: n, meanA: n ? sa / n : 0, meanB: n ? sb / n : 0, winsA: wa, winsB: wb, ties: ties };
+    r.meanDiff = r.meanB - r.meanA;
+    r.p = signTest(wb, wa + wb);
+    r.ci = bootstrapCI(diffs, 10000, 20261111);
+    var excl = r.ci[0] > 0 || r.ci[1] < 0;
+    r.clear = n >= 2 && excl && r.p < 0.05;
+    r.verdict = !r.clear ? 'No clear difference' : (r.meanDiff > 0 ? 'B is better' : 'A is better');
+    r.more = r.clear ? 0 : moreNeeded(r);
+    return r;
+  }
+
+  /* rough extra cases needed for both tests to pass if the effect holds; null when it cannot be estimated */
+  function moreNeeded(r) {
+    if (r.n < 2 || r.meanDiff === 0) return null;
+    var m = r.winsA + r.winsB, need = r.n;
+    if (!m) return null;
+    var lead = r.meanDiff > 0 ? r.winsB : r.winsA, q = lead / m;
+    if (q <= 0.5) return null;
+    need = Math.max(need, Math.ceil(Math.pow(1.96 / (2 * q - 1), 2) * r.n / m));
+    var half = (r.ci[1] - r.ci[0]) / 2;
+    if (half > 0) need = Math.max(need, Math.ceil(r.n * Math.pow(half / Math.abs(r.meanDiff), 2)));
+    var more = Math.max(need - r.n, 5);
+    return more > 100000 ? null : more;
+  }
+
+  var api = {
+    MODELS: MODELS, rates: rates, mapModel: mapModel, parseInput: parseInput, normUsage: normUsage, costUsage: costUsage,
+    restartTurns: restartTurns, sessionModel: sessionModel, parseAB: parseAB, signTest: signTest, mulberry32: mulberry32,
+    bootstrapCI: bootstrapCI, abAnalyze: abAnalyze, fmtInt: fmtInt, fmtUSD: fmtUSD, fmtPct: fmtPct
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof document === 'undefined') return;
+
+  /* ---------- DOM helpers ---------- */
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  /* space-between keeps controls in one grid row level when a label wraps to two lines */
+  function labelled(text, control) { var l = el('label'); l.style.alignContent = 'space-between'; l.appendChild(el('span', '', text)); l.appendChild(control); return l; }
+  function para(cls, text) { var p = el('p', cls, text); p.style.margin = '0'; return p; }
+  function select(opts, val) {
+    var s = el('select');
+    opts.forEach(function (o) { var op = el('option', '', o[1]); op.value = o[0]; s.appendChild(op); });
+    s.value = val; return s;
+  }
+  function modelSelect(val) { return select(ORDER.map(function (k) { return [k, MODELS[k].label]; }), val || 'sonnet'); }
+  function numInput(val, min, max, step) {
+    var i = el('input'); i.type = 'number'; i.value = String(val); i.min = String(min); if (max != null) i.max = String(max); i.step = String(step || 1); i.inputMode = 'numeric'; return i;
+  }
+  function readNum(i, def, min, max) {
+    var v = Number(i.value);
+    if (i.value === '' || !isFinite(v)) v = def;
+    return Math.min(max, Math.max(min, Math.floor(v)));
+  }
+  function button(text) { var b = el('button', 'btn', text); b.type = 'button'; return b; }
+  function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+  var TYPES = [['input', 'in', 'Input'], ['cw', 'cw', 'Cache write'], ['cr', 'cr', 'Cache read'], ['output', 'out', 'Output']];
+  function legend() { var l = el('div', 'legend'); TYPES.forEach(function (t) { l.appendChild(el('span', 'tok ' + t[1], t[2])); }); return l; }
+  function bar(vals, caption, fmt) {
+    var wrap = el('div'), sum = 0, desc = [];
+    wrap.style.display = 'grid'; wrap.style.gap = '4px';
+    TYPES.forEach(function (t) { sum += vals[t[0]] || 0; });
+    var b = el('div', 'bar');
+    TYPES.forEach(function (t) {
+      var v = vals[t[0]] || 0;
+      if (sum > 0 && v > 0) {
+        var s = el('span', t[1]); s.style.width = (100 * v / sum) + '%'; s.title = t[2] + ': ' + fmt(v) + ' (' + fmtPct(v / sum) + ')';
+        b.appendChild(s);
+      }
+      desc.push(t[2] + ' ' + (sum > 0 ? fmtPct(v / sum) : '0%'));
+    });
+    b.setAttribute('role', 'img'); b.setAttribute('aria-label', caption + ': ' + desc.join(', '));
+    wrap.appendChild(el('div', 'note', caption)); wrap.appendChild(b);
+    return wrap;
+  }
+  function typeTable(tokens, costs, rateCol) {
+    var w = el('div', 'tablewrap'), t = el('table'), th = el('thead'), hr = el('tr'), tb = el('tbody'), st = 0, sc = 0;
+    var heads = ['Type', 'Tokens'].concat(rateCol ? ['Per million'] : []).concat(['Cost']);
+    heads.forEach(function (h, i) { hr.appendChild(el('th', i ? 'num' : '', h)); });
+    th.appendChild(hr); t.appendChild(th);
+    TYPES.forEach(function (ty) {
+      var r = el('tr'), c0 = el('td');
+      c0.appendChild(el('span', 'tok ' + ty[1], ty[2])); r.appendChild(c0);
+      r.appendChild(el('td', 'num', fmtInt(tokens[ty[0]])));
+      if (rateCol) r.appendChild(el('td', 'num', rateCol[ty[0]]));
+      r.appendChild(el('td', 'num', fmtUSD(costs[ty[0]])));
+      st += tokens[ty[0]]; sc += costs[ty[0]];
+      tb.appendChild(r);
+    });
+    var tr = el('tr'); tr.appendChild(el('td', '', 'Total')); tr.appendChild(el('td', 'num', fmtInt(st)));
+    if (rateCol) tr.appendChild(el('td', 'num', ''));
+    tr.appendChild(el('td', 'num', fmtUSD(sc))); tr.style.fontWeight = '600'; tb.appendChild(tr);
+    t.appendChild(tb); w.appendChild(t); return w;
+  }
+  function liveBox() { var o = el('div'); o.setAttribute('aria-live', 'polite'); o.style.display = 'grid'; o.style.gap = '10px'; o.style.minWidth = '0'; return o; }
+  function perM(x) { var v = x * 1e6; return '$' + (v < 0.01 ? v.toFixed(4) : v < 1 ? v.toFixed(3) : v.toFixed(2)); }
+
+  /* ---------- mount: cost meter ---------- */
+  var COST_SAMPLE = JSON.stringify({
+    type: 'result', subtype: 'success', is_error: false, duration_ms: 2310, num_turns: 1, result: '4',
+    session_id: '00000000-0000-4000-8000-000000000000', total_cost_usd: 0.00158877,
+    usage: { input_tokens: 2, cache_creation_input_tokens: 7207, cache_read_input_tokens: 14517, output_tokens: 4,
+      cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 7207 } },
+    modelUsage: { 'claude-haiku-5-5': { inputTokens: 2, outputTokens: 4, cacheReadInputTokens: 14517, cacheCreationInputTokens: 7207, costUSD: 0.00158877 } }
+  }, null, 2);
+
+  function mountCost(root) {
+    root.appendChild(el('h4', '', 'Cost meter'));
+    var ta = el('textarea'); ta.spellcheck = false; ta.rows = 6;
+    ta.placeholder = '{"type":"result", ... "usage":{...}}  or just  {"input_tokens":..., ...}';
+    root.appendChild(labelled('Paste the JSON from claude -p --output-format json, or only its usage object', ta));
+    var g = el('div', 'grid'), ms = modelSelect('sonnet'), ttl = select([['5m', '5-minute (1.25x input)'], ['1h', '1-hour (2x input)']], '5m');
+    var ttlL = labelled('Cache write lifetime', ttl);
+    g.appendChild(labelled('Model', ms)); g.appendChild(ttlL); root.appendChild(g);
+    var row = el('div', 'row'), sample = button('Load sample'), clr = button('Clear');
+    row.appendChild(sample); row.appendChild(clr); root.appendChild(row);
+    var out = liveBox(); root.appendChild(out);
+    var lastText = null;
+
+    function render() {
+      clear(out);
+      var p = parseInput(ta.value);
+      if (ta.value !== lastText) { lastText = ta.value; if (!p.error && p.model) ms.value = p.model; }
+      if (p.error) { out.appendChild(para('note', ta.value.trim() ? p.error : 'Paste a result above, or load the sample.')); return; }
+      var r = costUsage(p.usage, ms.value, ttl.value), t = r.tokens;
+      ttlL.style.opacity = t.split ? '0.6' : '';
+      ttl.disabled = t.split;
+      ttl.title = t.split ? 'The pasted usage has the 5-minute / 1-hour split, so it is used instead.' : '';
+      var cwRate = t.cw1 && t.cw5 ? perM(r.rates.cw5) + ' / ' + perM(r.rates.cw1) : perM(t.cw1 ? r.rates.cw1 : r.rates.cw5);
+      out.appendChild(typeTable(t, r.cost));
+      out.appendChild(para('note', 'Per million tokens: input ' + perM(r.rates.inp) + ', cache write ' + cwRate + (t.cw1 && t.cw5 ? ' (5-minute / 1-hour)' : '') +
+        ', cache read ' + perM(r.rates.cr) + ', output ' + perM(r.rates.out) + '.'));
+      if (t.split) out.appendChild(para('note', 'Cache write split from the paste: ' + fmtInt(t.cw5) + ' 5-minute, ' + fmtInt(t.cw1) + ' 1-hour.'));
+      out.appendChild(bar(t, 'Share by tokens', fmtInt));
+      out.appendChild(bar(r.cost, 'Share by cost', fmtUSD));
+      out.appendChild(legend());
+      var tot = el('div'); tot.appendChild(el('div', 'note', 'Total at list price, ' + MODELS[ms.value].label + (r.hi ? ' (prompt over 100,000 tokens: higher price step)' : '')));
+      tot.appendChild(el('div', 'big', fmtUSD(r.total))); out.appendChild(tot);
+      out.appendChild(para('', 'Without caching (all ' + fmtInt(r.prompt) + ' prompt tokens at the input price): ' + fmtUSD(r.noCache) + '. Caching saves ' + fmtPct(r.saving) + '.'));
+      if (p.totalCost != null) {
+        var d = r.total - p.totalCost;
+        out.appendChild(para('', 'Reported total_cost_usd: ' + fmtUSD(p.totalCost) + ' (' + String(p.totalCost) + '). Computed minus reported: ' + fmtUSD(d) +
+          (p.totalCost > 0 ? ' (' + fmtPct(d / p.totalCost) + ')' : '') + '.'));
+      }
+      if (p.models > 1) out.appendChild(para('note', 'This run used ' + p.models + ' models; every token above is priced at the selected one.'));
+      out.appendChild(para('note', 'On a subscription plan this is the list-price equivalent, not a charge.'));
+    }
+    ta.addEventListener('input', render); ms.addEventListener('change', render); ttl.addEventListener('change', render);
+    sample.addEventListener('click', function () { ta.value = COST_SAMPLE; render(); });
+    clr.addEventListener('click', function () { ta.value = ''; render(); ta.focus(); });
+    render();
+  }
+
+  /* ---------- mount: session cost model ---------- */
+  function mountSession(root) {
+    root.appendChild(el('h4', '', 'Session cost model'));
+    var g = el('div', 'grid');
+    var f = {
+      model: modelSelect('sonnet'),
+      turns: numInput(40, 1, 2000),
+      prefix: numInput(20000, 0, 1000000, 1000),
+      added: numInput(3000, 0, 1000000, 500),
+      output: numInput(500, 0, 128000, 100),
+      caching: select([['on', 'On'], ['off', 'Off']], 'on'),
+      ttl: select([['5m', '5-minute'], ['1h', '1-hour']], '5m'),
+      restarts: numInput(0, 0, 1999)
+    };
+    g.appendChild(labelled('Model', f.model));
+    g.appendChild(labelled('Turns', f.turns));
+    g.appendChild(labelled('Fixed prefix tokens (system, tools, instruction files)', f.prefix));
+    g.appendChild(labelled('Tokens added per turn', f.added));
+    g.appendChild(labelled('Output tokens per turn', f.output));
+    g.appendChild(labelled('Prompt caching', f.caching));
+    g.appendChild(labelled('Cache lifetime', f.ttl));
+    g.appendChild(labelled('Cold restarts (cache expired)', f.restarts));
+    root.appendChild(g);
+    var out = liveBox(); root.appendChild(out);
+
+    function params(caching) {
+      var T = readNum(f.turns, 40, 1, 2000);
+      return {
+        model: f.model.value, turns: T, prefix: readNum(f.prefix, 20000, 0, 1e7), added: readNum(f.added, 3000, 0, 1e7),
+        output: readNum(f.output, 500, 0, 1e6), caching: caching, ttl: f.ttl.value, restarts: readNum(f.restarts, 0, 0, T - 1)
+      };
+    }
+    function render() {
+      clear(out);
+      var on = f.caching.value === 'on', p = params(on), r = sessionModel(p), off = sessionModel(params(false));
+      f.ttl.disabled = !on; f.restarts.disabled = !on;
+      out.appendChild(typeTable(r.tokens, r.cost));
+      out.appendChild(bar(r.tokens, 'Share by tokens', fmtInt));
+      out.appendChild(bar(r.cost, 'Share by cost', fmtUSD));
+      out.appendChild(legend());
+      var tot = el('div'); tot.appendChild(el('div', 'note', 'Session total, ' + r.turns + ' turns, ' + MODELS[p.model].label));
+      tot.appendChild(el('div', 'big', fmtUSD(r.total))); out.appendChild(tot);
+      if (on) out.appendChild(para('', 'With caching off: ' + fmtUSD(off.total) + '. Caching saves ' + fmtPct(off.total > 0 ? (off.total - r.total) / off.total : 0) + '.'));
+      else out.appendChild(para('', 'Caching is off, so every prompt token is billed at the input price.'));
+      out.appendChild(para('', 'Cost per turn: ' + fmtUSD(r.first) + ' on turn 1, ' + fmtUSD(r.last) + ' on turn ' + r.turns + '.'));
+      if (on && r.restartTurns.length) {
+        out.appendChild(para('', 'Cold restarts on turn' + (r.restartTurns.length > 1 ? 's ' : ' ') + r.restartTurns.join(', ') + ' add ' + fmtUSD(r.restartExtra) +
+          ' (' + fmtPct(r.total > 0 ? r.restartExtra / r.total : 0) + ' of the total).'));
+      } else if (on) out.appendChild(para('note', 'No cold restarts: every turn after the first reads the earlier context from cache.'));
+      out.appendChild(para('note', 'Model: turn t sends prefix + (t-1) x (added + output) + this turn\'s added tokens. With caching, what is already cached is a cache read; the previous answer and the new input are a cache write; a cold restart writes it all again.'));
+    }
+    Object.keys(f).forEach(function (k) { f[k].addEventListener('input', render); f[k].addEventListener('change', render); });
+    render();
+  }
+
+  /* ---------- mount: A/B readout ---------- */
+  var AB_SAMPLE = 'A,B\n6,8\n5,7\n7,7\n4,6\n8,9\n6,5\n5,8\n7,9\n3,5\n6,7\n8,8\n5,6\n6,9\n7,6\n4,7\n5,7\n6,8\n7,8\n5,5\n6,7';
+
+  function mountAB(root) {
+    root.appendChild(el('h4', '', 'A/B readout'));
+    var ta = el('textarea'); ta.spellcheck = false; ta.rows = 6; ta.placeholder = 'A,B\n6,8\n5,7\n...';
+    root.appendChild(labelled('One case per line: score for A, then score for B (comma, tab or space). Higher is better.', ta));
+    var row = el('div', 'row'), sample = button('Load sample'), clr = button('Clear');
+    row.appendChild(sample); row.appendChild(clr); root.appendChild(row);
+    var out = liveBox(); root.appendChild(out);
+    var timer = null;
+
+    function statTable(rows) {
+      var w = el('div', 'tablewrap'), t = el('table'), tb = el('tbody');
+      rows.forEach(function (r) { var tr = el('tr'); tr.appendChild(el('td', '', r[0])); tr.appendChild(el('td', 'num', r[1])); tb.appendChild(tr); });
+      t.appendChild(tb); w.appendChild(t); return w;
+    }
+    function render() {
+      clear(out);
+      var pr = parseAB(ta.value);
+      if (pr.bad.length) out.appendChild(para('note', 'Could not read ' + pr.bad.length + ' line' + (pr.bad.length > 1 ? 's' : '') + ' (line ' + pr.bad.slice(0, 8).join(', ') + (pr.bad.length > 8 ? ', ...' : '') + ').'));
+      if (pr.pairs.length < 2) { out.appendChild(para('note', 'Paste at least two cases, or load the sample.')); return; }
+      var r = abAnalyze(pr.pairs), d = 3;
+      out.appendChild(statTable([
+        ['Cases (n)', fmtInt(r.n)], ['Mean of A', fmtNum(r.meanA, d)], ['Mean of B', fmtNum(r.meanB, d)],
+        ['Mean difference (B minus A)', fmtNum(r.meanDiff, d)], ['Wins for B', fmtInt(r.winsB)], ['Wins for A', fmtInt(r.winsA)], ['Ties', fmtInt(r.ties)],
+        ['Sign test p (two-sided, ' + fmtInt(r.winsA + r.winsB) + ' non-tied)', r.p < 0.0001 ? r.p.toExponential(2) : r.p.toFixed(4)],
+        ['95% bootstrap interval of the difference', fmtNum(r.ci[0], d) + ' to ' + fmtNum(r.ci[1], d)]
+      ]));
+      var v = para('verdict', r.verdict + '.');
+      v.style.color = r.clear ? 'var(--good)' : 'var(--fg)';
+      out.appendChild(v);
+      if (!r.clear) {
+        out.appendChild(para('', r.more != null
+          ? 'Roughly ' + fmtInt(r.more) + ' more cases of this kind would be needed to tell, if the difference holds.'
+          : 'Collect more cases.'));
+      }
+      out.appendChild(para('note', 'Clear means the interval excludes 0 and the sign test p is below 0.05. Bootstrap: 10,000 resamples, fixed seed. Check cost and latency before you switch.'));
+    }
+    function later() { if (timer) clearTimeout(timer); timer = setTimeout(render, 150); }
+    ta.addEventListener('input', later);
+    sample.addEventListener('click', function () { ta.value = AB_SAMPLE; render(); });
+    clr.addEventListener('click', function () { ta.value = ''; render(); ta.focus(); });
+    render();
+  }
+
+  var MOUNT = { cost: mountCost, session: mountSession, ab: mountAB };
+  [].forEach.call(document.querySelectorAll('div.tool[data-tool]'), function (root) {
+    var fn = MOUNT[root.getAttribute('data-tool')];
+    if (!fn || root.getAttribute('data-mounted')) return;
+    root.setAttribute('data-mounted', '1');
+    try { fn(root); } catch (e) { root.appendChild(para('note', 'This instrument could not start.')); }
+  });
+})();
+
+</script>
+
+</body>
+</html>

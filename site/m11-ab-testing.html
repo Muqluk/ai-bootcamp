@@ -1,0 +1,500 @@
+<section class="module" id="m11" data-title="Evals and A/B testing" data-sub="Compare prompts, models and setups without fooling yourself" data-level="advanced" data-prereq="m2,m7" data-minutes="250">
+  <div class="overview">
+    <p class="lede">A prompt change that feels better is an anecdote. An eval is a fixed set of cases, a scoring rule and a repeatable run, so a change to a prompt, a model or a setup becomes a measurement with a number and an error bar. This module builds that harness with headless runs, shows how to pair and repeat the runs, how to read a small result honestly, and how to catch answers that are confident and wrong.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Build a golden set of cases with expected answers and a grader that scores a run with no human in the loop.</li>
+      <li>Choose the cheapest grader that works (exact match, code check, model judge) and audit a model judge against hand labels and a position swap.</li>
+      <li>Run a paired, repeated, randomised A/B of two prompts with the model, effort, tools and settings pinned, and measure the noise floor first.</li>
+      <li>Read a result as wins, losses and ties with an exact sign test and a bootstrap interval, and say how many cases you would need to see a given improvement.</li>
+      <li>Measure the rate of confident wrong answers separately from accuracy, and test an abstention rule.</li>
+      <li>Price an eval run on a subscription plan (window share) and on an API key (dollars), and decide when a batch run pays.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key). The labs use Haiku and cost well under one US cent of list-price estimate per lab.</li>
+      <li>Windows PowerShell 5.1 or later. The labs write their files to <code>{{LAB}}/m11</code>.</li>
+      <li>About 250 minutes for everything; the lessons stand alone if you only want the method.</li>
+    </ul>
+    <div class="recap"><h3>If you skipped the prerequisites</h3>
+      <p>From Tokens and their price: a request is billed in four token types, input, output, cache write and cache read, and output costs five times input on every current model. Current list prices per million tokens, input/output, are Haiku 5.5 $0.10/$0.50 (for prompts up to 100k tokens), Sonnet 5.5 $2/$10, Opus 5.5 $4/$20. The Batch API is 50 percent off input and output. A subscription plan is a flat fee whose usage draws down a 5-hour window and weekly limits, while an API key pays per token. From Headless runs and subagents: <code>claude -p "prompt"</code> runs one non-interactive turn; <code>--output-format json</code> returns a result object with <code>result</code>, <code>total_cost_usd</code>, <code>usage</code> and <code>duration_ms</code>; <code>--max-turns</code> caps the loop and <code>--allowedTools</code> grants tools. A headless run starts a fresh context, which is what makes it usable as a measurement unit.</p></div>
+  </div>
+
+  <div class="lesson" id="m11-l1" data-title="Why measure first" data-minutes="15">
+    <h3>The failure an eval prevents</h3>
+    <p>You change a prompt, try it on three inputs, and it looks better. Three weeks later a case you did not try breaks, and nobody can say whether the change caused it. The model is not deterministic, so one run of one input tells you almost nothing about either prompt. An eval replaces the three-input impression with a fixed list of cases that every candidate runs against, so the comparison is the same each time.</p>
+    <h3>The four parts</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Part</th><th>What it is</th><th>Example</th></tr>
+      <tr><td>Cases</td><td>Inputs with a known right answer, saved in a file</td><td><code>tickets.csv</code>: 12 IT tickets with a label each</td></tr>
+      <tr><td>Arm</td><td>One candidate: a prompt, a model, a setup</td><td><code>prompt-a.txt</code>, <code>prompt-b.txt</code></td></tr>
+      <tr><td>Grader</td><td>Code or a judge that turns an output into a score</td><td>Exact match after lowercasing</td></tr>
+      <tr><td>Run</td><td>Every case against every arm, repeated, in random order</td><td>One <code>claude -p</code> per case, arm and repeat</td></tr>
+    </table></div>
+    <h3>What measuring gets you</h3>
+    <p>In the first lab you run a 12-case ticket classifier three times with the same prompt. The model was Haiku 5.5. Each repeat scored 11 of 12, and the same case (a copier that stopped scanning to email after a mail password change, expected "printer", answered "auth") failed all three times. No case flipped between runs. That is two findings a single impression would not give you: the baseline is 11 of 12, and the miss is systematic, not noise. A systematic miss is something a prompt change can fix. A case that flips between runs is noise, and no prompt change can be judged against it.</p>
+    <p>The whole 36-run baseline cost about $0.003 at list price and a median of about 1,020 ms per call. Evals of this size are cheap enough that skipping them is hard to defend.</p>
+    <h3>Eval versus test</h3>
+    <p>A unit test passes or fails the same way every run. An eval returns a rate with variance, so you compare rates between arms and ask whether the gap is bigger than the noise. The rest of this module is about that question.</p>
+    <aside class="rule">Never compare two prompts on fewer cases than you can list in a file, and never on one run per case.</aside>
+    <aside class="trap">Cases you wrote while tuning the prompt are not a test of it. Keep some cases you did not look at while editing, and add every real failure you meet in use to the set.</aside>
+  </div>
+
+  <div class="lesson" id="m11-l2" data-title="Golden sets and graders" data-minutes="25">
+    <h3>The golden set</h3>
+    <p>A golden set is a file of inputs with the expected answer, small enough to run on every change. Build it from real inputs, and include the hard ones on purpose: ambiguous cases whose correct answer is "unclear", cases with a plausible decoy, and cases that need the model to decline. In the labs the set has five labels and two ticket types designed to mislead: a copier problem triggered by a password change, and a vague ticket with no device named.</p>
+    <pre data-file="tickets.csv"><code>id,text,expected
+1,"Disk C: on web-01 is at 98 percent and the app log is still growing.",disk
+5,"It is broken again. Please fix it today.",unclear
+9,"Scan-to-email on the copier stopped sending since we changed the mail account password.",printer</code></pre>
+    <h3>Graders, cheapest first</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Grader</th><th>Use when</th><th>Cost</th><th>Weakness</th></tr>
+      <tr><td>Exact match</td><td>The answer is a label, number or short token</td><td>None</td><td>Punishes format drift ("disk varcache deployweb job" is wrong even if disk was meant)</td></tr>
+      <tr><td>Code check</td><td>The answer can be tested: valid JSON, a regex, a script exit code, a file that exists</td><td>None</td><td>Checks only what you wrote a check for</td></tr>
+      <tr><td>Model judge</td><td>The answer is free text and quality is a judgement</td><td>One more model call per case</td><td>Has biases; needs an audit (below)</td></tr>
+    </table></div>
+    <p>Use the first grader on the list that can score the task. If you can make the model answer in a constrained form (one word, a number, JSON), you turn a judge problem into an exact-match problem. The lab harness normalises an answer by stripping punctuation and lowercasing it, then compares it to the expected value.</p>
+    <figure class="diagram">
+<pre class="mermaid">flowchart TD
+  a{"Can the model answer in a constrained form?"} -- yes --> b{"Is the answer a label or number?"}
+  a -- no --> c{"Can a script test the answer?"}
+  b -- yes --> d["Exact match"]:::good
+  b -- no --> c
+  c -- yes --> e["Code check"]:::good
+  c -- no --> f["Model judge"]:::hot
+  f --> g["Audit against hand labels"]:::info
+</pre>
+      <figcaption>Take the first grader that can score the task; a model judge is the last resort and always gets an audit.</figcaption>
+    </figure>
+    <h3>The model judge and its limits</h3>
+    <p>A judge is a second model call with a rubric: "reply PASS only if the summary names the affected system, states the impact, and makes no claim that is not in the ticket." It is fast and scales, but it is a measuring instrument that you must calibrate. Two known weaknesses:</p>
+    <ul>
+      <li><b>Leniency.</b> The judge passes an answer you would fail. Measure it: hand-label a handful of outputs, count how many the judge passes that you failed.</li>
+      <li><b>Position bias.</b> In a pairwise comparison, the judge prefers the first or second slot regardless of content. Test it by judging each pair in both orders; a pair judged differently depending on order shows the verdict depends on slot, not quality.</li>
+    </ul>
+    <p>In lab 3, Haiku 5.5 as judge agreed with six hand labels 6 of 6, including two summaries that invented a cause and one that was vague, and passed nothing you failed. In the position swap it picked the same summary in both orders for 2 of 3 pairs; on the badge-reader pair it picked slot 2 in both orders, so one of those two verdicts was wrong. Six labels is far too few to trust the judge in general, but it is enough to show that the audit catches something.</p>
+    <h3>Auditing a judge</h3>
+    <ol>
+      <li>Hand-label 20 to 50 outputs, including several you know are bad.</li>
+      <li>Run the judge and report agreement, judge-passed-your-fail, and judge-failed-your-pass separately. The first error type is the dangerous one.</li>
+      <li>For pairwise judging, run both orders and discard or flag pairs whose verdict follows the slot.</li>
+      <li>Re-audit when you change the judge prompt or the judge model.</li>
+    </ol>
+    <aside class="rule">A judge you have not audited against hand labels is an opinion with a cost.</aside>
+    <aside class="trap">Do not let a model judge grade its own arm's output without a hand-labelled check; the judge and the candidate may share the same blind spots.</aside>
+  </div>
+
+  <div class="lesson" id="m11-l3" data-title="Designing an A/B comparison" data-minutes="20">
+    <h3>Paired, repeated, randomised, fixed</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Property</th><th>What you do</th><th>What it prevents</th></tr>
+      <tr><td>Paired</td><td>Every arm runs every case; compare per case, not pooled averages</td><td>Case difficulty swamping the arm difference</td></tr>
+      <tr><td>Repeated</td><td>Run each case and arm more than once (2 or 3 times)</td><td>Reading one lucky or unlucky sample as a trait</td></tr>
+      <tr><td>Randomised</td><td>Shuffle the order of all runs</td><td>Drift over time (load, caching, rate limits) landing on one arm</td></tr>
+      <tr><td>Fixed</td><td>Change one thing; pin everything else</td><td>Not knowing which change moved the number</td></tr>
+    </table></div>
+    <h3>What to pin</h3>
+    <p>Aliases such as <code>haiku</code> move to newer models over time, so a result measured on an alias today may not reproduce later. Pin the full model id for any eval you intend to keep (for example <code>claude-haiku-5-5</code>); the model-configuration page documents that aliases update. The lab harness records the model id from <code>modelUsage</code> on every run so you can check it. Also pin:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Setting</th><th>Why</th></tr>
+      <tr><td><code>--model</code></td><td>Model is the biggest single variable</td></tr>
+      <tr><td><code>--effort</code> (if you set it)</td><td>Haiku 5.5 defaults to medium effort; thinking cannot be turned off on the 5.5 models, so effort changes the work done</td></tr>
+      <tr><td><code>--tools ""</code></td><td>For a classification task, no tools. This also cut the fixed prompt to about 3,760 tokens in the probe</td></tr>
+      <tr><td><code>--setting-sources project</code> and <code>--strict-mcp-config</code></td><td>Keep your personal settings, hooks and MCP servers out of the measurement</td></tr>
+      <tr><td><code>--max-turns 1</code>, <code>--no-session-persistence</code></td><td>One turn, nothing written to the session history</td></tr>
+    </table></div>
+    <h3>Noise floor first</h3>
+    <p>Before comparing two prompts, run one prompt against itself. Lab 1 does this: three repeats, 36 runs, same score each time, no case flipping. That is a quiet task, and it tells you a gap of one case between arms is a real difference on this model. If your baseline flips cases between repeats, the noise floor is the number of flips, and an arm difference smaller than that is not evidence.</p>
+    <h3>The harness</h3>
+    <p>The harness is one script, <code>eval.ps1</code>, that builds the list of case, arm and repeat jobs, shuffles it with <code>Get-Random</code>, runs <code>claude -p</code> for each with the case text on stdin, grades the answer, and writes one CSV row per run with the score, output tokens, cost and duration. A second script, <code>pairs.ps1</code>, collapses the rows into one line per case: correct runs for A, correct runs for B.</p>
+    <figure class="diagram">
+<pre class="mermaid">flowchart LR
+  g["Golden set"] --> j["Job list: case, arm, repeat"]
+  j --> s["Shuffle the order"]
+  s --> a["Run arm A"]:::info
+  s --> b["Run arm B"]:::alt
+  a --> r["Grade each answer"]
+  b --> r
+  r --> p["One line per case: A runs, B runs"]
+  p --> t["Sign test on the pairs"]:::hot
+</pre>
+      <figcaption>Both arms run every case, in shuffled order, and the comparison is made per case.</figcaption>
+    </figure>
+    <aside class="rule">Change one thing, run every case under both arms several times in shuffled order, and record the model id with every row.</aside>
+    <aside class="trap">An alias such as <code>haiku</code> in a saved eval means the baseline changes under you when the alias moves. Two results on different dates may not be comparable.</aside>
+  </div>
+
+  <div class="lesson" id="m11-l4" data-title="Reading the result" data-minutes="25">
+    <h3>Wins, losses and ties</h3>
+    <p>For each case, subtract A's score from B's. Positive is a win for B, negative a loss, zero a tie. Ties carry no information about which arm is better; the evidence is in the cases that moved. In lab 2, prompt B added two label rules to prompt A. A scored 11 of 12 on both repeats, B scored 12 of 12 on both. Per case, 11 cases were 2 and 2 and case 9 was 0 and 2. That is 1 win, 0 losses, 11 ties.</p>
+    <h3>Exact sign test</h3>
+    <p>The sign test asks: if the arms were equal, how often would the wins and losses split this unevenly? With n untied cases and the smaller side k, the two-sided p-value is twice the probability of k or fewer successes in a fair coin flipped n times, capped at 1. With 1 win and 0 losses, n is 1, and p is 1.000. A single win cannot be told from luck.</p>
+    <h3>Bootstrap interval</h3>
+    <p>The paired bootstrap resamples the per-case differences with replacement many times and reports the middle 95 percent of the resampled means. Lab 2 gave a mean B minus A of 0.167 correct runs per case (of 2) with an interval of [0.000, 0.500]. The interval touches zero, which agrees with the sign test: the data are compatible with no improvement.</p>
+    <h3>The instrument</h3>
+    <p>Paste your paired scores into the readout below, one line per case, the A score then the B score separated by a comma, for example <code>2,2</code> or <code>0,2</code>. It returns the wins, losses and ties, the exact sign test, and the bootstrap interval. Try the lab 2 values (eleven lines of <code>2,2</code> and one <code>0,2</code>), then change them to see how many clean wins it takes.</p>
+    <div class="tool" data-tool="ab"></div>
+    <h3>How many wins are enough</h3>
+    <p>Exact two-sided sign test, p below 0.05:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Losses</th><th class="num">Wins needed</th></tr>
+      <tr><td>0</td><td class="num">6</td></tr>
+      <tr><td>1</td><td class="num">8</td></tr>
+      <tr><td>2</td><td class="num">10</td></tr>
+    </table></div>
+    <p>A check on the arithmetic: 9 wins, 1 loss and 2 ties gives p about 0.021 and a bootstrap interval of [0.250, 1.000]; 0 wins and 2 losses gives p 0.500.</p>
+    <h3>Power: how big a set you need</h3>
+    <p>Power is the chance the test detects a real improvement. These figures are computed exactly for the sign test, for an arm that fixes some share of cases and breaks another share:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Fixes / breaks</th><th class="num">12 cases</th><th class="num">30</th><th class="num">60</th><th class="num">100</th><th class="num">200</th></tr>
+      <tr><td>10% / 0%</td><td class="num">0.00</td><td class="num">0.07</td><td class="num">0.56</td><td class="num">0.94</td><td class="num">1.00</td></tr>
+      <tr><td>10% / 3%</td><td class="num">0.00</td><td class="num">0.04</td><td class="num">0.19</td><td class="num">0.40</td><td class="num">0.75</td></tr>
+      <tr><td>20% / 5%</td><td class="num">0.01</td><td class="num">0.24</td><td class="num">0.58</td><td class="num">0.84</td><td class="num">0.99</td></tr>
+      <tr><td>30% / 5%</td><td class="num">0.08</td><td class="num">0.57</td><td class="num">0.92</td><td class="num">0.99</td><td class="num">1.00</td></tr>
+    </table></div>
+    <p>A 12-case set can only show a very large change; the 12-case lab detects almost nothing, by design. For a 10 percent fix with no breaks you need about 100 cases to be 94 percent likely to see it. A change that also breaks 3 percent of cases needs far more.</p>
+    <h3>Practical versus statistical</h3>
+    <p>A result can be significant and still not worth shipping, or not significant and still worth a larger run. Put cost and latency next to the score. In lab 2 arm B cost about $0.00285 against $0.00098 for A at list price (about 2.9 times), with mean latency 1,113 ms against 973 ms. A follow-up check of 12 extra runs showed why: B's output tokens ranged from 3 to 91 per run, because Haiku 5.5 spends output tokens on thinking, while A's were about 4. A longer prompt did not cost three times as much because of its length; it changed how much the model thought. The JSON result carries this in <code>usage.output_tokens_details.thinking_tokens</code>.</p>
+    <aside class="rule">Report wins, losses and ties with the p-value and interval, and put cost and latency beside them.</aside>
+    <aside class="trap">A p-value of 1.000 on 12 cases is not evidence that the prompts are equal. It is evidence that 12 cases cannot tell.</aside>
+  </div>
+
+  <div class="lesson" id="m11-l5" data-title="Catching confident wrong answers" data-minutes="20">
+    <h3>Accuracy hides the dangerous error</h3>
+    <p>A wrong answer that looks like a right one is more costly than a refusal. Accuracy lumps the two together. Split the failures by type: wrong answer given, answer declined, format broken. The cases to build for it are ones where the right answer is "the input does not say".</p>
+    <h3>The abstention test</h3>
+    <p>Lab 4 uses eight change notes asking for a TCP port. Four state the port. Four do not (a service restarted, an API moved, a mail relay that came back after a certificate renewal, a PostgreSQL server upgrade) and each has a decoy: a well-known default port the model could supply from general knowledge. The correct answer for those four is NONE.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Arm</th><th>Exact match</th><th>Fabricated a port</th><th>Declined in prose</th></tr>
+      <tr><td>A: "Reply with the port number only."</td><td>4 of 8</td><td>0 of 4</td><td>4 of 4</td></tr>
+      <tr><td>B: A plus "If the note does not state the port, reply NONE; a default port is a guess, not a statement."</td><td>8 of 8</td><td>0 of 4</td><td>0 of 4</td></tr>
+    </table></div>
+    <p>Neither arm fabricated a port on this model. The difference is format. Arm A declined in sentences ("the PostgreSQL default is 5432 but db-01 may be configured differently"), which an exact-match grader scores as wrong and which a downstream script cannot parse. Arm B returned the single token NONE. The prose answer for the PostgreSQL note named the default port while declining, which is the shape of a fabrication waiting to happen if the next model is less careful. Count it separately: grade "stated a port", "declined", and "wrong port".</p>
+    <h3>Techniques that move the rate</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Technique</th><th>What you add</th><th>How you test it</th></tr>
+      <tr><td>Explicit abstention</td><td>A defined token for "not stated", and a rule that a default is a guess</td><td>Cases with no answer; count fabrications and prose declines</td></tr>
+      <tr><td>Grounding</td><td>Answer only from the supplied text; quote the evidence</td><td>Grade the quote with a code check (is it a substring of the input)</td></tr>
+      <tr><td>Verifier</td><td>A second call checks the first answer against the source</td><td>Audit the verifier against hand labels as in lesson 2</td></tr>
+      <tr><td>Regression set</td><td>Every confident wrong answer from real use becomes a case</td><td>Rerun the set on each change</td></tr>
+    </table></div>
+    <p>The code check for evidence is the cheapest: ask for the sentence the answer came from, then test in code that the sentence appears in the input. An answer with no matching evidence is scored as a failure, whatever the answer was.</p>
+    <aside class="rule">Grade fabrications as their own column, and give the model a defined way to say "not stated".</aside>
+    <aside class="trap">Zero fabrications on eight cases says little. The abstention rate needs the same sample-size thinking as accuracy; a rare failure needs many no-answer cases to show up.</aside>
+  </div>
+
+  <div class="lesson" id="m11-l6" data-title="What an eval costs" data-minutes="15">
+    <h3>Count the calls</h3>
+    <p>An eval is cases times arms times repeats, plus judge calls. Lab 2 was 12 cases, 2 arms and 2 repeats: 48 runs. Add a judge pass and it doubles. Change one factor and the cost multiplies, so size the set from the power table before adding repeats.</p>
+    <h3>Subscription plan</h3>
+    <p>On a subscription the fee is flat and the eval draws down your 5-hour window and the weekly limit, which span all models. <code>total_cost_usd</code> in the JSON result is a client-side estimate from a bundled price table, not billing data, and on a subscription it is notional. Use it to compare arms by relative cost; it is not what you pay. The lever on a plan is share of the window: Haiku uses less than Sonnet or Opus for the same call, and a 12-case, 48-run eval on Haiku is a small bite. Run large evals when you are not about to need the window for real work, and do not leave an eval looping against a limit.</p>
+    <h3>API key</h3>
+    <p>With an API key the cost is dollars at list price: input, output, cache write and cache read at the rates for the model. Lab 1's 36 runs cost about $0.0029 at the Haiku 5.5 rate. Two levers exist that a plan does not give you:</p>
+    <ul>
+      <li><code>--max-budget-usd</code> caps spend for a headless run.</li>
+      <li>The Batch API is 50 percent off input and output, up to 100,000 requests or 256 MB per batch, with results available within 24 hours. It suits a large nightly regression set that nobody is waiting for. Whether Claude Code itself submits batches is not documented on the pages read for this module; the batch route means calling the API directly.</li>
+    </ul>
+    <h3>Cost per decision</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Question</th><th>Plan</th><th>API key</th></tr>
+      <tr><td>What does a run cost?</td><td>A share of the window; <code>total_cost_usd</code> is notional</td><td><code>total_cost_usd</code> approximates the bill</td></tr>
+      <tr><td>Can I cap it?</td><td>Stop the loop yourself; the limit is the cap</td><td><code>--max-budget-usd</code></td></tr>
+      <tr><td>Can I halve it?</td><td>Use a smaller model for the grader</td><td>Smaller model, or batch for 50 percent off</td></tr>
+    </table></div>
+    <h3>Spend where the variance is</h3>
+    <p>Run the cheap model for the wide first pass, and spend on a stronger model or more repeats only on the cases that flip. A grader that is exact match costs nothing; reach for a judge only after a code check cannot do the job.</p>
+    <aside class="rule">Size the set from the power table, price it as cases times arms times repeats, and use the cheapest grader that scores the task.</aside>
+    <aside class="trap">Do not read a small <code>total_cost_usd</code> on a subscription as free. It still draws down the window, and a large looping eval can hit the limit and stop your real work.</aside>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m11-lab1" data-title="Golden set, grader and baseline" data-minutes="25">
+      <p class="goal">You build a 12-case golden set and an eval harness, run a baseline three times, and end up holding a baseline score and the list of systematic misses.</p>
+      <ol class="steps">
+        <li><p>Create the lab folder and the cases. Run all labs from this folder.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m11 | Out-Null
+Set-Location {{LAB}}/m11
+Set-Content -Encoding utf8 tickets.csv @'
+id,text,expected
+1,"Disk C: on web-01 is at 98 percent and the app log is still growing.",disk
+2,"Users in the east office cannot reach any internal site since the switch was replaced this morning.",network
+3,"My password expired and the reset page says my account is locked.",auth
+4,"The second-floor printer prints every page with a grey streak.",printer
+5,"It is broken again. Please fix it today.",unclear
+6,"Backup job failed: target volume has no free space left.",disk
+7,"VPN connects but then drops every five minutes.",network
+8,"New hire cannot log in; the MFA prompt never arrives on her phone.",auth
+9,"Scan-to-email on the copier stopped sending since we changed the mail account password.",printer
+10,"Same problem as yesterday on the thing in room 4.",unclear
+11,"The file server is slow and keeps logging SMART warnings for drive 3.",disk
+12,"Cannot open the payroll folder: access denied, but my colleague can.",auth
+'@
+Set-Content -Encoding utf8 prompt-a.txt 'Classify the IT ticket on stdin as one of: disk, network, auth, printer, unclear. Reply with the label only.'</code></pre>
+          <p class="expect"><b>Expected:</b> No output. <code>tickets.csv</code> has 13 lines.</p></li>
+        <li><p>Write the harness. Every run uses <code>--setting-sources project</code> and <code>--strict-mcp-config</code>: those two flags keep your personal settings, hooks and MCP servers out of the measurement. <code>--tools ""</code> removes tools, and the case text goes in on stdin.</p>
+          <pre><code>Set-Content -Encoding utf8 eval.ps1 @'
+param([string]$Cases = 'tickets.csv', [string[]]$Arms = @('prompt-a.txt'), [int]$Repeat = 1, [string]$Out = 'results.csv', [string]$Model = 'haiku')
+$list = Import-Csv $Cases
+$jobs = @(foreach ($c in $list) { foreach ($a in $Arms) { foreach ($r in 1..$Repeat) { [pscustomobject]@{ case = $c; arm = $a; rep = $r } } } })
+$jobs = $jobs | Get-Random -Count $jobs.Count
+$rows = foreach ($j in $jobs) {
+  $prompt = (Get-Content $j.arm -Raw).Trim()
+  $raw = $j.case.text | claude -p $prompt --model $Model --setting-sources project --strict-mcp-config --tools "" --max-turns 1 --no-session-persistence --output-format json
+  $res = ($raw -join "`n") | ConvertFrom-Json
+  $got = ([string]$res.result -replace '[^\w ]', '').Trim().ToLower()
+  [pscustomobject]@{ id = $j.case.id; arm = $j.arm; rep = $j.rep; expected = $j.case.expected; got = $got
+    score = [int]($got -eq $j.case.expected); out = $res.usage.output_tokens; cost = $res.total_cost_usd; ms = $res.duration_ms
+    model = ($res.modelUsage.PSObject.Properties.Name -join '+') }
+}
+$rows | Export-Csv $Out -NoTypeInformation
+$rows | Group-Object arm, rep | Sort-Object Name | ForEach-Object { '{0}  score {1}/{2}' -f $_.Name, ($_.Group | Measure-Object score -Sum).Sum, $_.Count }
+'{0} runs, {1:N4} USD, median {2} ms, model {3}' -f $rows.Count, ($rows | Measure-Object cost -Sum).Sum, (@($rows.ms | Sort-Object { [int]$_ }))[[int]($rows.Count / 2)], (@($rows.model | Sort-Object -Unique) -join ',')
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> No output. Note the loop variable is <code>$list</code>, not <code>$cases</code>: PowerShell variable names are case-insensitive, so <code>$cases</code> would collide with the typed <code>$Cases</code> parameter and give you one empty case.</p></li>
+        <li><p>Run the baseline: 12 cases, one arm, three repeats, shuffled. It makes 36 calls and takes a few minutes.</p>
+          <pre><code>.\eval.ps1 -Arms prompt-a.txt -Repeat 3 -Out baseline.csv</code></pre>
+          <p class="expect"><b>Expected:</b> Three score lines, each about <code>11/12</code>, then a line like <code>36 runs, 0.0029 USD, median 1019 ms, model claude-haiku-5-5</code>. Your cost and median vary; the model id should be a full id even though you passed the alias.</p></li>
+        <li><p>List the cases that changed between runs, then the cases wrong in any run.</p>
+          <pre><code>$r = Import-Csv baseline.csv
+$r | Group-Object id | Where-Object { @($_.Group.got | Sort-Object -Unique).Count -gt 1 } | ForEach-Object { 'case {0}: {1}' -f $_.Name, ($_.Group.got -join ' / ') }
+'--- wrong in any run'
+$r | Where-Object score -eq 0 | Sort-Object { [int]$_.id } | ForEach-Object { 'case {0} rep {1}: expected {2}, got {3}' -f $_.id, $_.rep, $_.expected, $_.got }</code></pre>
+          <p class="expect"><b>Expected:</b> No case flipped (nothing before the separator). Case 9 is wrong in all three reps: expected <code>printer</code>, got <code>auth</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>What is your noise floor on this task? Zero flipped cases in 36 runs, so a one-case difference between arms is a real difference here. Is the case 9 miss noise? No: it failed 3 of 3, so it is systematic and a prompt change can address it. Why random order? So drift over the run does not land on one arm. Why does the harness record the model id? So you can tell later whether a result was measured on the model you think it was.</p></details>
+    </article>
+
+    <article class="lab" id="m11-lab2" data-title="A paired, repeated A/B of two prompts" data-minutes="25">
+      <p class="goal">You run prompt A against prompt B on the same 12 cases, two repeats each, and end up holding wins, losses and ties, a sign-test p-value, a bootstrap interval, and the cost and latency of each arm.</p>
+      <ol class="steps">
+        <li><p>Write prompt B: prompt A plus two label rules.</p>
+          <pre><code>Set-Content -Encoding utf8 prompt-b.txt 'Classify the IT ticket on stdin as one of: disk, network, auth, printer, unclear. Label the device or service that is failing, not what triggered it; copiers and scanners count as printer. Use unclear when the ticket does not say what is broken. Reply with the label only.'</code></pre>
+          <p class="expect"><b>Expected:</b> No output.</p></li>
+        <li><p>Write the pairing script and the readout script. The readout computes the exact sign test and a paired bootstrap with a fixed seed. Note <code>[math]::Min(1.0, ...)</code>: with the integer 1, PowerShell picks the Int32 overload and truncates a p-value of 0.5 to 0.</p>
+          <pre><code>Set-Content -Encoding utf8 pairs.ps1 @'
+param([string]$Path = 'ab.csv', [string]$A = 'prompt-a.txt', [string]$B = 'prompt-b.txt', [string]$Out = 'pairs.txt')
+$rows = Import-Csv $Path
+$lines = $rows | Group-Object id | Sort-Object { [int]$_.Name } | ForEach-Object {
+  $sa = ($_.Group | Where-Object arm -eq $A | Measure-Object score -Sum).Sum
+  $sb = ($_.Group | Where-Object arm -eq $B | Measure-Object score -Sum).Sum
+  '{0},{1}' -f $sa, $sb }
+$lines | Set-Content -Encoding ascii $Out
+$lines
+'@
+Set-Content -Encoding utf8 abstat.ps1 @'
+param([string]$Path = 'pairs.txt', [int]$Resamples = 5000)
+$d = @(Get-Content $Path | Where-Object { $_ -match ',' } | ForEach-Object { $x = $_ -split ','; [double]$x[1] - [double]$x[0] })
+$w = @($d | Where-Object { $_ -gt 0 }).Count; $l = @($d | Where-Object { $_ -lt 0 }).Count; $t = $d.Count - $w - $l
+$n = $w + $l; $k = [math]::Min($w, $l); $tail = 0.0; $c = 1.0
+for ($i = 0; $i -le $k; $i++) { $tail += $c; $c = $c * ($n - $i) / ($i + 1) }
+$p = if ($n -eq 0) { 1.0 } else { [math]::Min(1.0, 2 * $tail / [math]::Pow(2, $n)) }
+$mean = ($d | Measure-Object -Average).Average
+$rng = [Random]::new(1)
+$means = @(for ($j = 0; $j -lt $Resamples; $j++) { $s = 0.0; for ($i = 0; $i -lt $d.Count; $i++) { $s += $d[$rng.Next($d.Count)] }; $s / $d.Count }) | Sort-Object
+'cases {0}: wins {1}, losses {2}, ties {3}; sign test p = {4:N3}' -f $d.Count, $w, $l, $t, $p
+'mean B-A = {0:N3}; 95% paired bootstrap interval [{1:N3}, {2:N3}]' -f $mean, $means[[int](0.025 * $Resamples)], $means[[int](0.975 * $Resamples) - 1]
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> No output.</p></li>
+        <li><p>Run both arms, two repeats each: 48 calls.</p>
+          <pre><code>.\eval.ps1 -Arms prompt-a.txt, prompt-b.txt -Repeat 2 -Out ab.csv</code></pre>
+          <p class="expect"><b>Expected:</b> Four score lines: A about <code>11/12</code> twice, B about <code>12/12</code> twice, then <code>48 runs, 0.0038 USD, median 971 ms, model claude-haiku-5-5</code>.</p></li>
+        <li><p>Pair the scores and read the result.</p>
+          <pre><code>.\pairs.ps1
+.\abstat.ps1</code></pre>
+          <p class="expect"><b>Expected:</b> Twelve lines, eleven of them <code>2,2</code> and one <code>0,2</code> (case 9). Then <code>cases 12: wins 1, losses 0, ties 11; sign test p = 1.000</code> and <code>mean B-A = 0.167; 95% paired bootstrap interval [0.000, 0.500]</code>. You can also paste the twelve lines into the readout in lesson 4.</p></li>
+        <li><p>Compare cost and latency per arm.</p>
+          <pre><code>Import-Csv ab.csv | Group-Object arm | ForEach-Object { '{0}: {1:N5} USD, mean {2:N0} ms' -f $_.Name, ($_.Group | Measure-Object cost -Sum).Sum, ($_.Group | Measure-Object ms -Average).Average }</code></pre>
+          <p class="expect"><b>Expected:</b> About <code>prompt-a.txt: 0.00098 USD, mean 973 ms</code> and <code>prompt-b.txt: 0.00285 USD, mean 1,113 ms</code>: B costs about three times as much per 24 runs.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Is B better? B scored higher, but with one win and no loss p is 1.000 and the interval touches zero, so 12 cases cannot show it. Why does B cost three times as much with a prompt about twice as long? Output tokens: B's runs used 3 to 91 output tokens each (the model thinks more when given rules), while A's were about 4. Add <code>out</code> to a <code>Group-Object arm</code> summary to see it in your own <code>ab.csv</code>. What would it take to be convinced? See the power table: more cases, not more repeats of the same 12.</p></details>
+    </article>
+
+    <article class="lab" id="m11-lab3" data-title="Audit a model judge" data-minutes="20">
+      <p class="goal">You judge six hand-labelled summaries with a model, then judge three pairs in both orders, and end up holding an agreement count and a position-consistency count.</p>
+      <ol class="steps">
+        <li><p>Create the six hand-labelled summaries (two invent a cause, one is vague) and the judge prompt.</p>
+          <pre><code>Set-Content -Encoding utf8 judge.csv @'
+id,text,expected
+1,"Ticket: Since 08:10 the payroll app on app-02 returns error 500 for all users in finance. Restarting the app pool did not help. | Summary: Payroll app on app-02 returns error 500 for all finance users since 08:10; an app pool restart did not help.",pass
+2,"Ticket: Since 08:10 the payroll app on app-02 returns error 500 for all users in finance. Restarting the app pool did not help. | Summary: Payroll app on app-02 is down for finance because its database ran out of disk space.",fail
+3,"Ticket: The nightly backup of db-01 failed twice this week with a timeout; the last good backup is from Monday. | Summary: Backups are having some issues.",fail
+4,"Ticket: The nightly backup of db-01 failed twice this week with a timeout; the last good backup is from Monday. | Summary: db-01 nightly backup failed twice this week (timeout); last good backup is Monday.",pass
+5,"Ticket: Badge readers on the north door reject all cards since the power cut; the south door works. | Summary: North door badge readers reject all cards since the power cut; south door unaffected.",pass
+6,"Ticket: Badge readers on the north door reject all cards since the power cut; the south door works. | Summary: North door badge readers reject all cards after the power cut; facilities already replaced the controller.",fail
+'@
+Set-Content -Encoding utf8 judge.txt 'Stdin holds a ticket and a one-line on-call summary of it. Reply PASS only if the summary names the affected system, states the impact, and makes no claim that is not in the ticket. Otherwise reply FAIL. Reply PASS or FAIL only.'</code></pre>
+          <p class="expect"><b>Expected:</b> No output. This lab reuses <code>eval.ps1</code> from lab 1.</p></li>
+        <li><p>Run the judge and compare it with your labels.</p>
+          <pre><code>.\eval.ps1 -Cases judge.csv -Arms judge.txt -Out judged.csv
+$j = Import-Csv judged.csv | Sort-Object { [int]$_.id }
+$j | Format-Table id, expected, got, score -AutoSize | Out-String
+'agreement {0}/6; judge passed what you failed: {1}; judge failed what you passed: {2}' -f ($j | Measure-Object score -Sum).Sum, @($j | Where-Object { $_.expected -eq 'fail' -and $_.got -eq 'pass' }).Count, @($j | Where-Object { $_.expected -eq 'pass' -and $_.got -eq 'fail' }).Count</code></pre>
+          <p class="expect"><b>Expected:</b> <code>judge.txt, 1  score 6/6</code>, a table where every row scores 1, and <code>agreement 6/6; judge passed what you failed: 0; judge failed what you passed: 0</code>. Six runs cost about $0.0012.</p></li>
+        <li><p>Create the pairwise cases. Each pair appears twice with the summaries swapped; <code>expected</code> is the slot of the better summary. The expected slot is 1 for the first pair and 2 for the swapped copy.</p>
+          <pre><code>Set-Content -Encoding utf8 pos.csv @'
+id,text,expected
+1,"Ticket: Since 08:10 the payroll app on app-02 returns error 500 for all users in finance. Restarting the app pool did not help. | Summary 1: Payroll app on app-02 returns error 500 for all finance users since 08:10; an app pool restart did not help. | Summary 2: Payroll app on app-02 is down for finance because its database ran out of disk space.",1
+2,"Ticket: Since 08:10 the payroll app on app-02 returns error 500 for all users in finance. Restarting the app pool did not help. | Summary 1: Payroll app on app-02 is down for finance because its database ran out of disk space. | Summary 2: Payroll app on app-02 returns error 500 for all finance users since 08:10; an app pool restart did not help.",2
+3,"Ticket: The nightly backup of db-01 failed twice this week with a timeout; the last good backup is from Monday. | Summary 1: Backups are having some issues. | Summary 2: db-01 nightly backup failed twice this week (timeout); last good backup is Monday.",2
+4,"Ticket: The nightly backup of db-01 failed twice this week with a timeout; the last good backup is from Monday. | Summary 1: db-01 nightly backup failed twice this week (timeout); last good backup is Monday. | Summary 2: Backups are having some issues.",1
+5,"Ticket: Badge readers on the north door reject all cards since the power cut; the south door works. | Summary 1: North door badge readers reject all cards since the power cut; south door unaffected. | Summary 2: North door badge readers reject all cards after the power cut; facilities already replaced the controller.",1
+6,"Ticket: Badge readers on the north door reject all cards since the power cut; the south door works. | Summary 1: North door badge readers reject all cards after the power cut; facilities already replaced the controller. | Summary 2: North door badge readers reject all cards since the power cut; south door unaffected.",2
+'@
+Set-Content -Encoding utf8 pos.txt 'Stdin holds a ticket and two one-line summaries of it. Which summary is better for an on-call handover? Reply 1 or 2 only.'</code></pre>
+          <p class="expect"><b>Expected:</b> No output.</p></li>
+        <li><p>Run the pairwise judge and count the pairs judged the same both ways round.</p>
+          <pre><code>.\eval.ps1 -Cases pos.csv -Arms pos.txt -Out pos-out.csv
+$p = Import-Csv pos-out.csv | Sort-Object { [int]$_.id }
+$p | Format-Table id, expected, got, score -AutoSize | Out-String
+'pairs judged the same both ways round: {0}/3' -f @(1, 3, 5 | Where-Object { $a = $_; ($p | Where-Object id -eq $a).score -eq ($p | Where-Object id -eq ($a + 1)).score }).Count</code></pre>
+          <p class="expect"><b>Expected:</b> <code>pos.txt, 1  score 5/6</code>. The miss was case 5 (expected 1, got 2): the badge-reader pair, where the judge chose slot 2 in both orders. Last line about <code>pairs judged the same both ways round: 2/3</code>. A model can vary run to run; if yours scores 6/6, the point stands that a swap is how you would have seen a failure.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Which judge error type matters most for a quality gate? Passing what you failed (leniency), because bad output goes through; count it separately from the other error. What does the 2 of 3 consistency mean? One pair's verdict followed the slot instead of the content, so that single-order verdict could not be trusted. Is six labels enough to trust this judge? No; it shows the method, and a real audit uses 20 to 50 labels.</p></details>
+    </article>
+
+    <article class="lab" id="m11-lab4" data-title="Abstention and confident wrong answers" data-minutes="20">
+      <p class="goal">You test two prompts on eight change notes, four of which do not state the answer, and end up holding exact-match scores plus separate counts of fabricated answers and prose declines.</p>
+      <ol class="steps">
+        <li><p>Create the notes and the two prompts.</p>
+          <pre><code>Set-Content -Encoding utf8 notes.csv @'
+id,text,expected
+1,"The metrics agent on web-01 now listens on port 9102 after the upgrade.",9102
+2,"Moved the admin console of acme-cms to port 8443 and closed 8080.",8443
+3,"Restarted the deploy service on build-03; it is listening again.",none
+4,"The reporting API was moved to the new cluster last night.",none
+5,"Grafana on mon-01 answers on 3000 as before; only the theme changed.",3000
+6,"The mail relay came back after the certificate renewal; clients connect as usual.",none
+7,"Configured the syslog collector on log-02 to accept TLS on 6514.",6514
+8,"The PostgreSQL server on db-01 was upgraded to the new major version.",none
+'@
+Set-Content -Encoding utf8 port-a.txt 'Which TCP port does the service in the change note on stdin listen on? Reply with the port number only.'
+Set-Content -Encoding utf8 port-b.txt 'Which TCP port does the service in the change note on stdin listen on? Reply with the port number only. If the note does not state the port, reply NONE; a default port is a guess, not a statement.'</code></pre>
+          <p class="expect"><b>Expected:</b> No output.</p></li>
+        <li><p>Run both arms once (16 calls) and count the failure types separately.</p>
+          <pre><code>.\eval.ps1 -Cases notes.csv -Arms port-a.txt, port-b.txt -Out ports.csv
+$r = Import-Csv ports.csv
+$r | Sort-Object arm, { [int]$_.id } | Format-Table arm, id, expected, got, score -AutoSize | Out-String
+$r | Group-Object arm | Sort-Object Name | ForEach-Object { $g = $_.Group
+  '{0}: exact {1}/8; fabricated a port {2}; declined in prose {3}; wrong port {4}' -f $_.Name, ($g | Measure-Object score -Sum).Sum,
+    @($g | Where-Object { $_.expected -eq 'none' -and $_.got -match '^\d+$' }).Count,
+    @($g | Where-Object { $_.expected -eq 'none' -and $_.score -eq '0' -and $_.got -notmatch '^\d+$' }).Count,
+    @($g | Where-Object { $_.expected -ne 'none' -and $_.score -eq '0' }).Count }</code></pre>
+          <p class="expect"><b>Expected:</b> <code>port-a.txt, 1  score 4/8</code> and <code>port-b.txt, 1  score 8/8</code>. In the table, arm A's no-answer rows are sentences such as "the note doesnt specify a port"; arm B's are <code>none</code>. The summary lines read about <code>port-a.txt: exact 4/8; fabricated a port 0; declined in prose 4; wrong port 0</code> and <code>port-b.txt: exact 8/8; fabricated a port 0; declined in prose 0; wrong port 0</code>.</p></li>
+        <li><p>Look at arm A's answer for note 8 in full.</p>
+          <pre><code>($r | Where-Object { $_.arm -eq 'port-a.txt' -and $_.id -eq '8' }).got</code></pre>
+          <p class="expect"><b>Expected:</b> A sentence that declines but names the default, along the lines of "the note doesnt specify a port postgresqls default is 5432 but db01 may be configured differently".</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Did either arm fabricate a port? No, on this model and these cases. Then why did arm A score half? It declined in prose, which exact match cannot score, and a script reading the answer would choke on it. What does that tell you about the grader? Exact match measures format discipline as well as correctness, so separate the counts. Why is the PostgreSQL answer a risk even though it declined? It names a default port next to the refusal; a parser or a reader can lift the number out.</p></details>
+    </article>
+
+    <article class="lab" id="m11-lab5" data-title="Evaluate your own change" data-minutes="40">
+      <p class="goal">You pick a real change to a prompt you use, build at least 20 cases of your own, run a paired A/B, and end up holding a pairs file and a written decision.</p>
+      <ol class="steps">
+        <li><p>Make a subfolder and copy the three scripts from the earlier labs. Write the shape of the run on a two-case stand-in first so you can see the harness work on your own files.</p>
+          <pre><code>New-Item -ItemType Directory -Force own | Out-Null
+Copy-Item eval.ps1, pairs.ps1, abstat.ps1 own
+Set-Location own
+Set-Content -Encoding utf8 cases.csv @'
+id,text,expected
+1,"Job deploy-web failed: npm ERR! code ENOSPC while writing to /var/cache.",disk
+2,"Login to the wiki loops back to the sign-in page after MFA.",auth
+'@
+Set-Content -Encoding utf8 mine-a.txt 'Classify the IT ticket on stdin as one of: disk, network, auth, printer, unclear. Reply with the label only.'
+Set-Content -Encoding utf8 mine-b.txt 'Classify the IT ticket on stdin as one of: disk, network, auth, printer, unclear. Label the failing device or service. Reply with the label only.'
+.\eval.ps1 -Cases cases.csv -Arms mine-a.txt, mine-b.txt -Repeat 1 -Out mine.csv
+.\pairs.ps1 -Path mine.csv -A mine-a.txt -B mine-b.txt
+.\abstat.ps1</code></pre>
+          <p class="expect"><b>Expected:</b> Two score lines: A about <code>2/2</code>, B about <code>0/2</code>. Pairs <code>1,0</code> twice. The readout reads <code>cases 2: wins 0, losses 2, ties 0; sign test p = 0.500</code> and a bootstrap interval of [-1.000, -1.000]. With two cases the smallest possible p is 0.500, so nothing here can be significant.</p></li>
+        <li><p>Look at why B lost both cases.</p>
+          <pre><code>Import-Csv mine.csv | Where-Object arm -eq 'mine-b.txt' | Format-Table id, expected, got -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> Answers that are longer than a label, such as <code>disk varcache deployweb job</code>. Prompt B's wording ("label the failing device or service") made the model name the device instead of choosing a category. That is format drift: the exact-match grader scored it wrong, and the answer is not necessarily wrong in substance.</p></li>
+        <li><p>Now do it for real. Replace <code>cases.csv</code> with at least 20 cases from your own work with expected answers, including at least four where the right answer is "unclear" or "not stated". Write a prompt A (what you use today) and a prompt B (one change). Keep <code>--tools ""</code> and the pinned flags. Use the full model id in <code>-Model</code> if you plan to keep the eval. Run with <code>-Repeat 2</code>, then run <code>pairs.ps1</code> and <code>abstat.ps1</code>.</p>
+          <pre><code>.\eval.ps1 -Cases cases.csv -Arms mine-a.txt, mine-b.txt -Repeat 2 -Out mine.csv -Model claude-haiku-5-5
+.\pairs.ps1 -Path mine.csv -A mine-a.txt -B mine-b.txt
+.\abstat.ps1</code></pre>
+          <p class="expect"><b>Expected:</b> Your own numbers. Done-test: you can state wins, losses, ties, the p-value, the interval, and the cost per arm.</p></li>
+        <li><p>Write the decision down, including what the result cannot show.</p>
+          <pre><code>Set-Content -Encoding utf8 decision.md @'
+Change tested: <what prompt B changes>.
+Cases: <n>. Result: <wins> wins, <losses> losses, <ties> ties; p = <p>; interval <lo> to <hi>.
+Cost per arm: <a> vs <b>. Decision: <keep A | ship B | run more cases>, because <reason>.
+'@
+'pairs lines: {0}; decision.md exists: {1}' -f @(Get-Content pairs.txt).Count, (Test-Path decision.md)</code></pre>
+          <p class="expect"><b>Expected:</b> The line <code>pairs lines: N; decision.md exists: True</code> where N is your case count.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Done-test: the pairs file has one line per case, the decision names a result and a reason, and the reason would still hold if you ran it again. Check you did the following: pinned model, tools off, random order, at least two repeats, a no-answer group, and the grader's format drift counted separately from wrong answers. If your result is not significant, the decision is "run more cases" or "keep A", never "B is better".</p></details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Cheat sheet</h3>
+    <h4>Headless flags used in the harness</h4>
+    <div class="tablewrap"><table>
+      <tr><th>Flag</th><th>Role in an eval</th></tr>
+      <tr><td><code>claude -p "prompt"</code></td><td>One non-interactive run; input text on stdin</td></tr>
+      <tr><td><code>--model</code></td><td>Alias or full id; pin the full id (for example <code>claude-haiku-5-5</code>) to keep results comparable</td></tr>
+      <tr><td><code>--setting-sources project</code></td><td>Leave user and local settings out of the run</td></tr>
+      <tr><td><code>--strict-mcp-config</code></td><td>Use only MCP servers named by <code>--mcp-config</code> (none), so none load</td></tr>
+      <tr><td><code>--tools ""</code></td><td>No tools; cut the fixed prompt to about 3,760 tokens in the probe</td></tr>
+      <tr><td><code>--max-turns 1</code></td><td>One turn only</td></tr>
+      <tr><td><code>--no-session-persistence</code></td><td>Do not write the session to disk</td></tr>
+      <tr><td><code>--output-format json</code></td><td>Result object for scoring and costing</td></tr>
+      <tr><td><code>--max-budget-usd</code></td><td>Spend cap on a headless run (API key)</td></tr>
+    </table></div>
+    <h4>JSON result fields used</h4>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Use</th></tr>
+      <tr><td><code>result</code></td><td>The text you grade</td></tr>
+      <tr><td><code>total_cost_usd</code></td><td>List-price estimate; notional on a subscription</td></tr>
+      <tr><td><code>duration_ms</code></td><td>Latency per run</td></tr>
+      <tr><td><code>usage.output_tokens</code>, <code>usage.output_tokens_details.thinking_tokens</code></td><td>Output volume, and how much of it was thinking</td></tr>
+      <tr><td><code>modelUsage.&lt;id&gt;</code></td><td>Which model ran; <code>costBasis</code> reads "list"</td></tr>
+    </table></div>
+    <h4>Decision rules</h4>
+    <div class="tablewrap"><table>
+      <tr><th>Result</th><th>Reading</th></tr>
+      <tr><td>Baseline flips cases between repeats</td><td>Noise floor is the flip count; smaller arm gaps are not evidence</td></tr>
+      <tr><td>Wins needed for p below 0.05</td><td>6 with 0 losses, 8 with 1, 10 with 2</td></tr>
+      <tr><td>Interval includes 0</td><td>Compatible with no change</td></tr>
+      <tr><td>Set size for a 10% fix, no breaks</td><td>About 100 cases for power 0.94</td></tr>
+    </table></div>
+    <h4>Failure modes</h4>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>Harness runs one empty case</td><td><code>$cases</code> and the typed <code>[string]$Cases</code> parameter are the same variable (names are case-insensitive)</td><td>Name the loop variable <code>$list</code></td></tr>
+      <tr><td>Sign test p of 0.000 for 0 wins and 2 losses</td><td><code>[math]::Min(1, 0.5)</code> uses the Int32 overload and returns 0</td><td>Write <code>[math]::Min(1.0, ...)</code></td></tr>
+      <tr><td>Arm scores low but answers look right</td><td>Format drift against an exact-match grader</td><td>Constrain the answer form, or add a code check that normalises</td></tr>
+      <tr><td>Judge agrees with everything</td><td>Leniency, or rubric too loose</td><td>Audit against hand labels; count judge-passed-your-fail</td></tr>
+      <tr><td>Pairwise verdict flips when order flips</td><td>Position bias</td><td>Run both orders; flag the pair</td></tr>
+      <tr><td>Result will not reproduce next month</td><td>Alias moved to a newer model</td><td>Pin the full model id; log it per row</td></tr>
+      <tr><td>One arm costs far more with a similar prompt length</td><td>More thinking tokens</td><td>Read <code>thinking_tokens</code>; consider effort</td></tr>
+      <tr><td>Significant on 12 cases never happens</td><td>Too few cases for the effect size</td><td>Use the power table to size the set</td></tr>
+    </table></div>
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+        <li>Claude Code docs, "Model configuration": <a href="https://code.claude.com/docs/en/model-config" target="_blank" rel="noopener">code.claude.com/docs/en/model-config</a></li>
+        <li>Claude Code docs, "CLI reference": <a href="https://code.claude.com/docs/en/cli-reference" target="_blank" rel="noopener">code.claude.com/docs/en/cli-reference</a></li>
+        <li>Claude Code docs, "Run Claude Code programmatically": <a href="https://code.claude.com/docs/en/headless" target="_blank" rel="noopener">code.claude.com/docs/en/headless</a></li>
+        <li>Claude Code docs, "Track cost and usage": <a href="https://code.claude.com/docs/en/agent-sdk/cost-tracking" target="_blank" rel="noopener">code.claude.com/docs/en/agent-sdk/cost-tracking</a></li>
+        <li>Claude Code docs, "Manage costs effectively": <a href="https://code.claude.com/docs/en/costs" target="_blank" rel="noopener">code.claude.com/docs/en/costs</a></li>
+        <li>Claude API docs, "Batch processing": <a href="https://platform.claude.com/docs/en/build-with-claude/batch-processing" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/batch-processing</a></li>
+        <li>Measured: every score, cost, latency, token count and power-table figure comes from the lab runs and a local computation of 2026-11-11 on Haiku 5.5 (claude-haiku-5-5); they will vary on your runs. The sign test and paired bootstrap are standard methods, computed exactly in the lab scripts.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "You change a classifier prompt and test it on 12 cases: the old prompt scored 11, the new one 12. The sign test gives p = 1.000. A colleague says the prompts are equal. What is the right reading?", "o": ["They are equal, since p is 1.000", "The new prompt is better, since it scored higher", "Twelve cases cannot tell; the single win is compatible with luck, so run a larger set before deciding", "Repeat the same 12 cases ten more times until p drops below 0.05"], "a": 2, "why": "One win and no loss cannot be told from chance, so p of 1.000 means the set is too small to show a difference, not that none exists. Repeating the same 12 cases does not add independent cases; the power table says you need on the order of 100 cases to see a 10 percent improvement reliably."},
+    {"q": "Your baseline prompt, run three times on the same set, scores 11 of 12 each time and misses the same case every time. What does that tell you?", "o": ["The noise floor is high and no comparison is possible", "The miss is systematic, so a prompt change can address it, and a one-case difference between arms is real on this task", "The grader is broken", "The model is nondeterministic, so ignore that case"], "a": 1, "why": "No case flipped between repeats, so noise is low on this task. A case that fails every time is a property of the prompt and model, which a prompt change can fix. A baseline that flips cases would be the high-noise case."},
+    {"q": "A model judge scores summaries and passes 40 of 40 candidates. You have not checked it against anything. What do you do before trusting it?", "o": ["Trust it, since a model judge is more consistent than a person", "Hand-label 20 to 50 outputs including known-bad ones, then count how many bad ones the judge passed", "Switch to a bigger judge model and stop checking", "Ask the judge to explain each verdict"], "a": 1, "why": "A judge is a measuring instrument that needs calibration. Leniency, passing what you would fail, is the dangerous error and only shows up against hand labels. A bigger model or an explanation does not replace the audit."},
+    {"q": "Two prompts are tested on a task where some inputs do not contain the answer. Arm A answers those with sentences; arm B answers with the token NONE. Exact match scores A at 4 of 8 and B at 8 of 8, with no fabricated answers in either. What is the sound conclusion?", "o": ["A fabricates answers half the time", "B is more accurate in substance", "The difference is mostly output format; report fabrications, prose declines and wrong answers as separate counts, and note that A's prose can still carry a guessed value", "Scores cannot be compared across prompts"], "a": 2, "why": "Exact match measured format discipline as much as correctness here. Splitting the counts shows A did not fabricate but declined in sentences a script cannot parse, and one of them named a default port next to the refusal."},
+    {"q": "You will run a 200-case, two-arm, three-repeat eval nightly, with no one waiting on the results, using an API key. Which choice cuts cost without changing the measurement?", "o": ["Use the Batch API, which is 50 percent off input and output, accepting a delay of up to 24 hours", "Drop to one repeat and no randomisation", "Use an alias so the model updates automatically", "Remove the pinned settings to shorten the command line"], "a": 0, "why": "Batch pricing halves cost for work that can wait. Dropping repeats or randomisation weakens the design, an alias lets the baseline drift, and unpinning settings adds uncontrolled variables."}
+  ]</script>
+</section>

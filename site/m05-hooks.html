@@ -1,0 +1,735 @@
+<section class="module" id="m5" data-title="Hooks" data-sub="Rules the model cannot talk its way past" data-level="practitioner" data-prereq="" data-minutes="200">
+  <div class="overview">
+    <p class="lede">A line in CLAUDE.md is a request the model weighs against everything else in its context. A hook is a program Claude Code runs at a fixed point in its loop, and when that program says no, the tool call does not happen. This module covers how hooks are wired, the exact contract between Claude Code and your script, how to write a guard that holds up, and how to test one without risking your real setup.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Name the hook events that can block an action and the ones that only observe, and pick the right one for a given policy.</li>
+      <li>Write a project-scoped <code>.claude/settings.json</code> hook entry with a matcher, an exec-form PowerShell command, a timeout and <code>onFailure</code>.</li>
+      <li>Write a PreToolUse guard that parses <code>tool_input</code> properly, denies with <code>permissionDecision</code>, fails closed on bad input and logs every decision.</li>
+      <li>Inject context with SessionStart or UserPromptSubmit and prove the model received it with a control run.</li>
+      <li>Build a Stop gate with a <code>stop_hook_active</code> loop guard and predict how many turns it costs when the condition can never be met.</li>
+      <li>Test any hook offline against a table of recorded inputs, then confirm it in one live headless run with only that hook loaded.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key). The labs were run on 2.1.322.</li>
+      <li>Windows PowerShell 5.1 or PowerShell 7. Hook scripts in this module are PowerShell.</li>
+      <li>About $0.03 of Haiku usage at API list price for all five labs, or the same share of a subscription's 5-hour window.</li>
+      <li>No prior module. This one stands alone.</li>
+    </ul>
+  </div>
+
+  <div class="lesson" id="m5-l1" data-title="An instruction is a request, a hook is enforcement" data-minutes="15">
+    <h3>Why instructions are not enough</h3>
+    <p>Everything you put in CLAUDE.md, a skill or a system prompt becomes tokens in the model's context. The model reads them, weighs them against the user's request, the tool results and its own plan, and usually follows them. Usually is the problem. A long session, a persuasive tool result, a user who says "just this once", or a file the model read that contains instructions of its own can all tip the balance. You cannot audit a probability.</p>
+    <p>A hook sits outside the model. Claude Code runs it at a fixed point in its own loop: before a tool call, after one, when a prompt arrives, when the model tries to stop. The hook receives a JSON description of what is about to happen, and for the events that can block, its answer is final. A PreToolUse hook that returns <code>deny</code> blocks the tool call even in <code>bypassPermissions</code> mode or with <code>--dangerously-skip-permissions</code>. The model sees the denial reason in the tool result and can argue with it in prose, but it cannot make the call go through.</p>
+    <aside class="rule">If breaking a rule would cost you a rebuild, a restore or an incident report, the rule belongs in a hook or a permission deny rule, not only in CLAUDE.md.</aside>
+    <h3>Hooks and permission rules</h3>
+    <p>Claude Code already has permission rules (<code>permissions.allow</code>, <code>permissions.deny</code>, and the <code>--allowedTools</code> and <code>--disallowedTools</code> flags). Use them first: a deny rule like <code>Bash(git push *)</code> needs no script and cannot crash. A hook is for policy that a rule pattern cannot express: "deny any command that mentions prod", "deny recursive deletes in any spelling", "log every call", "refuse to stop until the tests pass". The two stack. A hook returning <code>allow</code> does not override a deny rule, and a hook returning <code>deny</code> wins over an allow rule.</p>
+    <h3>The event map</h3>
+    <p>Claude Code fires about thirty hook events. Most engineers use six of them. The column that matters is the third: only some events can stop the thing they describe.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Event</th><th>Fires</th><th>Can block?</th><th>Typical use</th></tr>
+      <tr><td><code>SessionStart</code></td><td>Session begins, resumes, clears or compacts</td><td>No (context only)</td><td>Inject branch, environment, open tickets</td></tr>
+      <tr><td><code>UserPromptSubmit</code></td><td>A prompt is submitted, before the model sees it</td><td>Yes: rejects the prompt</td><td>Add context per prompt, refuse prompts that carry secrets</td></tr>
+      <tr><td><code>PreToolUse</code></td><td>After the model writes the tool call, before it runs</td><td>Yes: blocks the call</td><td>Guards, input rewriting, logging</td></tr>
+      <tr><td><code>PermissionRequest</code></td><td>When a call would show a permission prompt</td><td>Through its <code>decision</code> object only, not exit 2</td><td>Auto-approve or auto-deny prompts</td></tr>
+      <tr><td><code>PostToolUse</code></td><td>After a tool call succeeds</td><td>No: the tool already ran</td><td>Formatters, linters, feedback to the model</td></tr>
+      <tr><td><code>PostToolBatch</code></td><td>After a batch of parallel calls resolves</td><td>Yes: stops the loop before the next model call</td><td>Batch-level checks</td></tr>
+      <tr><td><code>Stop</code></td><td>The main agent finishes responding</td><td>Yes: sends the model back to work</td><td>Completion gates ("tests must pass")</td></tr>
+      <tr><td><code>SubagentStop</code></td><td>A subagent finishes</td><td>Yes</td><td>Gate a subagent's report</td></tr>
+      <tr><td><code>PreCompact</code></td><td>Before context compaction</td><td>Yes</td><td>Add summary instructions or refuse</td></tr>
+      <tr><td><code>ConfigChange</code></td><td>A settings file changes mid-session</td><td>Yes (except managed policy)</td><td>Stop a session from loosening its own settings</td></tr>
+      <tr><td><code>Notification</code>, <code>SessionEnd</code>, <code>PostCompact</code></td><td>Side events</td><td>No</td><td>Alerts, cleanup, audit</td></tr>
+    </table></div>
+    <p>Others exist (<code>TaskCreated</code>, <code>TaskCompleted</code>, <code>InstructionsLoaded</code>, <code>FileChanged</code>, <code>CwdChanged</code>, <code>PreModelSwitch</code>, <code>WorktreeCreate</code> and more). The reference section lists the ones this module uses; the full list is in the hooks reference page of the Claude Code docs.</p>
+    <aside class="trap">PostToolUse looks like a guard and is not one. By the time it fires the file is written and the command has run. Use it to tell the model what went wrong, never to prevent anything.</aside>
+    <h3>Three cadences</h3>
+    <p>Per session: <code>SessionStart</code> and <code>SessionEnd</code>. Per turn: <code>UserPromptSubmit</code> and <code>Stop</code>. Per tool call: <code>PreToolUse</code> and <code>PostToolUse</code>. The cadence decides your latency budget. A 400 ms PowerShell start-up is nothing once per session and noticeable on every one of fifty tool calls.</p>
+  </div>
+
+  <div class="lesson" id="m5-l2" data-title="Where hooks live and how they match" data-minutes="15">
+    <h3>The configuration shape</h3>
+    <p>Hooks are a <code>hooks</code> key in a settings file, nested three levels deep: event, then a list of matcher groups, then a list of handlers in each group.</p>
+    <pre data-file=".claude/settings.json"><code>{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                     "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.ps1"],
+            "timeout": 30,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ]
+  }
+}</code></pre>
+    <h3>Where a hook can be defined</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Location</th><th>Scope</th><th>Shared?</th></tr>
+      <tr><td><code>~/.claude/settings.json</code></td><td>Every project you open</td><td>No</td></tr>
+      <tr><td><code>.claude/settings.json</code></td><td>This project</td><td>Yes, commit it</td></tr>
+      <tr><td><code>.claude/settings.local.json</code></td><td>This project, this machine</td><td>No</td></tr>
+      <tr><td>Managed policy settings</td><td>Organisation</td><td>Admin-controlled</td></tr>
+      <tr><td>Plugin <code>hooks/hooks.json</code></td><td>While the plugin is enabled</td><td>With the plugin</td></tr>
+      <tr><td>Skill frontmatter (<code>hooks:</code>)</td><td>Rest of the session once the skill is invoked</td><td>With the skill</td></tr>
+      <tr><td>Subagent frontmatter (<code>hooks:</code>)</td><td>While that subagent runs; a <code>Stop</code> hook there becomes <code>SubagentStop</code></td><td>With the agent file</td></tr>
+    </table></div>
+    <p>Hooks <b>merge</b>; they do not override. A project hook adds to your user hooks, and nothing below managed policy can remove a managed hook. <code>"disableAllHooks": true</code> turns off every hook from the levels it can reach, and passing it with <code>--settings</code> turns hooks off for one run. An administrator can set <code>allowManagedHooksOnly</code> so that user, project, local and plugin hooks do not run at all. The same handler defined in two settings files runs once.</p>
+    <aside class="trap">In a <code>claude -p</code> run there is no workspace trust dialog: Claude Code treats the folder as trusted, so hooks committed in a repository's <code>.claude/settings.json</code> run the first time you script against a repo you have never opened. Before you point a headless job at someone else's repository, read its <code>.claude/</code> folder or run with <code>--settings</code> pointing at a file containing <code>{"disableAllHooks": true}</code>.</aside>
+    <h3>Matchers</h3>
+    <p>The <code>matcher</code> filters which occurrences of an event reach the group. What it is compared to depends on the event: the tool name for tool events, the start reason for <code>SessionStart</code> (<code>startup</code>, <code>resume</code>, <code>clear</code>, <code>compact</code>, <code>fork</code>), the agent type for <code>SubagentStop</code>. <code>UserPromptSubmit</code>, <code>Stop</code> and <code>PostToolBatch</code> have no matcher; one you add there is silently ignored.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Matcher value</th><th>Read as</th><th>Example</th></tr>
+      <tr><td><code>*</code>, empty, or omitted</td><td>Everything</td><td>Log every tool call</td></tr>
+      <tr><td>Letters, digits, <code>_ - , |</code> and spaces only</td><td>Exact name, or a list split on <code>|</code> or <code>,</code></td><td><code>Bash|PowerShell</code>, <code>Edit, Write</code></td></tr>
+      <tr><td>Anything else</td><td>Unanchored JavaScript regex</td><td><code>mcp__github__.*</code>; <code>Edit.*</code> also matches <code>NotebookEdit</code></td></tr>
+    </table></div>
+    <p>Matchers are case-sensitive. MCP tools are named <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>, and <code>mcp__memory</code> on its own matches nothing because it is read as an exact name; write <code>mcp__memory__.*</code>.</p>
+    <aside class="trap">On Windows the shell tool may be <code>PowerShell</code>, not <code>Bash</code>. Where the PowerShell tool is enabled the model routes shell commands through it, and without Git Bash the Bash tool is not registered at all. A guard matched only on <code>Bash</code> never fires there. Match <code>Bash|PowerShell</code>.</aside>
+    <p>A handler can also carry <code>if</code>, a single permission-rule pattern such as <code>Bash(git *)</code>, so the process only spawns when the call matches. It saves start-up time. The docs call it best-effort: when Claude Code cannot work out which commands a shell string runs, it runs the hook anyway, and your script must still do its own check.</p>
+    <h3>Handler types</h3>
+    <div class="tablewrap"><table>
+      <tr><th><code>type</code></th><th>What runs</th><th>Default timeout</th></tr>
+      <tr><td><code>command</code></td><td>A program; JSON on stdin, answer by exit code and stdout</td><td class="num">600 s (30 s on UserPromptSubmit)</td></tr>
+      <tr><td><code>http</code></td><td>POST of the same JSON to a URL; answer in the response body</td><td class="num">600 s</td></tr>
+      <tr><td><code>mcp_tool</code></td><td>A tool on a connected MCP server</td><td class="num">600 s</td></tr>
+      <tr><td><code>prompt</code></td><td>A single-turn model call that returns a decision</td><td class="num">30 s</td></tr>
+      <tr><td><code>agent</code></td><td>A subagent with tools that returns a decision (experimental)</td><td class="num">60 s</td></tr>
+    </table></div>
+    <p>This module uses <code>command</code>. Note that <code>prompt</code> and <code>agent</code> handlers spend model tokens on every firing: billed per token on an API key, drawn from the 5-hour window and weekly limit on a subscription. A <code>command</code> hook spends no tokens unless it injects text into the context.</p>
+    <h3>Exec form and shell form</h3>
+    <p>With <code>args</code> present, Claude Code spawns <code>command</code> directly with that argument list and no shell (exec form). Without <code>args</code>, the string goes to a shell: Git Bash on Windows if it is installed, otherwise PowerShell, unless you set <code>"shell": "powershell"</code>. Exec form is the safer default for a script path: each element is one argument, <code>${CLAUDE_PROJECT_DIR}</code> is substituted as plain text, and no shell profile can print junk ahead of your JSON. Every lab here uses exec form with <code>powershell -NoProfile -ExecutionPolicy Bypass -File</code>.</p>
+  </div>
+
+  <div class="lesson" id="m5-l3" data-title="The contract: stdin, exit codes, stdout" data-minutes="20">
+    <h3>What arrives on stdin</h3>
+    <p>Every command hook gets one JSON object on stdin. This is a real PreToolUse input captured in Lab 1 (paths shortened):</p>
+    <pre data-cap="output"><code>{"session_id":"36d0a71b-...","transcript_path":"C:\\Users\\you\\.claude\\projects\\...\\36d0a71b-....jsonl",
+ "cwd":"C:\\Users\\you\\bootcamp-labs\\m5\\lab1","prompt_id":"26c89223-...","permission_mode":"default",
+ "effort":{"level":"medium"},"hook_event_name":"PreToolUse","tool_name":"Read",
+ "tool_input":{"file_path":"C:\\Users\\you\\bootcamp-labs\\m5\\lab1\\notes.txt"},"tool_use_id":"toolu_01SQX2..."}</code></pre>
+    <div class="tablewrap"><table>
+      <tr><th>Event</th><th>Fields added to the common ones</th></tr>
+      <tr><td>All</td><td><code>session_id</code>, <code>transcript_path</code>, <code>cwd</code>, <code>hook_event_name</code>; most also <code>permission_mode</code>; <code>agent_id</code>/<code>agent_type</code> inside a subagent</td></tr>
+      <tr><td><code>PreToolUse</code></td><td><code>tool_name</code>, <code>tool_input</code>, <code>tool_use_id</code></td></tr>
+      <tr><td><code>PostToolUse</code></td><td>the same plus <code>tool_response</code></td></tr>
+      <tr><td><code>UserPromptSubmit</code></td><td><code>prompt</code></td></tr>
+      <tr><td><code>Stop</code></td><td><code>stop_hook_active</code>, <code>last_assistant_message</code>, <code>background_tasks</code>, <code>session_crons</code></td></tr>
+      <tr><td><code>SessionStart</code></td><td><code>source</code>, sometimes <code>model</code></td></tr>
+    </table></div>
+    <p><code>tool_input</code> depends on the tool. <code>Bash</code> and <code>PowerShell</code> carry <code>command</code>, <code>description</code>, <code>timeout</code>, <code>run_in_background</code>. <code>Write</code>, <code>Edit</code> and <code>Read</code> carry <code>file_path</code>, which Claude Code makes absolute before your hook runs, so a guard cannot be dodged with <code>~</code> or a relative path. On Windows that path uses backslashes; compare against <code>\src\</code>, or normalise first.</p>
+    <h3>Exit codes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Exit</th><th>Meaning</th><th>Effect</th></tr>
+      <tr><td class="num">0</td><td>Success</td><td>stdout is parsed as JSON if it is one JSON object; on <code>UserPromptSubmit</code> and <code>SessionStart</code> plain-text stdout becomes context for the model; elsewhere stdout goes to the debug log</td></tr>
+      <tr><td class="num">2</td><td>Blocking error</td><td>On a blockable event the action stops and stderr is the reason (shown to the model for PreToolUse and Stop, to the user for UserPromptSubmit)</td></tr>
+      <tr><td>anything else</td><td>Non-blocking error</td><td>The action <b>goes ahead</b>; a "hook error" notice shows the first stderr line</td></tr>
+    </table></div>
+    <aside class="trap">Exit 1 does not block. It is the conventional Unix failure code and the most common bug in a first guard: the script detects the bad command, writes a message, exits 1, and the command runs. Use <code>exit 2</code> or a JSON deny.</aside>
+    <h3>JSON on stdout</h3>
+    <p>Exit 0 and print exactly one JSON object for finer control. Nothing else may be on stdout: a stray line in front of the <code>{</code> turns the whole thing into plain text, and the decision is silently ignored.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Events</th><th>Effect</th></tr>
+      <tr><td><code>hookSpecificOutput.permissionDecision</code></td><td>PreToolUse</td><td><code>allow</code> skips the prompt, <code>deny</code> blocks, <code>ask</code> prompts the user, <code>defer</code> ends a <code>-p</code> turn so the call can be resumed later. Precedence across hooks: deny &gt; defer &gt; ask &gt; allow</td></tr>
+      <tr><td><code>hookSpecificOutput.permissionDecisionReason</code></td><td>PreToolUse</td><td>For <code>deny</code>, shown to the model</td></tr>
+      <tr><td><code>hookSpecificOutput.updatedInput</code></td><td>PreToolUse</td><td>Replaces the <b>whole</b> tool input before it runs; include unchanged fields. Pair with <code>allow</code> or <code>ask</code></td></tr>
+      <tr><td><code>hookSpecificOutput.additionalContext</code></td><td>SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop and others</td><td>Text inserted as a system reminder for the model; capped at 10,000 characters</td></tr>
+      <tr><td><code>decision: "block"</code> + <code>reason</code></td><td>UserPromptSubmit, PostToolUse, Stop, SubagentStop, PreCompact, ConfigChange</td><td>Blocks (or for PostToolUse, feeds the reason back)</td></tr>
+      <tr><td><code>continue: false</code> + <code>stopReason</code></td><td>All</td><td>Stops Claude entirely; wins over any other decision</td></tr>
+      <tr><td><code>systemMessage</code></td><td>All</td><td>Warning shown to the user</td></tr>
+    </table></div>
+<figure class="diagram">
+<pre class="mermaid">flowchart LR
+  a["PreToolUse event"] --> b["Hook runs, JSON on stdin"]
+  b --> c{"Exit code?"}
+  c -- "0" --> d{"JSON decision?"}
+  c -- "2" --> e["Blocked, stderr to model"]:::bad
+  c -- "other" --> f["Goes ahead, hook error notice"]:::hot
+  d -- "deny" --> e
+  d -- "allow or none" --> g["Call runs"]:::good
+  d -- "ask" --> h["User is prompted"]:::info
+</pre>
+  <figcaption>Only exit 2 or a JSON deny blocks; any other non-zero exit lets the call go ahead.</figcaption>
+</figure>
+    <p>A real deny from the Lab 2 guard, produced by <code>ConvertTo-Json</code> so quoting is never hand-built:</p>
+    <pre data-cap="output"><code>{"hookSpecificOutput":{"permissionDecision":"deny","hookEventName":"PreToolUse","permissionDecisionReason":"Policy: nothing in this project may touch prod. Ask a human."}}</code></pre>
+    <aside class="trap"><code>permissionDecision</code> at the top level instead of inside <code>hookSpecificOutput</code> still parses, and Claude Code ignores it without an error. The debug log records <code>Hook JSON output had unrecognized keys</code>.</aside>
+    <h3>Timeouts, failure and parallel runs</h3>
+    <p>All hooks matching an event run <b>in parallel</b>, not in order, so one hook cannot rely on another having run first, and two hooks both returning <code>updatedInput</code> for the same tool give no guarantee which rewrite wins. A hook that reaches its <code>timeout</code> is cancelled and its output discarded. On PreToolUse a timed-out, crashed or missing hook does not block: the call continues through normal permissions. That is fail-open, and for a guard it is wrong. Set <code>"onFailure": "block"</code> on the handler (Claude Code 2.1.295 or later) and a failure to start, a non-0/2 exit, invalid JSON or a timeout all block the call. <code>onFailure</code> has no effect on Stop hooks.</p>
+    <aside class="rule">Every enforcement hook gets an explicit <code>timeout</code>, <code>"onFailure": "block"</code>, and a first live run where you watch for a "hook error" notice.</aside>
+  </div>
+
+  <div class="lesson" id="m5-l4" data-title="Writing a guard that holds" data-minutes="20">
+    <h3>Parse the input, do not grep it</h3>
+    <p>Read stdin once, parse it as JSON, and pull the one field you judge. Matching a regex against the raw JSON text sounds equivalent and is not: quotes and backslashes arrive escaped (<code>\"</code>, <code>\\</code>), so a pattern that works on the command fails on the JSON spelling of it. In PowerShell:</p>
+    <pre><code>$in  = [Console]::In.ReadToEnd() | ConvertFrom-Json
+$cmd = [string]$in.tool_input.command</code></pre>
+    <h3>Fail closed</h3>
+    <p>A guard has three outcomes, not two: allow, deny, and "I could not tell". Decide what the third one does. For an enforcement hook it is deny. Wrap the parse in <code>try</code>/<code>catch</code> and exit 2 with a message on stderr when the input is unreadable, and set <code>onFailure: "block"</code> so a crash or a timeout also blocks. For a logging or context hook it is the opposite: fail open, exit 0, and never block work because a log file was locked.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Situation</th><th>Guard (fail closed)</th><th>Logger (fail open)</th></tr>
+      <tr><td>stdin is not JSON</td><td>stderr + <code>exit 2</code></td><td><code>exit 0</code></td></tr>
+      <tr><td>Script throws</td><td><code>onFailure: "block"</code> catches it</td><td>Leave <code>onFailure</code> unset</td></tr>
+      <tr><td>Timeout</td><td><code>onFailure: "block"</code> catches it</td><td>Short timeout, unset</td></tr>
+      <tr><td>Pattern unsure (encoded, obfuscated)</td><td>Deny and say why</td><td>Log it</td></tr>
+    </table></div>
+    <h3>Wrappers and spellings</h3>
+    <p>The command the model writes is a string, and a shell can run the same action under many spellings. A guard anchored on the start of the string (<code>^rm </code>) misses all of these:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Spelling</th><th>Why an anchored or naive guard misses it</th></tr>
+      <tr><td><code>cmd /c "git push -f origin main"</code></td><td>Wrapped in another shell; also <code>-f</code> instead of <code>--force</code></td></tr>
+      <tr><td><code>bash -c 'rm -rf build'</code></td><td>Wrapped, single-quoted</td></tr>
+      <tr><td><code>powershell -Command "ri build -r"</code></td><td>Alias <code>ri</code> and abbreviated <code>-r</code> for <code>Remove-Item -Recurse</code></td></tr>
+      <tr><td><code>rm -r -f build</code></td><td>Flags split</td></tr>
+      <tr><td><code>git push origin +main</code></td><td>Force push with no force flag at all</td></tr>
+      <tr><td><code>powershell -EncodedCommand cgBtACAA...</code></td><td>The payload is base64; there is nothing to match</td></tr>
+    </table></div>
+    <p>Three habits cover most of it. Match unanchored, anywhere in the string, so a wrapper does not hide the inner command. List the aliases and short flags explicitly. Deny outright what you cannot inspect (<code>-EncodedCommand</code>, <code>Invoke-Expression</code> on a built string) rather than trying to decode it. The cost is false positives: <code>echo "never git push --force"</code> is denied too. For a guard that is the right trade, and the denial reason tells the model what to do instead.</p>
+    <aside class="trap">The model can write a script with <code>Write</code> and then run it by path. Your shell guard sees <code>powershell -File .\cleanup.ps1</code> and nothing inside it. If the action matters, also guard <code>Write</code> and <code>Edit</code> content, or deny running scripts from the working folder.</aside>
+    <h3>Keep it fast</h3>
+    <p>A PreToolUse hook runs on every matching call and the model waits for it. In Lab 1 the debug log timed each run of a minimal PowerShell 5.1 hook at about 440 to 500 ms, almost all of it interpreter start-up, and Lab 5 measured 250 to 600 ms per offline call. Ways to keep the cost down: match narrowly (<code>Bash|PowerShell</code> rather than <code>*</code>), add an <code>if</code> pattern so unrelated calls never spawn a process, use <code>-NoProfile</code>, and do no network calls in the decision path. If a hook must do slow work, print the decision first, then start the slow part in the background with its output redirected.</p>
+    <h3>Log every decision</h3>
+    <p>Write one line per decision: time, verdict, rule name, the command. A guard that denies silently is indistinguishable from one that never ran, and a log is how you find the false positive that annoyed a colleague last Tuesday. The Lab 2 guard writes this:</p>
+    <pre data-cap="output"><code>2026-11-11T17:34:48 DENY  Bash echo deployed &gt; prod.txt
+2026-11-11T17:34:48 PASS  Bash echo built &gt; build.txt
+2026-11-11T17:34:51 DENY  Bash echo deployed &gt; prod.txt</code></pre>
+    <p>Do not log secrets. If commands can carry tokens, log a hash or a redacted form.</p>
+    <h3>Deny with a reason the model can act on</h3>
+    <p>The <code>permissionDecisionReason</code> goes to the model. "Blocked" invites retries in a new spelling. "Blocked by project guard: recursive delete. Ask a human to run it." tells it to stop and report, which is what Haiku did in Lab 2: it quoted the reason, said it had not tried another way, and asked for authority.</p>
+    <aside class="rule">A guard is parse, decide, log, answer, in that order, and it never exits 1.</aside>
+    
+  </div>
+
+  <div class="lesson" id="m5-l5" data-title="Hooks that add context or keep an agent going" data-minutes="15">
+    <h3>Context hooks</h3>
+    <p>Not every hook says no. <code>SessionStart</code> and <code>UserPromptSubmit</code> can put text in front of the model: the current branch, which environment this folder deploys to, today's change freeze. Two channels work on exit 0:</p>
+    <ul>
+      <li><b>Plain stdout</b>: on these two events, text that is not a JSON object is added as context.</li>
+      <li><b><code>hookSpecificOutput.additionalContext</code></b>: the same, inside JSON, so you can combine it with other fields.</li>
+    </ul>
+    <p>Either way Claude Code wraps the text in a system reminder; it does not appear as a chat message. Lab 3 uses one of each and the model answered <code>HERON-7 oncall-blue</code> with the hooks on and <code>NONE</code> with them off. With <code>--output-format stream-json --verbose --include-hook-events</code> the stream shows a <code>hook_started</code> and a <code>hook_response</code> line per hook, ahead of the <code>system</code> <code>init</code> line, and the response carries <code>stdout</code>, <code>stderr</code>, <code>exit_code</code> and <code>outcome</code>.</p>
+    <p>Write the text as plain facts ("The deployment target is staging"), not as commands styled like a system message. The docs warn that text framed as out-of-band instructions can trigger the model's prompt-injection defences, and it then reports the text to you instead of using it. For facts that never change, CLAUDE.md is cheaper: it loads without spawning a process.</p>
+    <aside class="trap">On resume, Claude Code replays the context a <code>UserPromptSubmit</code> hook injected on past turns instead of re-running the hook, so timestamps and commit hashes go stale. <code>SessionStart</code> does re-run on resume with <code>source</code> set to <code>resume</code>.</aside>
+    <h3>What context costs</h3>
+    <p>Injected text is input tokens on every request that follows. A SessionStart line sits early in the conversation and is cached after the first request; a UserPromptSubmit line adds new tokens each prompt. On an API key that is billed per token; on a subscription it counts against the 5-hour window and weekly limit. A 50-word line is noise. A hook that dumps a 9,000-character ticket list into every prompt is not.</p>
+    <h3>Stop gates</h3>
+    <p>A <code>Stop</code> hook fires each time the main agent finishes responding, not only at the end of the task. Exit 2 (or <code>decision: "block"</code> with a <code>reason</code>) sends the model back to work with your stderr or reason as the explanation. That makes a completion gate: "do not stop until <code>done.txt</code> exists", "until the test suite passes".</p>
+    <p>The danger is a condition the model cannot meet: no permission to write the file, a test that cannot pass. Two brakes exist:</p>
+    <ul>
+      <li><code>stop_hook_active</code> in the input is <code>true</code> when the model is already continuing because of a Stop hook. Check it and let the model stop on the second attempt.</li>
+      <li>Claude Code caps a run of consecutive Stop-hook continuations at 8 and then ends the turn anyway. The count resets every time the model calls a tool. <code>CLAUDE_CODE_STOP_HOOK_BLOCK_CAP</code> raises it.</li>
+    </ul>
+    <p>Lab 4 measured what exit 2 on Stop does in a headless <code>-p</code> run, in three cases:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Run</th><th>Setup</th><th class="num">Stop hook runs</th><th class="num">num_turns</th><th>Outcome</th></tr>
+      <tr><td>A</td><td>Loop guard on, <code>Write</code> allowed</td><td class="num">2</td><td class="num">4</td><td>Model wrote <code>done.txt</code>; second run saw <code>stop_hook_active=True done=True</code></td></tr>
+      <tr><td>B</td><td>Loop guard on, no tools allowed</td><td class="num">2</td><td class="num">3</td><td>Write denied once; guard let it stop on the second run; file absent</td></tr>
+      <tr><td>C</td><td>Loop guard off, no tools allowed</td><td class="num">16</td><td class="num">23</td><td>4 denied Write attempts reset the cap counter; ended by the cap with an empty <code>result</code>, <code>subtype</code> still <code>success</code></td></tr>
+    </table></div>
+<figure class="diagram">
+<pre class="mermaid">stateDiagram-v2
+  [*] --> Working
+  Working --> StopHook : model finishes responding
+  StopHook --> Working : exit 2, condition unmet
+  StopHook --> Done : exit 0, or stop_hook_active guard lets it stop
+  StopHook --> Done : cap of 8 in a row reached
+  Working --> Working : tool call resets the count
+  Done --> [*]
+</pre>
+  <figcaption>Run A and B ended through the guard after 2 hook runs; run C had no guard and only the cap stopped it, after 16 runs.</figcaption>
+</figure>
+    <p>So in headless mode exit 2 on Stop does keep the session going, the reason does reach the model (in run A it replied that it created the file "as the stop hook asked"), and the 8-in-a-row cap does end a runaway loop, but tool calls in between can stretch it well past 8. Run C cost about $0.009 at Haiku list price; on Opus the same loop would cost roughly 20 to 40 times that, depending on how much of it is cache reads. On a subscription the dollar figure is notional, but every one of those 23 turns draws on your window.</p>
+    <aside class="rule">Every Stop gate checks <code>stop_hook_active</code> first, and its condition is something the model has the tools to satisfy.</aside>
+    <aside class="trap">A run ended by the cap still reports <code>subtype: "success"</code> and <code>is_error: false</code>. A pipeline that trusts those fields will treat an unfinished job as done. Check the condition itself (the file, the test result), not the exit status.</aside>
+  </div>
+
+  <div class="lesson" id="m5-l6" data-title="Testing safely, and what hooks cannot do" data-minutes="15">
+    <h3>Offline first</h3>
+    <p>A command hook is a program that reads stdin and writes stdout. Test it like one, with no model involved:</p>
+    <pre><code>Get-Content samples\deny.json -Raw | powershell -NoProfile -ExecutionPolicy Bypass -File .claude\hooks\guard.ps1
+$LASTEXITCODE</code></pre>
+    <p>Where do samples come from? Record them. The Lab 1 logger saves each raw stdin to <code>hook-data\stdin-&lt;tool&gt;.json</code>, which gives you the exact shape Claude Code sends on your machine, including Windows paths and escaping. For edge cases, build the JSON with <code>ConvertTo-Json</code> from a table of commands so your test inputs are never hand-quoted. Lab 5's harness does that: 13 rows, each with an expected verdict, and a pass/fail count at the end. Add a row every time you find a new bypass.</p>
+    <p>Include a row of garbage input. Your guard should exit 2 on it. In Lab 2 it did: <code>garbage exit=2</code> with <code>guard: could not parse hook input, refusing</code> on stderr.</p>
+    <h3>Then one live run, with only that hook loaded</h3>
+    <p>Offline tests prove the script. A live run proves the wiring: the matcher matches, the path resolves, the JSON is read. Keep it small and isolated:</p>
+    <ul>
+      <li>Put the hook in a lab folder's <code>.claude/settings.json</code>, never in <code>~/.claude/settings.json</code> while it is untested.</li>
+      <li>Run <code>claude -p</code> with <code>--setting-sources project --strict-mcp-config</code> so your personal hooks, settings and MCP servers stay out.</li>
+      <li>Grant exactly the tools the test needs with <code>--allowedTools</code>, cap <code>--max-turns</code>, and point any destructive test at a harmless target (a <code>victim</code> folder with one file in it).</li>
+      <li>Check three things: <code>permission_denials</code> in the JSON result lists the call, the side effect did not happen, and the guard's own log has the DENY line.</li>
+    </ul>
+    <p>For details, <code>--debug-file &lt;path&gt;</code> writes a log with a <code>Hooks:</code> line per run, naming the event, the command, the exit status and the duration.</p>
+    <aside class="trap">In <code>-p</code> mode a settings file that fails validation is silently ignored. A trailing comma in <code>.claude/settings.json</code> does not produce an error; it produces a session with no guard. The live run with a deliberately denied command is how you find out.</aside>
+    <h3>What a hook cannot see or stop</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Gap</th><th>Why</th><th>Cover it with</th></tr>
+      <tr><td>Files added with <code>@path</code> in the prompt</td><td>Inserted while building the prompt; no tool call, so no PreToolUse</td><td><code>Read</code> deny rules</td></tr>
+      <tr><td>What a script does inside</td><td>The guard sees <code>-File x.ps1</code>, not the file</td><td>Guard <code>Write</code>/<code>Edit</code> too, or deny running local scripts</td></tr>
+      <tr><td>MCP tool calls</td><td>A <code>Bash|PowerShell</code> matcher does not cover <code>mcp__*</code></td><td>A second matcher group for the MCP tools</td></tr>
+      <tr><td>Anything already done</td><td>PostToolUse fires after the fact</td><td>PreToolUse</td></tr>
+      <tr><td>A hook that crashed or timed out</td><td>Fail-open by default on PreToolUse</td><td><code>onFailure: "block"</code></td></tr>
+      <tr><td>The user's own shell</td><td>Hooks govern Claude Code's tool calls, not you</td><td>Normal OS permissions</td></tr>
+      <tr><td>A user who edits the settings file</td><td>Project and user hooks are the user's to change</td><td>Managed settings and <code>allowManagedHooksOnly</code></td></tr>
+    </table></div>
+    <h3>Hooks are code you run</h3>
+    <p>A command hook runs with your full user rights, outside any sandbox. It can read your SSH keys, your cloud credentials and every repository you can reach. That applies to hooks you write and to hooks you install: a plugin's <code>hooks/hooks.json</code> merges with yours when the plugin is enabled and runs as you, and a repository's committed <code>.claude/settings.json</code> runs in any <code>claude -p</code> job you point at it. Read a plugin's hooks before enabling it, pin what you install, and treat a new hook in a pull request with the same suspicion as a new CI step. Plugins and marketplaces covers pinning and allowlists.</p>
+    <aside class="rule">Review a hook like a cron job: it runs unattended, as you, every time.</aside>
+    
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m5-lab1" data-title="Log every tool call and capture real hook input" data-minutes="15">
+      <p class="goal">You register a project-scoped PreToolUse hook that appends every tool call to a log and saves the raw stdin, and end up holding real input samples for the later labs.</p>
+      <ol class="steps">
+        <li><p>Make the lab folder and write the logger. It fails open: whatever happens, it exits 0.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m5/lab1/.claude/hooks | Out-Null
+Set-Location {{LAB}}/m5/lab1
+Set-Content -Encoding utf8 -Path .claude\hooks\log-tool.ps1 -Value @'
+$raw = [Console]::In.ReadToEnd()
+$in  = $raw | ConvertFrom-Json
+$dir = Join-Path $env:CLAUDE_PROJECT_DIR 'hook-data'
+New-Item -ItemType Directory -Force $dir | Out-Null
+$line = [ordered]@{ t = (Get-Date).ToString('o'); event = $in.hook_event_name; tool = $in.tool_name; input = $in.tool_input } | ConvertTo-Json -Compress -Depth 5
+Add-Content -Path (Join-Path $dir 'tool-log.jsonl') -Value $line -Encoding utf8
+Set-Content -Path (Join-Path $dir ("stdin-" + $in.tool_name + ".json")) -Value $raw -Encoding utf8
+exit 0
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output; <code>.claude\hooks\log-tool.ps1</code> exists.</p></li>
+        <li><p>Register it in the folder's own project settings, matching every tool, in exec form.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path .claude\settings.json -Value @'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${CLAUDE_PROJECT_DIR}/.claude/hooks/log-tool.ps1"],
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+'@
+Set-Content -Encoding utf8 -Path notes.txt -Value 'web-01 patched 2026-11-02'</code></pre>
+          <p class="expect"><b>Expected:</b> no output. The single quotes of the here-string keep <code>${CLAUDE_PROJECT_DIR}</code> literal; Claude Code substitutes it.</p></li>
+        <li><p>Run one headless session. <code>--setting-sources project</code> loads only this folder's settings, not your user settings and hooks, and <code>--strict-mcp-config</code> loads no MCP servers except ones passed on the command line (none here). Together they keep your personal setup out of the measurement; every lab in this module uses them. <code>--debug-file</code> writes a log with hook timings.</p>
+          <pre><code>claude -p "Read notes.txt, then list the files in this folder. Reply in one line." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read,Glob,Bash(ls *),Bash(dir *),PowerShell(Get-ChildItem *)" --max-turns 6 --output-format json --debug-file debug.log &gt; result.json
+$r = Get-Content result.json -Raw | ConvertFrom-Json
+"result: $($r.result)"; "num_turns: $($r.num_turns)  cost: $($r.total_cost_usd)"</code></pre>
+          <p class="expect"><b>Expected:</b> a one-line answer quoting "web-01 patched 2026-11-02" and listing the files; <code>num_turns</code> about 3; <code>total_cost_usd</code> about 0.002. On a subscription that cost is a list-price estimate, not a charge.</p></li>
+        <li><p>Read what the hook saw.</p>
+          <pre><code>Get-Content hook-data\tool-log.jsonl
+(Get-Content hook-data\tool-log.jsonl).Count
+Get-ChildItem hook-data | Select-Object Name, Length
+Select-String -Path debug.log -Pattern 'Hooks: PreToolUse'</code></pre>
+          <p class="expect"><b>Expected:</b> one JSON line per tool call, for example a <code>Read</code> with <code>file_path</code> and a <code>Glob</code> with <code>pattern</code> (2 lines in the verified run; the model may pick different tools). <code>hook-data</code> holds <code>stdin-Read.json</code> and <code>stdin-Glob.json</code> of about 550 bytes each. The debug log has lines like <code>Hooks: PreToolUse:Read [powershell -NoProfile ... log-tool.ps1] finished with status 0 (500ms)</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Which top-level fields does your <code>stdin-Read.json</code> contain?</b> In the verified run: <code>session_id</code>, <code>transcript_path</code>, <code>cwd</code>, <code>prompt_id</code>, <code>permission_mode</code>, <code>effort</code>, <code>hook_event_name</code>, <code>tool_name</code>, <code>tool_input</code>, <code>tool_use_id</code>.</p>
+        <p><b>Is <code>tool_input.file_path</code> relative or absolute?</b> Absolute, with backslashes. Claude Code expands paths before hooks run.</p>
+        <p><b>How long did each hook run take, and what would that cost across 50 tool calls?</b> About 440 to 500 ms each here, so roughly 20 to 25 seconds of waiting over 50 calls. That is the argument for a narrow matcher.</p>
+        <p><b>Why does the logger exit 0 even if writing fails?</b> It is observability, not enforcement. It must never block work.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m5-lab2" data-title="Deny a command, offline first, then live" data-minutes="20">
+      <p class="goal">You write a PreToolUse guard that denies any shell command mentioning prod, prove it on saved stdin samples, then watch it stop a live session, ending with a denial record and a file that was never created.</p>
+      <ol class="steps">
+        <li><p>Write the guard. It parses the input, fails closed on garbage, logs every decision and denies with JSON.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m5/lab2/.claude/hooks, {{LAB}}/m5/lab2/samples | Out-Null
+Set-Location {{LAB}}/m5/lab2
+Set-Content -Encoding utf8 -Path .claude\hooks\guard.ps1 -Value @'
+$ErrorActionPreference = 'Stop'
+$log = Join-Path $PSScriptRoot 'decisions.log'
+try {
+  $in  = [Console]::In.ReadToEnd() | ConvertFrom-Json
+  $cmd = [string]$in.tool_input.command
+} catch {
+  [Console]::Error.WriteLine("guard: could not parse hook input, refusing: $_")
+  exit 2
+}
+if ($cmd -match '(?i)\bprod\b') {
+  Add-Content -Path $log -Value ("{0} DENY  {1} {2}" -f (Get-Date -Format s), $in.tool_name, $cmd)
+  @{ hookSpecificOutput = @{
+       hookEventName = 'PreToolUse'
+       permissionDecision = 'deny'
+       permissionDecisionReason = 'Policy: nothing in this project may touch prod. Ask a human.'
+  } } | ConvertTo-Json -Compress
+  exit 0
+}
+Add-Content -Path $log -Value ("{0} PASS  {1} {2}" -f (Get-Date -Format s), $in.tool_name, $cmd)
+exit 0
+'@
+Set-Content -Encoding utf8 -Path .claude\settings.json -Value @'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.ps1"],
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Save three stdin samples in the shape Lab 1 recorded: one to deny, one to allow, one that is not JSON.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path samples\deny.json -Value '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo deployed &gt; prod.txt"}}'
+Set-Content -Encoding utf8 -Path samples\allow.json -Value '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo built &gt; build.txt"}}'
+Set-Content -Encoding utf8 -Path samples\garbage.json -Value 'this is not json'</code></pre>
+          <p class="expect"><b>Expected:</b> three files in <code>samples\</code>.</p></li>
+        <li><p>Test offline. No model is involved.</p>
+          <pre><code>foreach ($s in 'deny', 'allow', 'garbage') {
+  $out = Get-Content "samples\$s.json" -Raw | powershell -NoProfile -ExecutionPolicy Bypass -File .claude\hooks\guard.ps1
+  "{0,-8} exit={1} out={2}" -f $s, $LASTEXITCODE, ($out -join ' ')
+}</code></pre>
+          <p class="expect"><b>Expected:</b></p>
+          <pre data-cap="output"><code>deny     exit=0 out={"hookSpecificOutput":{"permissionDecision":"deny","hookEventName":"PreToolUse","permissionDecisionReason":"Policy: nothing in this project may touch prod. Ask a human."}}
+allow    exit=0 out=
+garbage  exit=2 out=</code></pre>
+          <p>plus <code>guard: could not parse hook input, refusing: Invalid JSON primitive: this.</code> on stderr for the garbage case.</p></li>
+        <li><p>Run it live. The model is told to run the denied command, and <code>--allowedTools</code> grants the shell tools, so only the hook stands in the way.</p>
+          <pre><code>claude -p "Run this exact shell command and nothing else: echo deployed &gt; prod.txt" --model haiku --setting-sources project --strict-mcp-config --allowedTools "Bash,PowerShell" --max-turns 3 --output-format json &gt; result.json
+$r = Get-Content result.json -Raw | ConvertFrom-Json
+"result: $($r.result)"
+"permission_denials: " + ($r.permission_denials | ConvertTo-Json -Compress -Depth 5)
+"prod.txt exists: " + (Test-Path prod.txt)
+Get-Content .claude\hooks\decisions.log</code></pre>
+          <p class="expect"><b>Expected:</b> <code>result</code> says a pre-tool hook blocked the command and quotes the policy reason (in the verified run Haiku added that it had not tried another way to write the file). <code>permission_denials</code> holds one entry with <code>tool_name</code> <code>Bash</code> (or <code>PowerShell</code>) and the command. <code>prod.txt exists: False</code>. The log ends with a third line, <code>DENY  Bash echo deployed &gt; prod.txt</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>The deny case exits 0. Why does it still block?</b> Exit 0 means "read my JSON", and the JSON says <code>permissionDecision: deny</code>. Exit 2 with a stderr message would block too.</p>
+        <p><b>What would happen live if the guard exited 1 on the deny case instead?</b> A non-blocking error notice, and the command runs. <code>prod.txt</code> would exist.</p>
+        <p><b>The guard fails closed on bad JSON. What happens if <code>powershell</code> itself cannot start?</b> With this settings file, the call goes ahead: a hook that fails to start is a non-blocking error. Lab 5 adds <code>"onFailure": "block"</code> to close that gap.</p>
+        <p><b>Where do you look to prove the block from a script, without reading prose?</b> <code>permission_denials</code> in the JSON result, plus the file check.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m5-lab3" data-title="Inject context and prove the model saw it" data-minutes="15">
+      <p class="goal">You add a SessionStart hook that returns <code>additionalContext</code> and a UserPromptSubmit hook that prints plain text, and prove both reached the model by comparing against a run with hooks switched off.</p>
+      <ol class="steps">
+        <li><p>Write both hooks and a settings file that turns all hooks off, for the control run.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m5/lab3/.claude/hooks | Out-Null
+Set-Location {{LAB}}/m5/lab3
+Set-Content -Encoding utf8 -Path .claude\hooks\session-context.ps1 -Value @'
+$in = [Console]::In.ReadToEnd() | ConvertFrom-Json
+@{ hookSpecificOutput = @{
+     hookEventName = 'SessionStart'
+     additionalContext = "The change-freeze code word for this repository is HERON-7. Session source: $($in.source)."
+} } | ConvertTo-Json -Compress
+'@
+Set-Content -Encoding utf8 -Path .claude\hooks\prompt-context.ps1 -Value @'
+$null = [Console]::In.ReadToEnd()
+"The on-call alias for this week is oncall-blue."
+'@
+Set-Content -Encoding utf8 -Path .claude\settings.json -Value @'
+{
+  "hooks": {
+    "SessionStart": [
+      { "matcher": "startup",
+        "hooks": [ { "type": "command", "command": "powershell",
+          "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${CLAUDE_PROJECT_DIR}/.claude/hooks/session-context.ps1"] } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "powershell",
+          "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${CLAUDE_PROJECT_DIR}/.claude/hooks/prompt-context.ps1"] } ] }
+    ]
+  }
+}
+'@
+Set-Content -Encoding utf8 -Path no-hooks.json -Value '{ "disableAllHooks": true }'</code></pre>
+          <p class="expect"><b>Expected:</b> no output. The UserPromptSubmit group has no <code>matcher</code> because that event does not support one.</p></li>
+        <li><p>Ask with the hooks on, then the same question with <code>--settings no-hooks.json</code>. The prompt forbids tools, so the model cannot go looking.</p>
+          <pre><code>$q = "What is the change-freeze code word and the on-call alias for this repository? Answer as WORD ALIAS on one line, or NONE if you do not know. Do not use any tools."
+claude -p $q --model haiku --setting-sources project --strict-mcp-config --max-turns 2 --output-format json &gt; with.json
+"with hooks:    " + (Get-Content with.json -Raw | ConvertFrom-Json).result
+claude -p $q --model haiku --setting-sources project --strict-mcp-config --settings no-hooks.json --max-turns 2 --output-format json &gt; without.json
+"without hooks: " + (Get-Content without.json -Raw | ConvertFrom-Json).result</code></pre>
+          <p class="expect"><b>Expected:</b> <code>with hooks:    HERON-7 oncall-blue</code> and <code>without hooks: NONE</code>.</p></li>
+        <li><p>Watch the hooks fire in the event stream.</p>
+          <pre><code>claude -p "Reply OK." --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format stream-json --verbose --include-hook-events &gt; stream.jsonl
+Get-Content stream.jsonl | ForEach-Object { $o = $_ | ConvertFrom-Json; "{0} {1} {2}" -f $o.type, $o.subtype, $o.hook_event }</code></pre>
+          <p class="expect"><b>Expected:</b> the first four lines are <code>system hook_started SessionStart</code>, <code>system hook_response SessionStart</code>, <code>system hook_started UserPromptSubmit</code>, <code>system hook_response UserPromptSubmit</code>, then <code>system init</code>, <code>assistant</code> and <code>result success</code> (a <code>rate_limit_event</code> line may also appear). Open a <code>hook_response</code> line: it carries <code>stdout</code>, <code>stderr</code>, <code>exit_code</code> 0 and <code>outcome</code> <code>success</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Why is the control run necessary?</b> Without it, a correct answer could be a guess or come from somewhere else in context. <code>NONE</code> with hooks off and the right words with hooks on isolates the hook as the cause.</p>
+        <p><b>The UserPromptSubmit hook printed plain text, the SessionStart hook printed JSON. Would plain text work on PreToolUse?</b> No. Plain stdout becomes context only on UserPromptSubmit, SessionStart and a couple of other events; on PreToolUse it goes to the debug log. Use <code>additionalContext</code> there.</p>
+        <p><b>Which of the two injections is paid again on every prompt?</b> The UserPromptSubmit line: it is added each time a prompt is submitted. The SessionStart line is added once and then read from cache.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m5-lab4" data-title="Gate Stop on a file, then remove the loop guard" data-minutes="20">
+      <p class="goal">You build a Stop hook that refuses to let the session end until <code>done.txt</code> exists, run it three ways, and hold the turn counts that show what the loop guard and the built-in cap really do in a headless run.</p>
+      <ol class="steps">
+        <li><p>Write the gate. It logs every run, lets the model stop if the file exists, lets it stop on a repeat attempt unless the guard is switched off by an environment variable (for step 4 only), and otherwise exits 2 with a reason.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m5/lab4/.claude/hooks | Out-Null
+Set-Location {{LAB}}/m5/lab4
+Set-Content -Encoding utf8 -Path .claude\hooks\stop-gate.ps1 -Value @'
+$in  = [Console]::In.ReadToEnd() | ConvertFrom-Json
+$log = Join-Path $PSScriptRoot 'stop.log'
+$done = Test-Path (Join-Path $env:CLAUDE_PROJECT_DIR 'done.txt')
+Add-Content $log ("{0} stop_hook_active={1} done={2}" -f (Get-Date -Format s), $in.stop_hook_active, $done)
+if ($done) { exit 0 }
+if ($in.stop_hook_active -and $env:STOP_GATE_NO_GUARD -ne '1') { exit 0 }
+[Console]::Error.WriteLine('Not finished: write a file named done.txt in the project folder containing the word ok, then stop.')
+exit 2
+'@
+Set-Content -Encoding utf8 -Path .claude\settings.json -Value @'
+{
+  "hooks": {
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "powershell",
+          "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${CLAUDE_PROJECT_DIR}/.claude/hooks/stop-gate.ps1"] } ] }
+    ]
+  }
+}
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Run A: the model may use <code>Write</code>, so it can satisfy the gate. The prompt says nothing about the file.</p>
+          <pre><code>claude -p "Say hello in one word." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Write" --max-turns 5 --output-format json &gt; a.json
+$a = Get-Content a.json -Raw | ConvertFrom-Json
+"num_turns=$($a.num_turns) subtype=$($a.subtype) cost=$($a.total_cost_usd)"
+"done.txt: " + (Test-Path done.txt) + " " + (Get-Content done.txt -ErrorAction SilentlyContinue)
+Get-Content .claude\hooks\stop.log</code></pre>
+          <p class="expect"><b>Expected:</b> <code>num_turns</code> about 4, <code>subtype=success</code>, cost about $0.003; <code>done.txt: True ok</code>; the result mentions creating the file because the stop hook asked. Two log lines: <code>stop_hook_active=False done=False</code>, then <code>stop_hook_active=True done=True</code>.</p></li>
+        <li><p>Run B: no tools allowed, so the gate cannot be satisfied. The loop guard should let the session end on the second Stop.</p>
+          <pre><code>Remove-Item done.txt, .claude\hooks\stop.log -ErrorAction SilentlyContinue
+claude -p "Say hello in one word." --model haiku --setting-sources project --strict-mcp-config --max-turns 5 --output-format json &gt; b.json
+$b = Get-Content b.json -Raw | ConvertFrom-Json
+"num_turns=$($b.num_turns) subtype=$($b.subtype) denials=$(@($b.permission_denials).Count)"
+"done.txt: " + (Test-Path done.txt)
+Get-Content .claude\hooks\stop.log</code></pre>
+          <p class="expect"><b>Expected:</b> <code>num_turns</code> about 3, <code>denials=1</code> (the model tried <code>Write</code> and nobody could approve it), <code>done.txt: False</code>; two log lines, the second with <code>stop_hook_active=True done=False</code>, where the guard let it stop.</p></li>
+        <li><p>Run C: switch the loop guard off and repeat. This is the runaway case; <code>--max-turns 30</code> is a backstop.</p>
+          <pre><code>Remove-Item done.txt, .claude\hooks\stop.log -ErrorAction SilentlyContinue
+$env:STOP_GATE_NO_GUARD = '1'
+claude -p "Say hello in one word." --model haiku --setting-sources project --strict-mcp-config --max-turns 30 --output-format json &gt; c.json
+Remove-Item Env:\STOP_GATE_NO_GUARD
+$c = Get-Content c.json -Raw | ConvertFrom-Json
+"result=[$($c.result)] num_turns=$($c.num_turns) subtype=$($c.subtype) is_error=$($c.is_error) denials=$(@($c.permission_denials).Count) cost=$($c.total_cost_usd)"
+"stop hook runs: " + (Get-Content .claude\hooks\stop.log).Count</code></pre>
+          <p class="expect"><b>Expected:</b> in the verified run, 16 Stop hook runs, <code>num_turns=23</code>, 4 denied <code>Write</code> attempts, an empty <code>result</code>, <code>subtype=success</code>, <code>is_error=False</code>, cost about $0.009. Your counts will vary with how often the model retries the write, because each tool call resets the 8-in-a-row cap.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>What does exit 2 on Stop do in a headless run?</b> It keeps the session going and gives the model the stderr text as the reason; the model acts on it (run A).</p>
+        <p><b>Why did run C take 16 hook runs and not 8?</b> The cap counts consecutive continuations with no tool call in between. Each denied <code>Write</code> attempt was a tool call and reset the count.</p>
+        <p><b>Run C reports <code>subtype=success</code>. Was the job done?</b> No: <code>done.txt</code> does not exist and the result is empty. Check the condition, not the status field.</p>
+        <p><b>What would run C cost on Opus 5.5 instead of Haiku 5.5?</b> Opus 5.5 input and output list prices are 40 times Haiku 5.5's (for prompts under 100k tokens), but its cache reads are only 20 times dearer (0.05x versus 0.1x of input). A loop made mostly of cache reads therefore lands between about $0.18 and $0.35, before any difference in output length.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m5-lab5" data-title="Guard your own riskiest command, with a test table" data-minutes="30">
+      <p class="goal">You write a guard for the command you would least like an agent to run on your systems, prove it against a table of allowed and denied spellings including wrapper bypasses, and confirm it in one live run against a harmless target.</p>
+      <ol class="steps">
+        <li><p>Pick your command. Write it down with three ways a shell could spell it differently: a wrapper (<code>cmd /c</code>, <code>powershell -Command</code>, <code>bash -c</code>), an alias or short flag, and an argument order. The worked example below guards force pushes and recursive deletes; replace its <code>$rules</code> with yours.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m5/lab5/.claude/hooks, {{LAB}}/m5/lab5/victim | Out-Null
+Set-Location {{LAB}}/m5/lab5
+Set-Content -Encoding utf8 -Path victim\keep.txt -Value 'still here'
+Set-Content -Encoding utf8 -Path .claude\hooks\guard.ps1 -Value @'
+$log = Join-Path $PSScriptRoot 'decisions.log'
+try {
+  $in  = [Console]::In.ReadToEnd() | ConvertFrom-Json
+  $cmd = [string]$in.tool_input.command
+} catch {
+  [Console]::Error.WriteLine('guard: unreadable hook input, refusing')
+  exit 2
+}
+$rules = [ordered]@{
+  'force push'       = '(?i)\bgit\b.*\bpush\b.*(\s--force(-with-lease)?\b|\s-f\b|\s\+\S)'
+  'recursive delete' = '(?i)\b(remove-item|ri|rm|del|erase|rd|rmdir)\b[^|;&amp;]*\s(-r|-recurse|-rf|-fr|/s)\b'
+  'encoded command'  = '(?i)\b(powershell|pwsh)(\.exe)?\b.*\s-e(c|nc|ncodedcommand)?\b'
+}
+foreach ($name in $rules.Keys) {
+  if ($cmd -match $rules[$name]) {
+    Add-Content $log ("{0} DENY ({1}) {2}" -f (Get-Date -Format s), $name, $cmd)
+    @{ hookSpecificOutput = @{ hookEventName = 'PreToolUse'; permissionDecision = 'deny'
+         permissionDecisionReason = "Blocked by project guard: $name. Ask a human to run it." } } | ConvertTo-Json -Compress
+    exit 0
+  }
+}
+Add-Content $log ("{0} PASS {1}" -f (Get-Date -Format s), $cmd)
+exit 0
+'@
+Set-Content -Encoding utf8 -Path .claude\settings.json -Value @'
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Bash|PowerShell",
+        "hooks": [ { "type": "command", "command": "powershell",
+          "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.ps1"],
+          "timeout": 30, "onFailure": "block" } ] }
+    ]
+  }
+}
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output. Note <code>"onFailure": "block"</code>: if the script cannot start, crashes or times out, the call is blocked instead of allowed.</p></li>
+        <li><p>Write the test table: at least 3 allowed rows (commands that look close but are fine) and at least 6 denied rows covering your wrapper, alias and argument-order spellings. A double quote inside a CSV field is written twice.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path cases.csv -Value @'
+command,expect
+git status,allow
+git push origin main,allow
+git push --force origin main,deny
+git push origin +main,deny
+"cmd /c ""git push -f origin main""",deny
+bash -c 'rm -rf build',deny
+rm -r -f build,deny
+Remove-Item .\build -Recurse -Force,deny
+"powershell -Command ""ri build -r""",deny
+rd /s /q build,deny
+powershell -EncodedCommand cgBtACAALQByAGYAIABiAHUAaQBsAGQA,deny
+Remove-Item build.log,allow
+Get-ChildItem -Recurse,allow
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> <code>cases.csv</code> with 13 data rows.</p></li>
+        <li><p>Write and run the harness. It builds each stdin with <code>ConvertTo-Json</code>, so no test input is hand-quoted, and times each call.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path test-guard.ps1 -Value @'
+$fail = 0
+foreach ($c in Import-Csv cases.csv) {
+  $json = @{ hook_event_name = 'PreToolUse'; tool_name = 'Bash'; tool_input = @{ command = $c.command } } | ConvertTo-Json -Compress
+  $sw  = [Diagnostics.Stopwatch]::StartNew()
+  $out = $json | powershell -NoProfile -ExecutionPolicy Bypass -File .claude\hooks\guard.ps1
+  $ms  = $sw.ElapsedMilliseconds
+  $got = if ($LASTEXITCODE -eq 2 -or "$out" -match '"permissionDecision":\s*"deny"') { 'deny' } else { 'allow' }
+  $ok  = if ($got -eq $c.expect) { 'ok  ' } else { $fail++; 'FAIL' }
+  "{0} {1,-5} {2,5}ms  {3}" -f $ok, $got, $ms, $c.command
+}
+"failures: $fail"
+'@
+.\test-guard.ps1</code></pre>
+          <p class="expect"><b>Expected</b> (worked example):</p>
+          <pre data-cap="output"><code>ok   allow   275ms  git status
+ok   allow   249ms  git push origin main
+ok   deny    353ms  git push --force origin main
+ok   deny    378ms  git push origin +main
+ok   deny    286ms  cmd /c "git push -f origin main"
+ok   deny    368ms  bash -c 'rm -rf build'
+ok   deny    602ms  rm -r -f build
+ok   deny    375ms  Remove-Item .\build -Recurse -Force
+ok   deny    312ms  powershell -Command "ri build -r"
+ok   deny    325ms  rd /s /q build
+ok   deny    361ms  powershell -EncodedCommand cgBtACAALQByAGYAIABiAHUAaQBsAGQA
+ok   allow   433ms  Remove-Item build.log
+ok   allow   378ms  Get-ChildItem -Recurse
+failures: 0</code></pre>
+          <p>If a row fails, fix the rule, not the row. Then add a row for every bypass you can think of and run again.</p></li>
+        <li><p>One live run, against the harmless <code>victim</code> folder. For your own command, choose a target that costs nothing if the guard fails.</p>
+          <pre><code>claude -p "Run this exact shell command and nothing else: rm -rf victim" --model haiku --setting-sources project --strict-mcp-config --allowedTools "Bash,PowerShell" --max-turns 3 --output-format json &gt; live.json
+$r = Get-Content live.json -Raw | ConvertFrom-Json
+"denials: " + @($r.permission_denials).Count + "  victim\keep.txt exists: " + (Test-Path victim\keep.txt)
+Get-Content .claude\hooks\decisions.log -Tail 1</code></pre>
+          <p class="expect"><b>Expected:</b> <code>denials: 1  victim\keep.txt exists: True</code> and a last log line <code>DENY (recursive delete) rm -rf victim</code>.</p></li>
+        <li><p>Done-test for your own guard: <code>failures: 0</code> on a table of at least 9 rows that includes a wrapper, an alias or short flag and a garbage-input case you add by hand; one live run with <code>denials: 1</code> and the target intact. Only then copy the hook into a real project's <code>.claude/settings.json</code>. Nothing in this lab touched anything outside <code>{{LAB}}/m5</code>, so there is nothing to remove.</p>
+          <p class="expect"><b>Expected:</b> a <code>guard.ps1</code>, a <code>cases.csv</code> and a passing <code>test-guard.ps1</code> you can rerun after every rule change.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Does <code>echo "never git push --force"</code> pass or fail the worked guard?</b> It is denied: the rule matches anywhere in the string. That false positive is the price of catching wrappers, and the reason text tells the model what to do instead.</p>
+        <p><b>Name one bypass this guard still misses.</b> Writing a script with the Write tool and running it by path; a variable built from pieces (<code>$a='re'+'move-item'</code>) passed to <code>Invoke-Expression</code>; any MCP tool that deletes files. Each needs its own rule or a different control.</p>
+        <p><b>Why test with <code>tool_name</code> Bash only when the matcher also covers PowerShell?</b> The guard reads <code>tool_input.command</code>, which both tools use the same way. If your rules depend on the tool, add PowerShell rows.</p>
+        <p><b>What does <code>onFailure: "block"</code> change if someone deletes <code>guard.ps1</code>?</b> Every shell call in that project is blocked with a "failed; blocking because onFailure is block" error, instead of every call being allowed.</p>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Events used in this module</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Event</th><th>Matcher filters on</th><th>Exit 2 does</th><th>Decision fields</th></tr>
+      <tr><td><code>SessionStart</code></td><td><code>startup</code>, <code>resume</code>, <code>clear</code>, <code>compact</code>, <code>fork</code></td><td>Shows stderr to user only</td><td><code>additionalContext</code>; plain stdout becomes context</td></tr>
+      <tr><td><code>UserPromptSubmit</code></td><td>no matcher</td><td>Rejects the prompt</td><td><code>decision: "block"</code>, <code>reason</code>, <code>additionalContext</code>; plain stdout becomes context</td></tr>
+      <tr><td><code>PreToolUse</code></td><td>tool name</td><td>Blocks the call; stderr to model</td><td><code>hookSpecificOutput.permissionDecision</code> (allow, deny, ask, defer), <code>permissionDecisionReason</code>, <code>updatedInput</code>, <code>additionalContext</code></td></tr>
+      <tr><td><code>PostToolUse</code></td><td>tool name</td><td>Shows stderr to model; tool already ran</td><td><code>decision: "block"</code>, <code>reason</code>, <code>additionalContext</code></td></tr>
+      <tr><td><code>Stop</code></td><td>no matcher</td><td>Model keeps working; stderr is the reason</td><td><code>decision: "block"</code>, <code>reason</code>, <code>additionalContext</code></td></tr>
+      <tr><td><code>SubagentStop</code></td><td>agent type</td><td>Subagent keeps working</td><td>as Stop</td></tr>
+    </table></div>
+    <h3>Handler fields (command type)</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Meaning</th></tr>
+      <tr><td><code>type</code></td><td><code>command</code>, <code>http</code>, <code>mcp_tool</code>, <code>prompt</code>, <code>agent</code></td></tr>
+      <tr><td><code>command</code></td><td>Executable (exec form, with <code>args</code>) or a shell string (shell form)</td></tr>
+      <tr><td><code>args</code></td><td>Argument list; presence selects exec form, no shell</td></tr>
+      <tr><td><code>shell</code></td><td><code>bash</code> or <code>powershell</code> for shell form; ignored with <code>args</code></td></tr>
+      <tr><td><code>timeout</code></td><td>Seconds; default 600, 30 on UserPromptSubmit</td></tr>
+      <tr><td><code>onFailure</code></td><td><code>continue</code> or <code>block</code>; 2.1.295 or later; no effect on Stop</td></tr>
+      <tr><td><code>if</code></td><td>One permission-rule pattern, e.g. <code>Bash(git *)</code>; tool events only; best-effort</td></tr>
+      <tr><td><code>async</code></td><td>Run in background; cannot block</td></tr>
+    </table></div>
+    <h3>Locations</h3>
+    <div class="tablewrap"><table>
+      <tr><th>File</th><th>Scope</th></tr>
+      <tr><td><code>~/.claude/settings.json</code></td><td>User, all projects</td></tr>
+      <tr><td><code>.claude/settings.json</code></td><td>Project, committed</td></tr>
+      <tr><td><code>.claude/settings.local.json</code></td><td>Project, this machine</td></tr>
+      <tr><td>Managed policy settings</td><td>Organisation; cannot be disabled from below</td></tr>
+      <tr><td>Plugin <code>hooks/hooks.json</code></td><td>While enabled; uses <code>${CLAUDE_PLUGIN_ROOT}</code></td></tr>
+      <tr><td>Skill or subagent frontmatter <code>hooks:</code></td><td>After the skill is invoked / while the subagent runs</td></tr>
+    </table></div>
+    <h3>Flags and settings</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Flag or key</th><th>Use</th></tr>
+      <tr><td><code>--setting-sources project</code></td><td>Load only project settings (no user hooks)</td></tr>
+      <tr><td><code>--strict-mcp-config</code></td><td>Load only MCP servers from <code>--mcp-config</code></td></tr>
+      <tr><td><code>--settings &lt;file-or-json&gt;</code></td><td>Extra settings for one run, e.g. <code>{"disableAllHooks": true}</code></td></tr>
+      <tr><td><code>--debug-file &lt;path&gt;</code></td><td>Debug log with a <code>Hooks:</code> line per run: event, command, status, duration</td></tr>
+      <tr><td><code>--output-format stream-json --verbose --include-hook-events</code></td><td><code>hook_started</code> / <code>hook_response</code> events in the stream</td></tr>
+      <tr><td><code>--bare</code></td><td>Skip hooks, plugins, MCP and memory entirely; needs <code>ANTHROPIC_API_KEY</code></td></tr>
+      <tr><td><code>disableAllHooks</code></td><td>Settings key; turns hooks off at the levels it can reach</td></tr>
+      <tr><td><code>allowManagedHooksOnly</code></td><td>Managed key; only managed (and force-enabled plugin) hooks run</td></tr>
+      <tr><td><code>CLAUDE_CODE_STOP_HOOK_BLOCK_CAP</code></td><td>Env var; raises the 8-consecutive Stop continuation cap</td></tr>
+      <tr><td><code>${CLAUDE_PROJECT_DIR}</code></td><td>Project root, in commands and as an env var in the hook</td></tr>
+    </table></div>
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>Guard detects the command, command runs anyway</td><td>Script exits 1</td><td><code>exit 2</code> or JSON <code>deny</code> with exit 0</td></tr>
+      <tr><td>Valid JSON deny is ignored, no error</td><td><code>permissionDecision</code> at top level, or extra text before <code>{</code></td><td>Put it inside <code>hookSpecificOutput</code>; print nothing else; use exec form and <code>-NoProfile</code></td></tr>
+      <tr><td>Hook never fires on Windows</td><td>Matcher <code>Bash</code> while the shell tool is <code>PowerShell</code></td><td>Matcher <code>Bash|PowerShell</code></td></tr>
+      <tr><td>Hook never fires in <code>-p</code></td><td>Settings file invalid (silently ignored) or wrong folder</td><td>Validate the JSON; check the <code>hook_started</code> events or the debug log</td></tr>
+      <tr><td>Everything allowed after a deploy</td><td>Script path wrong or script crashes; fail-open</td><td><code>"onFailure": "block"</code>; watch the first live run for a hook error</td></tr>
+      <tr><td>Session crawls</td><td><code>*</code> matcher, slow interpreter start, network call in hook</td><td>Narrow matcher, <code>if</code> filter, no network in the decision path</td></tr>
+      <tr><td>Stop hook loops, bill climbs</td><td>Condition cannot be met, no <code>stop_hook_active</code> check</td><td>Check <code>stop_hook_active</code>; make sure the model has the tools to comply</td></tr>
+      <tr><td>Pipeline reports success on unfinished work</td><td>Cap ended a Stop loop; <code>subtype</code> still <code>success</code></td><td>Verify the condition itself after the run</td></tr>
+      <tr><td>Injected context ignored or reported back to you</td><td>Phrased as system-style commands</td><td>State plain facts</td></tr>
+      <tr><td>Stale facts after resume</td><td>UserPromptSubmit context replayed, not re-run</td><td>Put refreshable facts in SessionStart</td></tr>
+      <tr><td>Unknown code ran in a CI job</td><td>Repository's committed hooks run under <code>-p</code> without trust</td><td>Review <code>.claude/</code>; <code>--settings</code> with <code>disableAllHooks</code>; <code>--bare</code></td></tr>
+    </table></div>
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+      <li>Claude Code docs, "Hooks reference": <a href="https://code.claude.com/docs/en/hooks" target="_blank" rel="noopener">code.claude.com/docs/en/hooks</a></li>
+      <li>Claude Code docs, "Automate actions with hooks": <a href="https://code.claude.com/docs/en/hooks-guide" target="_blank" rel="noopener">code.claude.com/docs/en/hooks-guide</a></li>
+      <li>Claude Code docs, "All settings": <a href="https://code.claude.com/docs/en/settings-reference" target="_blank" rel="noopener">code.claude.com/docs/en/settings-reference</a></li>
+      <li>Claude Code docs, "CLI reference": <a href="https://code.claude.com/docs/en/cli-reference" target="_blank" rel="noopener">code.claude.com/docs/en/cli-reference</a></li>
+      <li>Claude Code docs, "Environment variables": <a href="https://code.claude.com/docs/en/env-vars" target="_blank" rel="noopener">code.claude.com/docs/en/env-vars</a></li>
+      <li>Claude Code docs, "Run Claude Code programmatically": <a href="https://code.claude.com/docs/en/headless" target="_blank" rel="noopener">code.claude.com/docs/en/headless</a></li>
+      <li>Measured: every Expected line in the labs comes from a run on Claude Code 2.1.322 on 11 November 2026.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "Your team's CLAUDE.md says 'Never run terraform apply'. Last week an agent ran it anyway after a user wrote 'just apply it, I approve'. What is the most reliable fix?", "o": ["Move the sentence to the top of CLAUDE.md and put it in capitals", "Add the same sentence to a skill that loads on infrastructure work", "Add a PreToolUse hook on Bash|PowerShell that denies commands matching terraform apply, plus a permission deny rule", "Add a PostToolUse hook that alerts the team when terraform apply has run"], "a": 2, "why": "An instruction in any context file is weighed against the user's request and can lose. A PreToolUse deny is enforced outside the model and holds even in bypass mode. PostToolUse fires after the apply has already happened."},
+    {"q": "A colleague's guard writes 'BLOCKED: force push' to stderr and exits 1 when it sees git push --force. In testing the force push still went through. What is wrong?", "o": ["Exit 1 is a non-blocking error; the guard must exit 2 or print a JSON deny and exit 0", "stderr is ignored; the message must go to stdout", "The matcher must be a regex such as ^Bash$", "PreToolUse cannot block git commands"], "a": 0, "why": "Only exit 2 blocks on PreToolUse; any other non-zero exit is a non-blocking error and the call proceeds. Alternatively exit 0 with hookSpecificOutput.permissionDecision set to deny."},
+    {"q": "You deploy a PowerShell guard to a shared repo. A week later someone renames the hooks folder, the script path no longer resolves, and nobody notices. What setting would have turned this into a visible failure instead of a silent hole?", "o": ["\"timeout\": 5", "\"async\": true", "\"disableAllHooks\": false", "\"onFailure\": \"block\""], "a": 3, "why": "A hook that cannot start is a non-blocking error by default, so every call is allowed. With onFailure set to block, a missing script, a crash or a timeout blocks the call, so the breakage shows up on the first shell command."},
+    {"q": "You add a Stop hook that exits 2 until the test suite passes. In a headless CI run the tests can never pass because a service is down. Which design keeps the run bounded and honest?", "o": ["Rely on --max-turns alone and trust subtype success at the end", "Check stop_hook_active and let the model stop on the repeat attempt, then have the pipeline check the test result itself", "Switch the hook to exit 1 so the model can stop whenever it wants", "Move the check to SessionStart so it runs only once"], "a": 1, "why": "stop_hook_active tells the hook it already forced one continuation, so it can release the model. The 8-in-a-row cap also ends a loop, but tool calls reset it and the run still reports subtype success, so the pipeline must verify the real condition."},
+    {"q": "You plan a nightly claude -p job that reviews pull requests from external contributors in a fresh clone. What is the hook-related risk to handle first?", "o": ["Hooks do not run in -p mode, so your guards will be off", "UserPromptSubmit hooks time out after 30 seconds in CI", "A contributor can commit .claude/settings.json with hooks, and -p runs them without a trust prompt, as your CI user", "Plugins installed on the runner will override the repository's hooks"], "a": 2, "why": "In -p mode Claude Code treats the folder as trusted, so committed project hooks run arbitrary code with the job's rights. Review the .claude folder, pass --settings with disableAllHooks, or use --bare for untrusted repositories."}
+  ]</script>
+</section>

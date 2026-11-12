@@ -1,0 +1,1335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>html,body{height:100%}body{margin:0}img{max-width:100%}</style>
+<title>Hooks · AI/LLM Bootcamp</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&family=Nunito:wght@700;800&display=swap">
+<style>
+/* AI/LLM Bootcamp. One stylesheet for the catalogue page and every module page.
+   Layout: a top bar (brand, where you are, theme picker), a part rail on the left (a strip in some themes and on phones),
+   one reading column that swaps parts on the hash.
+   The four token types keep one colour each everywhere, the way a utility meter keeps one colour per tariff.
+   Five themes: data-style a..e on the root (a = Meter is the base). data-mode light|dark is resolved in script. */
+:root {
+  --bg: #f1f3f6; --surface: #ffffff; --sunk: #e8ebf0; --fg: #17202b; --muted: #566273; --line: #d3d9e2;
+  --accent: #a4460d; --accent-ink: #ffffff; --accent-soft: #fbeadf;
+  --t-in: #2a66b3; --t-out: #b8500f; --t-cw: #7446bd; --t-cr: #25784c;
+  --good: #25784c; --good-soft: #e0f1e7; --bad: #a8372f; --bad-soft: #f8e3e1; --home: #7446bd; --home-soft: #efe8fa;
+  --font-display: "Archivo", "Segoe UI Semibold", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, "SF Mono", monospace;
+  --top-h: 46px;
+}
+:root[data-mode="dark"] {
+  --bg: #11151b; --surface: #19202a; --sunk: #0d1116; --fg: #e5e9ef; --muted: #98a4b3; --line: #2b3542;
+  --accent: #f09460; --accent-ink: #1d0f05; --accent-soft: #3a2415;
+  --t-in: #6ea9ee; --t-out: #f09460; --t-cw: #b396f0; --t-cr: #6cc795;
+  --good: #6cc795; --good-soft: #17301f; --bad: #e6837b; --bad-soft: #3a1f1d; --home: #b396f0; --home-soft: #261f38; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+script, pre.mermaid { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.6; margin: 0; }
+a { color: var(--accent); }
+h1, h2, h3, h4 { font-family: var(--font-display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(1.9rem, 4.6vw, 2.7rem); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.6rem; font-weight: 700; }
+h3 { font-size: 1.15rem; font-weight: 700; margin-top: 1.7em; }
+h4 { font-size: 1rem; font-weight: 700; margin-top: 1.2em; }
+p { margin: 0.7em 0; }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--sunk); padding: 0.08em 0.32em; border-radius: 4px; overflow-wrap: anywhere; }
+.codebox { margin: 0.7em 0; border: 1px solid var(--line); border-radius: 8px; background: var(--sunk); min-width: 0; }
+.codebox .cap { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--line); font: 600 0.72rem var(--font-mono); color: var(--muted); }
+.codebox pre { margin: 0; padding: 11px 13px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.5; }
+.codebox pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: normal; }
+.copy { font: 600 0.72rem var(--font-body); padding: 3px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
+.copy:hover { color: var(--fg); }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* top bar */
+.top { position: sticky; top: 0; z-index: 12; height: var(--top-h); display: flex; align-items: center; gap: 14px; background: var(--surface); border-bottom: 1px solid var(--line); padding: 0 max(14px, env(safe-area-inset-right, 0px)) 0 max(14px, env(safe-area-inset-left, 0px)); }
+.brand { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; text-decoration: none; color: var(--fg); white-space: nowrap; }
+.crumb { font-size: 0.86rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.themepick { margin-left: auto; display: flex; align-items: center; gap: 6px; font: 600 0.8rem var(--font-body); color: var(--muted); white-space: nowrap; }
+.themepick select { font: 600 0.8rem var(--font-body); padding: 4px 6px; }
+
+/* frame */
+.app { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: calc(100vh - var(--top-h)); }
+.app.solo { grid-template-columns: minmax(0, 1fr); }
+.side { position: sticky; top: var(--top-h); align-self: start; height: calc(100vh - var(--top-h)); overflow-y: auto; background: var(--surface); border-right: 1px solid var(--line); padding: 16px 12px 18px max(12px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 14px; }
+#nav { display: flex; flex-direction: column; gap: 2px; }
+.navlink { display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; align-items: center; text-decoration: none; color: var(--fg); font-size: 0.9rem; padding: 6px 8px; border-radius: 7px; line-height: 1.3; }
+.navlink:hover { background: var(--sunk); }
+.navlink.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.navlink .n { font: 600 0.74rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.navlink .p { font: 600 0.68rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.navlink .p.full { color: var(--good); }
+.side-foot { margin-top: auto; display: grid; gap: 6px; font-size: 0.85rem; padding: 0 8px; }
+.side-foot label { display: flex; gap: 8px; align-items: center; color: var(--muted); cursor: pointer; }
+main { min-width: 0; padding-block: 30px 72px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.view, section.module, .pager { max-width: 780px; margin: 0 auto; min-width: 0; }
+.view, section.module { display: grid; gap: 20px; }
+.view.wide { max-width: 1040px; }
+.view > *, section.module > * { min-width: 0; }
+@media (max-width: 860px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { z-index: 9; height: auto; flex-direction: row; align-items: center; gap: 10px; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px max(14px, env(safe-area-inset-right, 0px)) 6px max(14px, env(safe-area-inset-left, 0px)); overflow: visible; }
+  .side-foot { display: none; }
+  #nav { flex-direction: row; overflow-x: auto; scrollbar-width: none; min-width: 0; flex: 1; }
+  #nav::-webkit-scrollbar { display: none; }
+  .navlink { grid-template-columns: auto auto; flex: 0 0 auto; white-space: nowrap; padding: 5px 9px; }
+  .navlink .p { display: none; }
+  main { padding-block: 22px 56px; }
+  .crumb { display: none; }
+}
+
+/* shared pieces */
+.kicker { font: 600 0.72rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); }
+.muted { color: var(--muted); }
+.lede { font-size: 1.08rem; color: var(--muted); max-width: 66ch; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; min-width: 0; }
+.panel > h3:first-child { margin-top: 0; }
+.btn { font: 600 0.9rem var(--font-body); padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; text-decoration: none; display: inline-block; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+input[type="text"], input[type="number"], textarea, select { font: inherit; font-size: 0.92rem; color: var(--fg); background: var(--sunk); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; min-width: 0; }
+textarea { width: 100%; min-height: 96px; resize: vertical; font-family: var(--font-mono); font-size: 0.8rem; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 0.74rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 0.84rem; }
+.tok { font: 600 0.78rem var(--font-mono); white-space: nowrap; }
+.tok::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; background: currentColor; }
+.tok.in { color: var(--t-in); } .tok.out { color: var(--t-out); } .tok.cw { color: var(--t-cw); } .tok.cr { color: var(--t-cr); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.chip { font: 600 0.7rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; text-decoration: none; }
+a.chip:hover { border-color: var(--accent); color: var(--accent); }
+.chip.lv-foundation { color: var(--t-cr); border-color: var(--t-cr); }
+.chip.lv-practitioner { color: var(--t-in); border-color: var(--t-in); }
+.chip.lv-advanced { color: var(--t-cw); border-color: var(--t-cw); }
+
+/* catalogue */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+.mcard { display: grid; gap: 6px; align-content: start; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; text-decoration: none; color: inherit; }
+a.mcard:hover { border-color: var(--accent); }
+.mcard .n { font: 600 0.72rem var(--font-mono); color: var(--accent); }
+.mcard .t { font-family: var(--font-display); font-weight: 700; font-size: 1.08rem; }
+.mcard .s { font-size: 0.86rem; color: var(--muted); }
+.mcard .pre { font-size: 0.8rem; color: var(--muted); }
+.meter { height: 6px; background: var(--sunk); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.meter span { display: block; height: 100%; width: 0; background: var(--good); }
+.howto { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 18px; }
+.howto b { display: block; font-family: var(--font-display); font-size: 1rem; }
+.howto div { font-size: 0.92rem; color: var(--muted); }
+.paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.paths .panel { padding: 14px 16px; }
+.paths b { font-family: var(--font-display); }
+.paths ol { margin: 6px 0 0; padding-left: 1.3em; font-size: 0.9rem; }
+
+/* module */
+.mhead { display: grid; gap: 8px; }
+.mhead .meta { color: var(--muted); font-size: 0.92rem; }
+.partlist { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; }
+.partlist a { display: grid; grid-template-columns: 34px 1fr auto; gap: 8px; padding: 7px 8px; border-radius: 7px; text-decoration: none; color: var(--fg); }
+.partlist a:hover { background: var(--sunk); }
+.partlist .n { font: 600 0.74rem var(--font-mono); color: var(--accent); padding-top: 3px; }
+.partlist .m { font: 600 0.72rem var(--font-mono); color: var(--muted); padding-top: 3px; }
+.overview p, .overview li, .lesson p, .lesson li, .lab p, .lab li, .reference p, .reference li { max-width: 70ch; }
+.overview ul, .lesson ul, .lesson ol, .lab ul, .reference ul { padding-left: 1.2em; }
+.overview li, .lesson li, .lab li { margin: 0.3em 0; }
+.overview > h3:first-of-type { margin-top: 0.6em; }
+.recap { background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 14px 18px; margin-top: 1.2em; }
+.recap h3 { margin-top: 0; font-size: 1rem; }
+.sources { font-size: 0.88rem; color: var(--muted); }
+.sources h3 { color: var(--fg); }
+.sources li { margin: 0.25em 0; overflow-wrap: anywhere; }
+aside.rule { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; margin: 1.1em 0; max-width: 70ch; font-weight: 600; }
+aside.trap { background: var(--bad-soft); border-radius: 8px; padding: 10px 14px; margin: 1em 0; max-width: 70ch; font-size: 0.94rem; }
+aside.trap::before { content: "Trap"; display: block; font: 600 0.68rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--bad); }
+aside.home { background: var(--home-soft); border-radius: 8px; padding: 10px 14px; margin: 1em 0; max-width: 70ch; font-size: 0.94rem; }
+aside.home::before { content: "At home"; display: block; font: 600 0.68rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--home); }
+body.hide-home aside.home { display: none; }
+.labs { display: grid; gap: 18px; }
+.lab { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; min-width: 0; }
+.lab.done { border-color: var(--good); }
+.labhead { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.labhead h3 { margin: 0; }
+.labhead .meta { font: 600 0.72rem var(--font-mono); color: var(--muted); }
+.goal { color: var(--muted); }
+ol.steps { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 14px; counter-reset: step; }
+ol.steps > li { counter-increment: step; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 0 10px; margin: 0; max-width: none; }
+ol.steps > li > .tick { grid-row: 1 / span 30; }
+ol.steps > li > :not(.tick) { grid-column: 2; margin-top: 0; margin-bottom: 8px; min-width: 0; }
+ol.steps > li > :last-child { margin-bottom: 0; }
+.tick { appearance: none; -webkit-appearance: none; width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--sunk); cursor: pointer; display: grid; place-items: center; margin: 0; }
+.tick::before { content: counter(step); font: 600 0.78rem var(--font-mono); color: var(--muted); }
+.tick:checked { background: var(--good); border-color: var(--good); }
+.tick:checked::before { content: "\2713"; color: var(--surface); }
+p.expect { font-size: 0.92rem; border-left: 3px solid var(--t-cr); padding-left: 12px; color: var(--muted); }
+p.expect b { color: var(--fg); }
+details.check { border: 1px dashed var(--line); border-radius: 8px; padding: 10px 14px; margin-top: 12px; }
+details.check summary { cursor: pointer; font-weight: 600; }
+details.check[open] summary { margin-bottom: 6px; }
+.labfoot { display: flex; justify-content: flex-end; margin-top: 14px; }
+.lab.done .labfoot .btn { background: var(--good-soft); color: var(--good); border-color: var(--good); }
+.pager { display: flex; justify-content: space-between; gap: 10px; margin-top: 28px; }
+.pager .btn { max-width: 48%; }
+.pager .next { margin-left: auto; }
+
+/* calls */
+.drill { display: grid; gap: 14px; }
+.q { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 10px; }
+.q .qt { font-weight: 600; max-width: 70ch; }
+.opts { display: grid; gap: 7px; }
+.opt { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: transparent; color: var(--fg); font: inherit; font-size: 0.94rem; text-align: left; line-height: 1.45; }
+.opt:hover { border-color: var(--accent); }
+.opt .k { flex: 0 0 22px; font: 600 0.76rem var(--font-mono); color: var(--muted); padding-top: 2px; }
+.opt.right { border-color: var(--good); background: var(--good-soft); }
+.opt.wrong { border-color: var(--bad); background: var(--bad-soft); }
+.why { font-size: 0.92rem; color: var(--muted); border-left: 3px solid var(--line); padding-left: 12px; max-width: 70ch; }
+
+/* instruments */
+.tool { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin: 1em 0; display: grid; gap: 12px; min-width: 0; }
+.tool h4 { margin: 0; }
+.tool .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.tool label { display: grid; gap: 3px; font-size: 0.78rem; color: var(--muted); font-weight: 600; }
+.tool label input, .tool label select { width: 100%; }
+.bar { display: flex; height: 22px; border-radius: 5px; overflow: hidden; background: var(--sunk); }
+.bar span { display: block; height: 100%; min-width: 0; }
+.bar .in { background: var(--t-in); } .bar .out { background: var(--t-out); } .bar .cw { background: var(--t-cw); } .bar .cr { background: var(--t-cr); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; }
+.big { font: 700 1.5rem var(--font-display); font-variant-numeric: tabular-nums; }
+.verdict { font-weight: 600; }
+.note { font-size: 0.82rem; color: var(--muted); }
+
+/* diagrams: inline SVG drawn in the boxes-and-arrows style; every colour comes from the theme */
+figure.diagram { margin: 1.2em 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 10px; overflow-x: auto; }
+figure.diagram svg { display: block; width: 100%; height: auto; min-width: 520px; max-width: 760px; margin: 0 auto; font-family: var(--font-body); }
+figure.diagram figcaption { font-size: 0.84rem; color: var(--muted); margin-top: 8px; text-align: center; }
+.dg-box { fill: var(--sunk); stroke: var(--muted); stroke-width: 1.5; }
+.dg-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.dg-good { fill: var(--good-soft); stroke: var(--good); stroke-width: 1.5; }
+.dg-bad { fill: var(--bad-soft); stroke: var(--bad); stroke-width: 1.5; }
+.dg-ghost { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 6 4; }
+.dg-in { fill: var(--t-in); } .dg-out { fill: var(--t-out); } .dg-cw { fill: var(--t-cw); } .dg-cr { fill: var(--t-cr); }
+.dg-line { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.dg-line.dash { stroke-dasharray: 5 4; }
+.dg-line.hot { stroke: var(--accent); }
+.dg-head { fill: var(--muted); stroke: none; }
+.dg-head.hot { fill: var(--accent); }
+.dg-text { fill: var(--fg); font-size: 13px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+.dg-sub { fill: var(--muted); font-size: 11px; text-anchor: middle; dominant-baseline: middle; }
+.dg-label { fill: var(--muted); font-size: 11px; font-family: var(--font-mono); text-anchor: middle; dominant-baseline: middle; }
+.dg-on { fill: var(--surface); font-size: 12px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+.dg-left { text-anchor: start; } .dg-right { text-anchor: end; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+
+/* ---------- themes b to e: token overrides and a few shapes ---------- */
+/* a strip under the top bar instead of the left rail (b, d, e) */
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .app { grid-template-columns: minmax(0, 1fr); }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .side { z-index: 9; height: auto; flex-direction: row; align-items: center; gap: 12px; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px max(14px, env(safe-area-inset-right, 0px)) 6px max(14px, env(safe-area-inset-left, 0px)); overflow: visible; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) :is(.side-foot, .navlink .p) { display: none; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) #nav { flex-direction: row; overflow-x: auto; min-width: 0; flex: 1; scrollbar-width: none; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .navlink { grid-template-columns: auto auto; flex: 0 0 auto; white-space: nowrap; }
+:root:is([data-style="b"], [data-style="c"], [data-style="e"]) :is(.panel, .lab, .q, .tool, .codebox, .mcard, .btn, .opt, .copy, .bar, .navlink, input, textarea, select, details.check, aside.trap, aside.home, code, .recap, figure.diagram, .chip, .partlist a) { border-radius: var(--r, 2px); }
+
+/* b: Workbench. Editor greys, one cobalt accent, 2px corners, dense system type. */
+:root[data-style="b"] { --r: 2px; --bg: #f4f4f5; --surface: #ffffff; --sunk: #ececee; --fg: #1e1e1e; --muted: #5a5f66; --line: #d0d0d4; --accent: #2f6fe0; --accent-ink: #ffffff; --accent-soft: rgba(47, 111, 224, 0.1);
+  --t-in: #2f6fe0; --t-out: #a5641f; --t-cw: #8a4a81; --t-cr: #2f7a55; --good: #2f7a55; --good-soft: #e3f1ea; --bad: #b8404c; --bad-soft: #f8e4e6;
+  --font-display: "Segoe UI", system-ui, -apple-system, sans-serif; --font-body: "Segoe UI", system-ui, -apple-system, sans-serif; --font-mono: "Cascadia Code", Consolas, "Courier New", monospace; }
+:root[data-style="b"][data-mode="dark"] { --bg: #1e1e1e; --surface: #252526; --sunk: #181818; --fg: #d4d4d4; --muted: #a8adb4; --line: #3c3c3c; --accent: #4c8dff; --accent-ink: #ffffff; --accent-soft: rgba(76, 141, 255, 0.14);
+  --t-in: #4c8dff; --t-out: #c0813f; --t-cw: #a8689f; --t-cr: #6fae8c; --good: #6fae8c; --good-soft: rgba(111, 174, 140, 0.12); --bad: #e0707c; --bad-soft: rgba(224, 112, 124, 0.1); }
+:root[data-style="b"] body { font-size: 14px; line-height: 1.5; }
+:root[data-style="b"] .side { background: var(--sunk); padding-block: 4px; }
+:root[data-style="b"] .navlink.active { background: transparent; box-shadow: inset 0 -2px 0 var(--accent); border-radius: 0; }
+:root[data-style="b"] :is(h1, h2, h3, h4) { font-weight: 600; letter-spacing: 0; }
+:root[data-style="b"] h2 { font-size: 1.35rem; } :root[data-style="b"] h3 { font-size: 1.05rem; }
+:root[data-style="b"] .lab { border-left: 3px solid var(--accent); }
+:root[data-style="b"] .lab.done { border-left-color: var(--good); }
+:root[data-style="b"] .tick { border-radius: 2px; width: 24px; height: 24px; }
+:root[data-style="b"] .bar { height: 14px; }
+
+/* c: Blueprint. Drafting-sheet blues on a faint grid, mono headings, dashed frames, square corners. */
+:root[data-style="c"] { --r: 0px; --bg: #eaf1f8; --surface: #f7fafd; --sunk: #dbe6f2; --fg: #0f2a47; --muted: #476483; --line: #b3c7dc; --accent: #0b5cad; --accent-ink: #ffffff; --accent-soft: #d5e5f6;
+  --t-in: #0b5cad; --t-out: #b0560c; --t-cw: #6b3fb0; --t-cr: #1d7a55; --good: #1d7a55; --good-soft: #d9efe4; --bad: #a8372f; --bad-soft: #f6dedb;
+  --font-display: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; }
+:root[data-style="c"][data-mode="dark"] { --bg: #0f2540; --surface: #143052; --sunk: #0b1c31; --fg: #e8f1fb; --muted: #9db8d6; --line: #2d5484; --accent: #7fd4ff; --accent-ink: #06213a; --accent-soft: #1b426e;
+  --t-in: #7fd4ff; --t-out: #ffb86b; --t-cw: #d7a6ff; --t-cr: #8fe3b0; --good: #8fe3b0; --good-soft: #17463f; --bad: #ff9d94; --bad-soft: #4a2a3a; }
+:root[data-style="c"] body { background-image: linear-gradient(color-mix(in srgb, var(--line) 30%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--line) 30%, transparent) 1px, transparent 1px); background-size: 28px 28px; }
+:root[data-style="c"] :is(h1, h2, h3, h4) { text-transform: uppercase; letter-spacing: 0.03em; font-weight: 600; }
+:root[data-style="c"] h1 { font-size: clamp(1.5rem, 3.6vw, 2.1rem); }
+:root[data-style="c"] h2 { font-size: 1.35rem; } :root[data-style="c"] h3 { font-size: 0.98rem; }
+:root[data-style="c"] :is(.lab, .tool, .panel, .q, .mcard, figure.diagram) { border-style: dashed; border-color: var(--accent); }
+:root[data-style="c"] .side { background: var(--bg); border-right-style: dashed; }
+:root[data-style="c"] .tick { border-radius: 0; transform: rotate(45deg) scale(0.8); } :root[data-style="c"] .tick::before { transform: rotate(-45deg); }
+
+/* d: Classroom. Big friendly type, a coloured module banner, soft round cards, raspberry accent. */
+:root[data-style="d"] { --bg: #ffffff; --surface: #f5f6fa; --sunk: #e9ecf4; --fg: #151a2d; --muted: #565d78; --line: #dfe3ee; --accent: #c2255c; --accent-ink: #ffffff; --accent-soft: #fde8f0;
+  --t-in: #2a66b3; --t-out: #c2255c; --t-cw: #7446bd; --t-cr: #25784c;
+  --font-display: "Nunito", "Segoe UI", system-ui, sans-serif; }
+:root[data-style="d"][data-mode="dark"] { --bg: #16141c; --surface: #201d29; --sunk: #110f16; --fg: #f1eef7; --muted: #a8a2b8; --line: #342f42; --accent: #ff7aa8; --accent-ink: #2a0a17; --accent-soft: #3d1c2b;
+  --t-in: #6ea9ee; --t-out: #ff7aa8; --t-cw: #b396f0; --t-cr: #6cc795; }
+:root[data-style="d"] body { font-size: 17px; }
+:root[data-style="d"] :is(h1, h2, h3, h4) { font-weight: 800; }
+:root[data-style="d"] h2 { font-size: 2rem; }
+:root[data-style="d"] .mhead { background: var(--accent); color: var(--accent-ink); padding: 26px 28px; border-radius: 20px; }
+:root[data-style="d"] .mhead :is(.kicker, .meta) { color: inherit; opacity: 0.9; }
+:root[data-style="d"] .mhead .chip { color: inherit; border-color: currentColor; }
+:root[data-style="d"] :is(.lab, .tool, .panel, .q, .mcard, figure.diagram, .recap) { border: 0; border-radius: 20px; padding: 22px 24px; }
+:root[data-style="d"] .navlink { border-radius: 999px; padding: 6px 12px; }
+:root[data-style="d"] .tick { width: 36px; height: 36px; } :root[data-style="d"] ol.steps > li { grid-template-columns: 40px minmax(0, 1fr); }
+:root[data-style="d"] .bar { height: 30px; border-radius: 999px; }
+:root[data-style="d"] .btn { border-radius: 999px; }
+
+/* e: Console. Everything monospaced, hard rules, amber accent, no rounding, headings marked like Markdown. */
+:root[data-style="e"] { --r: 0px; --bg: #f5f5f2; --surface: #f5f5f2; --sunk: #e9e9e4; --fg: #141414; --muted: #5c5c55; --line: #2a2a28; --accent: #8a5a00; --accent-ink: #ffffff; --accent-soft: #f1e6c8;
+  --t-in: #1f5fa8; --t-out: #b34700; --t-cw: #7a3fb5; --t-cr: #1f7a4a; --good: #1f7a4a; --good-soft: #dcefe2; --bad: #a8372f; --bad-soft: #f6dedb;
+  --font-display: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; --font-body: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; }
+:root[data-style="e"][data-mode="dark"] { --bg: #141210; --surface: #141210; --sunk: #1e1b17; --fg: #f2e9d8; --muted: #a89c86; --line: #5a5246; --accent: #ffb000; --accent-ink: #141210; --accent-soft: #3a2c0a;
+  --t-in: #7ab8ff; --t-out: #ff8f4d; --t-cw: #c79bff; --t-cr: #7ee0a0; --good: #7ee0a0; --good-soft: #1b3324; --bad: #ff9d94; --bad-soft: #3d201d; }
+:root[data-style="e"] body { font-size: 14px; }
+:root[data-style="e"] :is(h1, h2, h3, h4) { font-weight: 600; letter-spacing: 0; }
+:root[data-style="e"] h1 { font-size: clamp(1.4rem, 3.4vw, 1.9rem); }
+:root[data-style="e"] h2 { font-size: 1.3rem; } :root[data-style="e"] h3 { font-size: 1rem; }
+:root[data-style="e"] .mhead h2::before, :root[data-style="e"] .mhead h1::before { content: "# "; color: var(--accent); }
+:root[data-style="e"] :is(.lesson, .overview, .reference) h3::before { content: "## "; color: var(--accent); }
+:root[data-style="e"] .tick { border-radius: 0; border-width: 1px; border-color: var(--line); }
+:root[data-style="e"] .bar { height: 18px; border: 1px solid var(--line); }
+:root[data-style="e"] .navlink.active { background: var(--fg); color: var(--bg); } :root[data-style="e"] .navlink.active .n { color: inherit; }
+
+/* ---------- Mermaid diagrams, pre-rendered to SVG at build time. Layout is Mermaid's; every colour is the theme's. ---------- */
+figure.diagram svg.mm { font-family: "Segoe UI", system-ui, Arial, sans-serif; min-width: 0; max-height: 620px; }
+figure.diagram.map svg.mm { max-width: 1000px; max-height: 1150px; }
+svg.mm text, svg.mm tspan { fill: var(--fg) !important; stroke: none !important; }
+svg.mm .node > :is(rect, circle, ellipse, polygon, path), svg.mm .label-container, svg.mm :is(rect.actor, .actor-box, .labelBox, .activation0, .activation1, .activation2), svg.mm .statediagram-state :is(rect, path).basic, svg.mm .classGroup rect, svg.mm .er.entityBox { fill: var(--sunk) !important; stroke: var(--muted) !important; }
+svg.mm .node .label rect, svg.mm .cluster-label rect { fill: none !important; stroke: none !important; }
+svg.mm :is(.edgeLabel rect, rect.background, .labelBkg, .edgeLabel .label rect) { fill: var(--surface) !important; stroke: none !important; opacity: 1 !important; }
+svg.mm :is(.flowchart-link, .transition, .relation, .messageLine0, .messageLine1, .edgePath path, .actor-line, .loopLine, line.divider, .edge-thickness-normal) { stroke: var(--muted) !important; }
+svg.mm :is(.flowchart-link, .transition, .relation, .edgePath path) { fill: none !important; }
+svg.mm marker :is(path, circle, polygon), svg.mm :is(.arrowMarkerPath, .arrowheadPath) { fill: var(--muted) !important; stroke: var(--muted) !important; }
+svg.mm .cluster > :is(rect, polygon, path), svg.mm .statediagram-cluster rect, svg.mm rect.rect { fill: color-mix(in srgb, var(--surface) 55%, transparent) !important; stroke: var(--line) !important; }
+svg.mm :is(.note, .state-note) :is(rect, path), svg.mm rect.note, svg.mm g.note > rect { fill: var(--accent-soft) !important; stroke: var(--accent) !important; }
+svg.mm :is(.state-start, .start-state, circle.state-start) { fill: var(--fg) !important; stroke: var(--fg) !important; }
+svg.mm :is(.end-state-outer, .state-end) { fill: var(--surface) !important; stroke: var(--fg) !important; }
+svg.mm .end-state-inner { fill: var(--fg) !important; stroke: var(--fg) !important; }
+svg.mm .node:is(.hot) > :is(rect, circle, ellipse, polygon, path) { fill: var(--accent-soft) !important; stroke: var(--accent) !important; }
+svg.mm .node:is(.good, .found) > :is(rect, circle, ellipse, polygon, path) { fill: var(--good-soft) !important; stroke: var(--good) !important; }
+svg.mm .node.bad > :is(rect, circle, ellipse, polygon, path) { fill: var(--bad-soft) !important; stroke: var(--bad) !important; }
+svg.mm .node:is(.info, .prac) > :is(rect, circle, ellipse, polygon, path) { fill: color-mix(in srgb, var(--t-in) 14%, var(--surface)) !important; stroke: var(--t-in) !important; }
+svg.mm .node:is(.alt, .adv) > :is(rect, circle, ellipse, polygon, path) { fill: color-mix(in srgb, var(--t-cw) 14%, var(--surface)) !important; stroke: var(--t-cw) !important; }
+svg.mm .node.ghost > :is(rect, circle, ellipse, polygon, path) { fill: none !important; stroke: var(--line) !important; stroke-dasharray: 6 4; }
+
+</style>
+</head>
+<body>
+<div class="top">
+  <a class="brand" href="index.html">AI/LLM Bootcamp</a>
+  <span class="crumb" id="crumb"></span>
+  <label class="themepick">Theme: <select id="theme" aria-label="Theme"></select></label>
+</div>
+<div class="app">
+  <aside class="side">
+    <nav id="nav" aria-label="Parts of this module"></nav>
+    <div class="side-foot">
+      
+      <a href="index.html">All modules</a>
+    </div>
+  </aside>
+  <main>
+<section class="module" id="m5" data-title="Hooks" data-sub="Rules the model cannot talk its way past" data-level="practitioner" data-prereq="" data-minutes="200">
+  <div class="overview">
+    <p class="lede">A line in CLAUDE.md is a request the model weighs against everything else in its context. A hook is a program Claude Code runs at a fixed point in its loop, and when that program says no, the tool call does not happen. This module covers how hooks are wired, the exact contract between Claude Code and your script, how to write a guard that holds up, and how to test one without risking your real setup.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Name the hook events that can block an action and the ones that only observe, and pick the right one for a given policy.</li>
+      <li>Write a project-scoped <code>.claude/settings.json</code> hook entry with a matcher, an exec-form PowerShell command, a timeout and <code>onFailure</code>.</li>
+      <li>Write a PreToolUse guard that parses <code>tool_input</code> properly, denies with <code>permissionDecision</code>, fails closed on bad input and logs every decision.</li>
+      <li>Inject context with SessionStart or UserPromptSubmit and prove the model received it with a control run.</li>
+      <li>Build a Stop gate with a <code>stop_hook_active</code> loop guard and predict how many turns it costs when the condition can never be met.</li>
+      <li>Test any hook offline against a table of recorded inputs, then confirm it in one live headless run with only that hook loaded.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key). The labs were run on 2.1.322.</li>
+      <li>Windows PowerShell 5.1 or PowerShell 7. Hook scripts in this module are PowerShell.</li>
+      <li>About $0.03 of Haiku usage at API list price for all five labs, or the same share of a subscription's 5-hour window.</li>
+      <li>No prior module. This one stands alone.</li>
+    </ul>
+  </div>
+
+  <div class="lesson" id="m5-l1" data-title="An instruction is a request, a hook is enforcement" data-minutes="15">
+    <h3>Why instructions are not enough</h3>
+    <p>Everything you put in CLAUDE.md, a skill or a system prompt becomes tokens in the model's context. The model reads them, weighs them against the user's request, the tool results and its own plan, and usually follows them. Usually is the problem. A long session, a persuasive tool result, a user who says "just this once", or a file the model read that contains instructions of its own can all tip the balance. You cannot audit a probability.</p>
+    <p>A hook sits outside the model. Claude Code runs it at a fixed point in its own loop: before a tool call, after one, when a prompt arrives, when the model tries to stop. The hook receives a JSON description of what is about to happen, and for the events that can block, its answer is final. A PreToolUse hook that returns <code>deny</code> blocks the tool call even in <code>bypassPermissions</code> mode or with <code>--dangerously-skip-permissions</code>. The model sees the denial reason in the tool result and can argue with it in prose, but it cannot make the call go through.</p>
+    <aside class="rule">If breaking a rule would cost you a rebuild, a restore or an incident report, the rule belongs in a hook or a permission deny rule, not only in CLAUDE.md.</aside>
+    <h3>Hooks and permission rules</h3>
+    <p>Claude Code already has permission rules (<code>permissions.allow</code>, <code>permissions.deny</code>, and the <code>--allowedTools</code> and <code>--disallowedTools</code> flags). Use them first: a deny rule like <code>Bash(git push *)</code> needs no script and cannot crash. A hook is for policy that a rule pattern cannot express: "deny any command that mentions prod", "deny recursive deletes in any spelling", "log every call", "refuse to stop until the tests pass". The two stack. A hook returning <code>allow</code> does not override a deny rule, and a hook returning <code>deny</code> wins over an allow rule.</p>
+    <h3>The event map</h3>
+    <p>Claude Code fires about thirty hook events. Most engineers use six of them. The column that matters is the third: only some events can stop the thing they describe.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Event</th><th>Fires</th><th>Can block?</th><th>Typical use</th></tr>
+      <tr><td><code>SessionStart</code></td><td>Session begins, resumes, clears or compacts</td><td>No (context only)</td><td>Inject branch, environment, open tickets</td></tr>
+      <tr><td><code>UserPromptSubmit</code></td><td>A prompt is submitted, before the model sees it</td><td>Yes: rejects the prompt</td><td>Add context per prompt, refuse prompts that carry secrets</td></tr>
+      <tr><td><code>PreToolUse</code></td><td>After the model writes the tool call, before it runs</td><td>Yes: blocks the call</td><td>Guards, input rewriting, logging</td></tr>
+      <tr><td><code>PermissionRequest</code></td><td>When a call would show a permission prompt</td><td>Through its <code>decision</code> object only, not exit 2</td><td>Auto-approve or auto-deny prompts</td></tr>
+      <tr><td><code>PostToolUse</code></td><td>After a tool call succeeds</td><td>No: the tool already ran</td><td>Formatters, linters, feedback to the model</td></tr>
+      <tr><td><code>PostToolBatch</code></td><td>After a batch of parallel calls resolves</td><td>Yes: stops the loop before the next model call</td><td>Batch-level checks</td></tr>
+      <tr><td><code>Stop</code></td><td>The main agent finishes responding</td><td>Yes: sends the model back to work</td><td>Completion gates ("tests must pass")</td></tr>
+      <tr><td><code>SubagentStop</code></td><td>A subagent finishes</td><td>Yes</td><td>Gate a subagent's report</td></tr>
+      <tr><td><code>PreCompact</code></td><td>Before context compaction</td><td>Yes</td><td>Add summary instructions or refuse</td></tr>
+      <tr><td><code>ConfigChange</code></td><td>A settings file changes mid-session</td><td>Yes (except managed policy)</td><td>Stop a session from loosening its own settings</td></tr>
+      <tr><td><code>Notification</code>, <code>SessionEnd</code>, <code>PostCompact</code></td><td>Side events</td><td>No</td><td>Alerts, cleanup, audit</td></tr>
+    </table></div>
+    <p>Others exist (<code>TaskCreated</code>, <code>TaskCompleted</code>, <code>InstructionsLoaded</code>, <code>FileChanged</code>, <code>CwdChanged</code>, <code>PreModelSwitch</code>, <code>WorktreeCreate</code> and more). The reference section lists the ones this module uses; the full list is in the hooks reference page of the Claude Code docs.</p>
+    <aside class="trap">PostToolUse looks like a guard and is not one. By the time it fires the file is written and the command has run. Use it to tell the model what went wrong, never to prevent anything.</aside>
+    <h3>Three cadences</h3>
+    <p>Per session: <code>SessionStart</code> and <code>SessionEnd</code>. Per turn: <code>UserPromptSubmit</code> and <code>Stop</code>. Per tool call: <code>PreToolUse</code> and <code>PostToolUse</code>. The cadence decides your latency budget. A 400 ms PowerShell start-up is nothing once per session and noticeable on every one of fifty tool calls.</p>
+  </div>
+
+  <div class="lesson" id="m5-l2" data-title="Where hooks live and how they match" data-minutes="15">
+    <h3>The configuration shape</h3>
+    <p>Hooks are a <code>hooks</code> key in a settings file, nested three levels deep: event, then a list of matcher groups, then a list of handlers in each group.</p>
+    <pre data-file=".claude/settings.json"><code>{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                     "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.ps1"],
+            "timeout": 30,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ]
+  }
+}</code></pre>
+    <h3>Where a hook can be defined</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Location</th><th>Scope</th><th>Shared?</th></tr>
+      <tr><td><code>~/.claude/settings.json</code></td><td>Every project you open</td><td>No</td></tr>
+      <tr><td><code>.claude/settings.json</code></td><td>This project</td><td>Yes, commit it</td></tr>
+      <tr><td><code>.claude/settings.local.json</code></td><td>This project, this machine</td><td>No</td></tr>
+      <tr><td>Managed policy settings</td><td>Organisation</td><td>Admin-controlled</td></tr>
+      <tr><td>Plugin <code>hooks/hooks.json</code></td><td>While the plugin is enabled</td><td>With the plugin</td></tr>
+      <tr><td>Skill frontmatter (<code>hooks:</code>)</td><td>Rest of the session once the skill is invoked</td><td>With the skill</td></tr>
+      <tr><td>Subagent frontmatter (<code>hooks:</code>)</td><td>While that subagent runs; a <code>Stop</code> hook there becomes <code>SubagentStop</code></td><td>With the agent file</td></tr>
+    </table></div>
+    <p>Hooks <b>merge</b>; they do not override. A project hook adds to your user hooks, and nothing below managed policy can remove a managed hook. <code>"disableAllHooks": true</code> turns off every hook from the levels it can reach, and passing it with <code>--settings</code> turns hooks off for one run. An administrator can set <code>allowManagedHooksOnly</code> so that user, project, local and plugin hooks do not run at all. The same handler defined in two settings files runs once.</p>
+    <aside class="trap">In a <code>claude -p</code> run there is no workspace trust dialog: Claude Code treats the folder as trusted, so hooks committed in a repository's <code>.claude/settings.json</code> run the first time you script against a repo you have never opened. Before you point a headless job at someone else's repository, read its <code>.claude/</code> folder or run with <code>--settings</code> pointing at a file containing <code>{"disableAllHooks": true}</code>.</aside>
+    <h3>Matchers</h3>
+    <p>The <code>matcher</code> filters which occurrences of an event reach the group. What it is compared to depends on the event: the tool name for tool events, the start reason for <code>SessionStart</code> (<code>startup</code>, <code>resume</code>, <code>clear</code>, <code>compact</code>, <code>fork</code>), the agent type for <code>SubagentStop</code>. <code>UserPromptSubmit</code>, <code>Stop</code> and <code>PostToolBatch</code> have no matcher; one you add there is silently ignored.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Matcher value</th><th>Read as</th><th>Example</th></tr>
+      <tr><td><code>*</code>, empty, or omitted</td><td>Everything</td><td>Log every tool call</td></tr>
+      <tr><td>Letters, digits, <code>_ - , |</code> and spaces only</td><td>Exact name, or a list split on <code>|</code> or <code>,</code></td><td><code>Bash|PowerShell</code>, <code>Edit, Write</code></td></tr>
+      <tr><td>Anything else</td><td>Unanchored JavaScript regex</td><td><code>mcp__github__.*</code>; <code>Edit.*</code> also matches <code>NotebookEdit</code></td></tr>
+    </table></div>
+    <p>Matchers are case-sensitive. MCP tools are named <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>, and <code>mcp__memory</code> on its own matches nothing because it is read as an exact name; write <code>mcp__memory__.*</code>.</p>
+    <aside class="trap">On Windows the shell tool may be <code>PowerShell</code>, not <code>Bash</code>. Where the PowerShell tool is enabled the model routes shell commands through it, and without Git Bash the Bash tool is not registered at all. A guard matched only on <code>Bash</code> never fires there. Match <code>Bash|PowerShell</code>.</aside>
+    <p>A handler can also carry <code>if</code>, a single permission-rule pattern such as <code>Bash(git *)</code>, so the process only spawns when the call matches. It saves start-up time. The docs call it best-effort: when Claude Code cannot work out which commands a shell string runs, it runs the hook anyway, and your script must still do its own check.</p>
+    <h3>Handler types</h3>
+    <div class="tablewrap"><table>
+      <tr><th><code>type</code></th><th>What runs</th><th>Default timeout</th></tr>
+      <tr><td><code>command</code></td><td>A program; JSON on stdin, answer by exit code and stdout</td><td class="num">600 s (30 s on UserPromptSubmit)</td></tr>
+      <tr><td><code>http</code></td><td>POST of the same JSON to a URL; answer in the response body</td><td class="num">600 s</td></tr>
+      <tr><td><code>mcp_tool</code></td><td>A tool on a connected MCP server</td><td class="num">600 s</td></tr>
+      <tr><td><code>prompt</code></td><td>A single-turn model call that returns a decision</td><td class="num">30 s</td></tr>
+      <tr><td><code>agent</code></td><td>A subagent with tools that returns a decision (experimental)</td><td class="num">60 s</td></tr>
+    </table></div>
+    <p>This module uses <code>command</code>. Note that <code>prompt</code> and <code>agent</code> handlers spend model tokens on every firing: billed per token on an API key, drawn from the 5-hour window and weekly limit on a subscription. A <code>command</code> hook spends no tokens unless it injects text into the context.</p>
+    <h3>Exec form and shell form</h3>
+    <p>With <code>args</code> present, Claude Code spawns <code>command</code> directly with that argument list and no shell (exec form). Without <code>args</code>, the string goes to a shell: Git Bash on Windows if it is installed, otherwise PowerShell, unless you set <code>"shell": "powershell"</code>. Exec form is the safer default for a script path: each element is one argument, <code>${CLAUDE_PROJECT_DIR}</code> is substituted as plain text, and no shell profile can print junk ahead of your JSON. Every lab here uses exec form with <code>powershell -NoProfile -ExecutionPolicy Bypass -File</code>.</p>
+  </div>
+
+  <div class="lesson" id="m5-l3" data-title="The contract: stdin, exit codes, stdout" data-minutes="20">
+    <h3>What arrives on stdin</h3>
+    <p>Every command hook gets one JSON object on stdin. This is a real PreToolUse input captured in Lab 1 (paths shortened):</p>
+    <pre data-cap="output"><code>{"session_id":"36d0a71b-...","transcript_path":"C:\\Users\\you\\.claude\\projects\\...\\36d0a71b-....jsonl",
+ "cwd":"C:\\Users\\you\\bootcamp-labs\\m5\\lab1","prompt_id":"26c89223-...","permission_mode":"default",
+ "effort":{"level":"medium"},"hook_event_name":"PreToolUse","tool_name":"Read",
+ "tool_input":{"file_path":"C:\\Users\\you\\bootcamp-labs\\m5\\lab1\\notes.txt"},"tool_use_id":"toolu_01SQX2..."}</code></pre>
+    <div class="tablewrap"><table>
+      <tr><th>Event</th><th>Fields added to the common ones</th></tr>
+      <tr><td>All</td><td><code>session_id</code>, <code>transcript_path</code>, <code>cwd</code>, <code>hook_event_name</code>; most also <code>permission_mode</code>; <code>agent_id</code>/<code>agent_type</code> inside a subagent</td></tr>
+      <tr><td><code>PreToolUse</code></td><td><code>tool_name</code>, <code>tool_input</code>, <code>tool_use_id</code></td></tr>
+      <tr><td><code>PostToolUse</code></td><td>the same plus <code>tool_response</code></td></tr>
+      <tr><td><code>UserPromptSubmit</code></td><td><code>prompt</code></td></tr>
+      <tr><td><code>Stop</code></td><td><code>stop_hook_active</code>, <code>last_assistant_message</code>, <code>background_tasks</code>, <code>session_crons</code></td></tr>
+      <tr><td><code>SessionStart</code></td><td><code>source</code>, sometimes <code>model</code></td></tr>
+    </table></div>
+    <p><code>tool_input</code> depends on the tool. <code>Bash</code> and <code>PowerShell</code> carry <code>command</code>, <code>description</code>, <code>timeout</code>, <code>run_in_background</code>. <code>Write</code>, <code>Edit</code> and <code>Read</code> carry <code>file_path</code>, which Claude Code makes absolute before your hook runs, so a guard cannot be dodged with <code>~</code> or a relative path. On Windows that path uses backslashes; compare against <code>\src\</code>, or normalise first.</p>
+    <h3>Exit codes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Exit</th><th>Meaning</th><th>Effect</th></tr>
+      <tr><td class="num">0</td><td>Success</td><td>stdout is parsed as JSON if it is one JSON object; on <code>UserPromptSubmit</code> and <code>SessionStart</code> plain-text stdout becomes context for the model; elsewhere stdout goes to the debug log</td></tr>
+      <tr><td class="num">2</td><td>Blocking error</td><td>On a blockable event the action stops and stderr is the reason (shown to the model for PreToolUse and Stop, to the user for UserPromptSubmit)</td></tr>
+      <tr><td>anything else</td><td>Non-blocking error</td><td>The action <b>goes ahead</b>; a "hook error" notice shows the first stderr line</td></tr>
+    </table></div>
+    <aside class="trap">Exit 1 does not block. It is the conventional Unix failure code and the most common bug in a first guard: the script detects the bad command, writes a message, exits 1, and the command runs. Use <code>exit 2</code> or a JSON deny.</aside>
+    <h3>JSON on stdout</h3>
+    <p>Exit 0 and print exactly one JSON object for finer control. Nothing else may be on stdout: a stray line in front of the <code>{</code> turns the whole thing into plain text, and the decision is silently ignored.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Events</th><th>Effect</th></tr>
+      <tr><td><code>hookSpecificOutput.permissionDecision</code></td><td>PreToolUse</td><td><code>allow</code> skips the prompt, <code>deny</code> blocks, <code>ask</code> prompts the user, <code>defer</code> ends a <code>-p</code> turn so the call can be resumed later. Precedence across hooks: deny &gt; defer &gt; ask &gt; allow</td></tr>
+      <tr><td><code>hookSpecificOutput.permissionDecisionReason</code></td><td>PreToolUse</td><td>For <code>deny</code>, shown to the model</td></tr>
+      <tr><td><code>hookSpecificOutput.updatedInput</code></td><td>PreToolUse</td><td>Replaces the <b>whole</b> tool input before it runs; include unchanged fields. Pair with <code>allow</code> or <code>ask</code></td></tr>
+      <tr><td><code>hookSpecificOutput.additionalContext</code></td><td>SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop and others</td><td>Text inserted as a system reminder for the model; capped at 10,000 characters</td></tr>
+      <tr><td><code>decision: "block"</code> + <code>reason</code></td><td>UserPromptSubmit, PostToolUse, Stop, SubagentStop, PreCompact, ConfigChange</td><td>Blocks (or for PostToolUse, feeds the reason back)</td></tr>
+      <tr><td><code>continue: false</code> + <code>stopReason</code></td><td>All</td><td>Stops Claude entirely; wins over any other decision</td></tr>
+      <tr><td><code>systemMessage</code></td><td>All</td><td>Warning shown to the user</td></tr>
+    </table></div>
+<figure class="diagram">
+<svg class="mm mm-flowchart" role="img" id="mm799d7b0e86fc" width="100%" xmlns="http://www.w3.org/2000/svg" style="max-width: 1196.609375px;" viewBox="4 4 1196.609375 404"><style>#mm799d7b0e86fc{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;fill:#000000;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#mm799d7b0e86fc .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#mm799d7b0e86fc .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#mm799d7b0e86fc .error-icon{fill:#552222;}#mm799d7b0e86fc .error-text{fill:#552222;stroke:#552222;}#mm799d7b0e86fc .edge-thickness-normal{stroke-width:1px;}#mm799d7b0e86fc .edge-thickness-thick{stroke-width:3.5px;}#mm799d7b0e86fc .edge-pattern-solid{stroke-dasharray:0;}#mm799d7b0e86fc .edge-thickness-invisible{stroke-width:0;fill:none;}#mm799d7b0e86fc .edge-pattern-dashed{stroke-dasharray:3;}#mm799d7b0e86fc .edge-pattern-dotted{stroke-dasharray:2;}#mm799d7b0e86fc .marker{fill:#666;stroke:#666;}#mm799d7b0e86fc .marker.cross{stroke:#666;}#mm799d7b0e86fc svg{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;}#mm799d7b0e86fc p{margin:0;}#mm799d7b0e86fc .label{font-family:"Segoe UI",Arial,sans-serif;color:#000000;}#mm799d7b0e86fc .cluster-label text{fill:#333;}#mm799d7b0e86fc .cluster-label span{color:#333;}#mm799d7b0e86fc .cluster-label span p{background-color:transparent;}#mm799d7b0e86fc .label text,#mm799d7b0e86fc span{fill:#000000;color:#000000;}#mm799d7b0e86fc .node rect,#mm799d7b0e86fc .node circle,#mm799d7b0e86fc .node ellipse,#mm799d7b0e86fc .node polygon,#mm799d7b0e86fc .node path{fill:#eee;stroke:#999;stroke-width:1px;}#mm799d7b0e86fc .rough-node .label text,#mm799d7b0e86fc .node .label text,#mm799d7b0e86fc .image-shape .label,#mm799d7b0e86fc .icon-shape .label{text-anchor:middle;}#mm799d7b0e86fc .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#mm799d7b0e86fc .rough-node .label,#mm799d7b0e86fc .node .label,#mm799d7b0e86fc .image-shape .label,#mm799d7b0e86fc .icon-shape .label{text-align:center;}#mm799d7b0e86fc .node.clickable{cursor:pointer;}#mm799d7b0e86fc .root .anchor path{fill:#666!important;stroke-width:0;stroke:#666;}#mm799d7b0e86fc .arrowheadPath{fill:#333333;}#mm799d7b0e86fc .edgePaths .path{stroke:#666;stroke-width:1px;}#mm799d7b0e86fc .flowchart-link{stroke:#666;fill:none;}#mm799d7b0e86fc .edgeLabel{background-color:white;text-align:center;}#mm799d7b0e86fc .edgeLabel p{background-color:white;}#mm799d7b0e86fc .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mm799d7b0e86fc .labelBkg{background-color:rgba(255, 255, 255, 0.5);}#mm799d7b0e86fc .cluster rect{fill:hsl(0, 0%, 98.9215686275%);stroke:#707070;stroke-width:1px;}#mm799d7b0e86fc .cluster text{fill:#333;}#mm799d7b0e86fc .cluster span{color:#333;}#mm799d7b0e86fc .node .collapsed-indicator{fill:#707070;stroke:none;opacity:0.6;}#mm799d7b0e86fc .node .collapsed-separator{stroke:#707070;stroke-width:0.75px;}#mm799d7b0e86fc div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"Segoe UI",Arial,sans-serif;font-size:12px;background:hsl(-160, 0%, 93.3333333333%);border:1px solid #707070;border-radius:2px;pointer-events:none;z-index:100;}#mm799d7b0e86fc .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mm799d7b0e86fc rect.text{fill:none;stroke-width:0;}#mm799d7b0e86fc .icon-shape,#mm799d7b0e86fc .image-shape{background-color:white;text-align:center;}#mm799d7b0e86fc .icon-shape p,#mm799d7b0e86fc .image-shape p{background-color:white;padding:2px;}#mm799d7b0e86fc .icon-shape .label rect,#mm799d7b0e86fc .image-shape .label rect{opacity:0.5;background-color:white;fill:white;}#mm799d7b0e86fc .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#mm799d7b0e86fc .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#mm799d7b0e86fc .node .neo-node{stroke:#999;}#mm799d7b0e86fc [data-look="neo"].node rect,#mm799d7b0e86fc [data-look="neo"].cluster rect,#mm799d7b0e86fc [data-look="neo"].node polygon{stroke:url(#mm799d7b0e86fc-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm799d7b0e86fc [data-look="neo"].swimlane.cluster rect{filter:none;}#mm799d7b0e86fc [data-look="neo"].node path{stroke:url(#mm799d7b0e86fc-gradient);stroke-width:1px;}#mm799d7b0e86fc [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm799d7b0e86fc [data-look="neo"].node .neo-line path{stroke:#999;filter:none;}#mm799d7b0e86fc [data-look="neo"].node circle{stroke:url(#mm799d7b0e86fc-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm799d7b0e86fc [data-look="neo"].node circle .state-start{fill:#000000;}#mm799d7b0e86fc [data-look="neo"].icon-shape .icon{fill:url(#mm799d7b0e86fc-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm799d7b0e86fc [data-look="neo"].icon-shape .icon-neo path{stroke:url(#mm799d7b0e86fc-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm799d7b0e86fc :root{--mermaid-font-family:"Segoe UI",Arial,sans-serif;}</style><g><marker id="mm799d7b0e86fc_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mm799d7b0e86fc_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mm799d7b0e86fc_flowchart-v2-pointEnd-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="11.5" refY="7" markerUnits="userSpaceOnUse" markerWidth="10.5" markerHeight="14" orient="auto"><path d="M 0 0 L 11.5 7 L 0 14 z" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></path></marker><marker id="mm799d7b0e86fc_flowchart-v2-pointStart-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="1" refY="7" markerUnits="userSpaceOnUse" markerWidth="11.5" markerHeight="14" orient="auto"><polygon points="0,7 11.5,14 11.5,0" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></polygon></marker><marker id="mm799d7b0e86fc_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm799d7b0e86fc_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm799d7b0e86fc_flowchart-v2-circleEnd-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refY="5" refX="12.25" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm799d7b0e86fc_flowchart-v2-circleStart-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-2" refY="5" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm799d7b0e86fc_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mm799d7b0e86fc_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mm799d7b0e86fc_flowchart-v2-crossEnd-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="17.7" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5;"></path></marker><marker id="mm799d7b0e86fc_flowchart-v2-crossStart-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="-3.5" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edges edgePaths"><path d="M164,266.79999923706055L200,266.79999923706055" id="mm799d7b0e86fc-L_a_b_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_a_b_0" data-points="W3sieCI6MTY0LCJ5IjoyNjYuNzk5OTk5MjM3MDYwNTV9LHsieCI6MjA0LCJ5IjoyNjYuNzk5OTk5MjM3MDYwNTV9XQ==" data-look="neo" marker-end="url(#mm799d7b0e86fc_flowchart-v2-pointEnd-margin)"></path><path d="M356,266.79999923706055L392,266.79999923706055" id="mm799d7b0e86fc-L_b_c_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_b_c_0" data-points="W3sieCI6MzU2LCJ5IjoyNjYuNzk5OTk5MjM3MDYwNTV9LHsieCI6Mzk2LCJ5IjoyNjYuNzk5OTk5MjM3MDYwNTV9XQ==" data-look="neo" marker-end="url(#mm799d7b0e86fc_flowchart-v2-pointEnd-margin)"></path><path d="M529.2499809265137,229.04999923706055L567,229.04999923706055L579.9289321881345,229.04999923706055Q587,229.04999923706055 587,221.97893142519507L587,131.54606628598657Q587,124.4749984741211 594.0710678118655,124.4749984741211L685.21875,124.4749984741211" id="mm799d7b0e86fc-L_c_d_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 251.2154998779297 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_c_d_0" data-points="W3sieCI6NTI5LjI0OTk4MDkyNjUxMzcsInkiOjIyOS4wNDk5OTkyMzcwNjA1NX0seyJ4Ijo1NjcsInkiOjIyOS4wNDk5OTkyMzcwNjA1NX0seyJ4Ijo1ODcsInkiOjIyOS4wNDk5OTkyMzcwNjA1NX0seyJ4Ijo1ODcsInkiOjEyNC40NzQ5OTg0NzQxMjExfSx7IngiOjY4OS4yMTg3NSwieSI6MTI0LjQ3NDk5ODQ3NDEyMTF9XQ==" data-look="neo" marker-end="url(#mm799d7b0e86fc_flowchart-v2-pointEnd-margin)"></path><path d="M567,266.79999923706055L628.109375,266.79999923706055L950.4140625,266.79999923706055L1017.8093741734822,266.79999923706055Q1020.609375,266.79999923706055 1020.609375,263.9999984105428L1020.609375,263.9999984105428Q1020.609375,261.199997584025 1023.4093758265178,261.199997584025L1036.609375,261.199997584025" id="mm799d7b0e86fc-L_c_e_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 469.0994873046875 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_c_e_0" data-points="W3sieCI6NTY3LCJ5IjoyNjYuNzk5OTk5MjM3MDYwNTV9LHsieCI6NjI4LjEwOTM3NSwieSI6MjY2Ljc5OTk5OTIzNzA2MDU1fSx7IngiOjk1MC40MTQwNjI1LCJ5IjoyNjYuNzk5OTk5MjM3MDYwNTV9LHsieCI6MTAyMC42MDkzNzUsInkiOjI2Ni43OTk5OTkyMzcwNjA1NX0seyJ4IjoxMDIwLjYwOTM3NSwieSI6MjYxLjE5OTk5NzU4NDAyNX0seyJ4IjoxMDQwLjYwOTM3NSwieSI6MjYxLjE5OTk5NzU4NDAyNX1d" data-look="neo" marker-end="url(#mm799d7b0e86fc_flowchart-v2-pointEnd-margin)"></path><path d="M529.2499809265137,304.54999923706055L567,304.54999923706055L579.9289321881345,304.54999923706055Q587,304.54999923706055 587,311.621067048926L587,352.82892989931617Q587,359.89999771118164 594.0710678118655,359.89999771118164L685.21875,359.89999771118164" id="mm799d7b0e86fc-L_c_f_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 201.990478515625 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_c_f_0" data-points="W3sieCI6NTI5LjI0OTk4MDkyNjUxMzcsInkiOjMwNC41NDk5OTkyMzcwNjA1NX0seyJ4Ijo1NjcsInkiOjMwNC41NDk5OTkyMzcwNjA1NX0seyJ4Ijo1ODcsInkiOjMwNC41NDk5OTkyMzcwNjA1NX0seyJ4Ijo1ODcsInkiOjM1OS44OTk5OTc3MTExODE2NH0seyJ4Ijo2ODkuMjE4NzUsInkiOjM1OS44OTk5OTc3MTExODE2NH1d" data-look="neo" marker-end="url(#mm799d7b0e86fc_flowchart-v2-pointEnd-margin)"></path><path d="M822.4687309265137,162.2249984741211L860.21875,162.2249984741211L873.1476821881345,162.2249984741211Q880.21875,162.2249984741211 880.21875,169.29606628598657L880.21875,221.72893078941217Q880.21875,228.79999860127765 887.2898178118655,228.79999860127765L1013.5383071881345,228.79999860127765Q1020.609375,228.79999860127765 1020.609375,235.87106641314313L1020.609375,239.92893028078586Q1020.609375,246.99999809265134 1027.6804428118655,246.99999809265134L1036.609375,246.99999809265134" id="mm799d7b0e86fc-L_d_e_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 284.2591247558594 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_d_e_0" data-points="W3sieCI6ODIyLjQ2ODczMDkyNjUxMzcsInkiOjE2Mi4yMjQ5OTg0NzQxMjExfSx7IngiOjg2MC4yMTg3NSwieSI6MTYyLjIyNDk5ODQ3NDEyMTF9LHsieCI6ODgwLjIxODc1LCJ5IjoxNjIuMjI0OTk4NDc0MTIxMX0seyJ4Ijo4ODAuMjE4NzUsInkiOjIyOC43OTk5OTg2MDEyNzc2NX0seyJ4IjoxMDIwLjYwOTM3NSwieSI6MjI4Ljc5OTk5ODYwMTI3NzY1fSx7IngiOjEwMjAuNjA5Mzc1LCJ5IjoyNDYuOTk5OTk4MDkyNjUxMzR9LHsieCI6MTA0MC42MDkzNzUsInkiOjI0Ni45OTk5OTgwOTI2NTEzNH1d" data-look="neo" marker-end="url(#mm799d7b0e86fc_flowchart-v2-pointEnd-margin)"></path><path d="M822.4687309265137,86.7249984741211L860.21875,86.7249984741211L873.1476821881345,86.7249984741211Q880.21875,86.7249984741211 880.21875,79.65393066225562L880.21875,41.571067811865476Q880.21875,34.5 887.2898178118655,34.5L1036.609375,34.5" id="mm799d7b0e86fc-L_d_g_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 257.037353515625 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_d_g_0" data-points="W3sieCI6ODIyLjQ2ODczMDkyNjUxMzcsInkiOjg2LjcyNDk5ODQ3NDEyMTF9LHsieCI6ODYwLjIxODc1LCJ5Ijo4Ni43MjQ5OTg0NzQxMjExfSx7IngiOjg4MC4yMTg3NSwieSI6ODYuNzI0OTk4NDc0MTIxMX0seyJ4Ijo4ODAuMjE4NzUsInkiOjM0LjV9LHsieCI6MTA0MC42MDkzNzUsInkiOjM0LjV9XQ==" data-look="neo" marker-end="url(#mm799d7b0e86fc_flowchart-v2-pointEnd-margin)"></path><path d="M860.21875,124.4749984741211L878.3062496185303,124.4749984741211Q880.21875,124.4749984741211 880.21875,126.38749885559082L880.21875,126.38749885559082Q880.21875,128.29999923706055 882.1312503814697,128.29999923706055L1036.609375,128.29999923706055" id="mm799d7b0e86fc-L_d_h_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 174.774658203125 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_d_h_0" data-points="W3sieCI6ODYwLjIxODc1LCJ5IjoxMjQuNDc0OTk4NDc0MTIxMX0seyJ4Ijo4ODAuMjE4NzUsInkiOjEyNC40NzQ5OTg0NzQxMjExfSx7IngiOjg4MC4yMTg3NSwieSI6MTI4LjI5OTk5OTIzNzA2MDU1fSx7IngiOjEwNDAuNjA5Mzc1LCJ5IjoxMjguMjk5OTk5MjM3MDYwNTV9XQ==" data-look="neo" marker-end="url(#mm799d7b0e86fc_flowchart-v2-pointEnd-margin)"></path></g><g class="edgeLabels"><g class="edgeLabel" transform="translate(628.109375, 123.9749984741211)"><g class="label" data-id="L_c_d_0" transform="translate(-0.1875, -9.5)"><g><rect class="background" style="" x="-6.3125" y="-3" width="13" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">0</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(774.71875, 266.29999923706055)"><g class="label" data-id="L_c_e_0" transform="translate(-0.1875, -9.5)"><g><rect class="background" style="" x="-6.3125" y="-3" width="13" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">2</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(628.109375, 359.39999771118164)"><g class="label" data-id="L_c_f_0" transform="translate(-0.21875, -9.5)"><g><rect class="background" style="" x="-20.890625" y="-3" width="42.21875" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">other</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(950.4140625, 228.29999860127765)"><g class="label" data-id="L_d_e_0" transform="translate(-0.125, -9.5)"><g><rect class="background" style="" x="-19.296875" y="-3" width="38.84375" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">deny</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(950.4140625, 34)"><g class="label" data-id="L_d_g_0" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-50.1953125" y="-3" width="100.390625" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">allow</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> or</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> none</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(950.4140625, 127.79999923706055)"><g class="label" data-id="L_d_h_0" transform="translate(-0.51953125, -9.5)"><g><rect class="background" style="" x="-13.4453125" y="-3" width="27.9296875" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">ask</tspan></tspan></text></g></g></g></g><g class="nodes"><g class="node default" id="mm799d7b0e86fc-flowchart-a-0" data-look="neo" transform="translate(88, 266.79999923706055)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">PreToolUse</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">event</tspan></tspan></text></g></g></g><g class="node default" id="mm799d7b0e86fc-flowchart-b-1" data-look="neo" transform="translate(280, 266.79999923706055)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Hook</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> runs,</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> JSON</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">on</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> stdin</tspan></tspan></text></g></g></g><g class="node default" id="mm799d7b0e86fc-flowchart-c-3" data-look="neo" transform="translate(481.5, 266.79999923706055)"><polygon points="85.5,0 171,-85.5 85.5,-171 0,-85.5" class="label-container" transform="translate(-85, 85.5)"></polygon><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Exit</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> code?</tspan></tspan></text></g></g></g><g class="node default" id="mm799d7b0e86fc-flowchart-d-5" data-look="neo" transform="translate(774.71875, 124.4749984741211)"><polygon points="85.5,0 171,-85.5 85.5,-171 0,-85.5" class="label-container" transform="translate(-85, 85.5)"></polygon><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">JSON</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> decision?</tspan></tspan></text></g></g></g><g class="node default bad" id="mm799d7b0e86fc-flowchart-e-7" data-look="neo" transform="translate(1116.609375, 254.0999978383382)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Blocked,</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> stderr</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">to</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> model</tspan></tspan></text></g></g></g><g class="node default hot" id="mm799d7b0e86fc-flowchart-f-9" data-look="neo" transform="translate(765.21875, 359.89999771118164)"><rect class="basic label-container" style="" x="-76" y="-40.099998474121094" width="152" height="80.19999694824219"></rect><g class="label" style="" transform="translate(0, -28.099998474121094)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Goes</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> ahead,</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">hook</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> error</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="2.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">notice</tspan></tspan></text></g></g></g><g class="node default good" id="mm799d7b0e86fc-flowchart-g-13" data-look="neo" transform="translate(1116.609375, 34.5)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Call</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> runs</tspan></tspan></text></g></g></g><g class="node default info" id="mm799d7b0e86fc-flowchart-h-15" data-look="neo" transform="translate(1116.609375, 128.29999923706055)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">User</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> is</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">prompted</tspan></tspan></text></g></g></g></g></g></g><defs><filter id="mm799d7b0e86fc-drop-shadow" height="130%" width="130%"><feDropShadow dx="4" dy="4" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><defs><filter id="mm799d7b0e86fc-drop-shadow-small" height="150%" width="150%"><feDropShadow dx="2" dy="2" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><linearGradient id="mm799d7b0e86fc-gradient" gradientUnits="objectBoundingBox" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="hsl(0, 0%, 83.3333333333%)" stop-opacity="1"></stop><stop offset="100%" stop-color="hsl(0, 0%, 88.9215686275%)" stop-opacity="1"></stop></linearGradient></svg>
+  <figcaption>Only exit 2 or a JSON deny blocks; any other non-zero exit lets the call go ahead.</figcaption>
+</figure>
+    <p>A real deny from the Lab 2 guard, produced by <code>ConvertTo-Json</code> so quoting is never hand-built:</p>
+    <pre data-cap="output"><code>{"hookSpecificOutput":{"permissionDecision":"deny","hookEventName":"PreToolUse","permissionDecisionReason":"Policy: nothing in this project may touch prod. Ask a human."}}</code></pre>
+    <aside class="trap"><code>permissionDecision</code> at the top level instead of inside <code>hookSpecificOutput</code> still parses, and Claude Code ignores it without an error. The debug log records <code>Hook JSON output had unrecognized keys</code>.</aside>
+    <h3>Timeouts, failure and parallel runs</h3>
+    <p>All hooks matching an event run <b>in parallel</b>, not in order, so one hook cannot rely on another having run first, and two hooks both returning <code>updatedInput</code> for the same tool give no guarantee which rewrite wins. A hook that reaches its <code>timeout</code> is cancelled and its output discarded. On PreToolUse a timed-out, crashed or missing hook does not block: the call continues through normal permissions. That is fail-open, and for a guard it is wrong. Set <code>"onFailure": "block"</code> on the handler (Claude Code 2.1.295 or later) and a failure to start, a non-0/2 exit, invalid JSON or a timeout all block the call. <code>onFailure</code> has no effect on Stop hooks.</p>
+    <aside class="rule">Every enforcement hook gets an explicit <code>timeout</code>, <code>"onFailure": "block"</code>, and a first live run where you watch for a "hook error" notice.</aside>
+  </div>
+
+  <div class="lesson" id="m5-l4" data-title="Writing a guard that holds" data-minutes="20">
+    <h3>Parse the input, do not grep it</h3>
+    <p>Read stdin once, parse it as JSON, and pull the one field you judge. Matching a regex against the raw JSON text sounds equivalent and is not: quotes and backslashes arrive escaped (<code>\"</code>, <code>\\</code>), so a pattern that works on the command fails on the JSON spelling of it. In PowerShell:</p>
+    <pre><code>$in  = [Console]::In.ReadToEnd() | ConvertFrom-Json
+$cmd = [string]$in.tool_input.command</code></pre>
+    <h3>Fail closed</h3>
+    <p>A guard has three outcomes, not two: allow, deny, and "I could not tell". Decide what the third one does. For an enforcement hook it is deny. Wrap the parse in <code>try</code>/<code>catch</code> and exit 2 with a message on stderr when the input is unreadable, and set <code>onFailure: "block"</code> so a crash or a timeout also blocks. For a logging or context hook it is the opposite: fail open, exit 0, and never block work because a log file was locked.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Situation</th><th>Guard (fail closed)</th><th>Logger (fail open)</th></tr>
+      <tr><td>stdin is not JSON</td><td>stderr + <code>exit 2</code></td><td><code>exit 0</code></td></tr>
+      <tr><td>Script throws</td><td><code>onFailure: "block"</code> catches it</td><td>Leave <code>onFailure</code> unset</td></tr>
+      <tr><td>Timeout</td><td><code>onFailure: "block"</code> catches it</td><td>Short timeout, unset</td></tr>
+      <tr><td>Pattern unsure (encoded, obfuscated)</td><td>Deny and say why</td><td>Log it</td></tr>
+    </table></div>
+    <h3>Wrappers and spellings</h3>
+    <p>The command the model writes is a string, and a shell can run the same action under many spellings. A guard anchored on the start of the string (<code>^rm </code>) misses all of these:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Spelling</th><th>Why an anchored or naive guard misses it</th></tr>
+      <tr><td><code>cmd /c "git push -f origin main"</code></td><td>Wrapped in another shell; also <code>-f</code> instead of <code>--force</code></td></tr>
+      <tr><td><code>bash -c 'rm -rf build'</code></td><td>Wrapped, single-quoted</td></tr>
+      <tr><td><code>powershell -Command "ri build -r"</code></td><td>Alias <code>ri</code> and abbreviated <code>-r</code> for <code>Remove-Item -Recurse</code></td></tr>
+      <tr><td><code>rm -r -f build</code></td><td>Flags split</td></tr>
+      <tr><td><code>git push origin +main</code></td><td>Force push with no force flag at all</td></tr>
+      <tr><td><code>powershell -EncodedCommand cgBtACAA...</code></td><td>The payload is base64; there is nothing to match</td></tr>
+    </table></div>
+    <p>Three habits cover most of it. Match unanchored, anywhere in the string, so a wrapper does not hide the inner command. List the aliases and short flags explicitly. Deny outright what you cannot inspect (<code>-EncodedCommand</code>, <code>Invoke-Expression</code> on a built string) rather than trying to decode it. The cost is false positives: <code>echo "never git push --force"</code> is denied too. For a guard that is the right trade, and the denial reason tells the model what to do instead.</p>
+    <aside class="trap">The model can write a script with <code>Write</code> and then run it by path. Your shell guard sees <code>powershell -File .\cleanup.ps1</code> and nothing inside it. If the action matters, also guard <code>Write</code> and <code>Edit</code> content, or deny running scripts from the working folder.</aside>
+    <h3>Keep it fast</h3>
+    <p>A PreToolUse hook runs on every matching call and the model waits for it. In Lab 1 the debug log timed each run of a minimal PowerShell 5.1 hook at about 440 to 500 ms, almost all of it interpreter start-up, and Lab 5 measured 250 to 600 ms per offline call. Ways to keep the cost down: match narrowly (<code>Bash|PowerShell</code> rather than <code>*</code>), add an <code>if</code> pattern so unrelated calls never spawn a process, use <code>-NoProfile</code>, and do no network calls in the decision path. If a hook must do slow work, print the decision first, then start the slow part in the background with its output redirected.</p>
+    <h3>Log every decision</h3>
+    <p>Write one line per decision: time, verdict, rule name, the command. A guard that denies silently is indistinguishable from one that never ran, and a log is how you find the false positive that annoyed a colleague last Tuesday. The Lab 2 guard writes this:</p>
+    <pre data-cap="output"><code>2026-11-11T17:34:48 DENY  Bash echo deployed &gt; prod.txt
+2026-11-11T17:34:48 PASS  Bash echo built &gt; build.txt
+2026-11-11T17:34:51 DENY  Bash echo deployed &gt; prod.txt</code></pre>
+    <p>Do not log secrets. If commands can carry tokens, log a hash or a redacted form.</p>
+    <h3>Deny with a reason the model can act on</h3>
+    <p>The <code>permissionDecisionReason</code> goes to the model. "Blocked" invites retries in a new spelling. "Blocked by project guard: recursive delete. Ask a human to run it." tells it to stop and report, which is what Haiku did in Lab 2: it quoted the reason, said it had not tried another way, and asked for authority.</p>
+    <aside class="rule">A guard is parse, decide, log, answer, in that order, and it never exits 1.</aside>
+    
+  </div>
+
+  <div class="lesson" id="m5-l5" data-title="Hooks that add context or keep an agent going" data-minutes="15">
+    <h3>Context hooks</h3>
+    <p>Not every hook says no. <code>SessionStart</code> and <code>UserPromptSubmit</code> can put text in front of the model: the current branch, which environment this folder deploys to, today's change freeze. Two channels work on exit 0:</p>
+    <ul>
+      <li><b>Plain stdout</b>: on these two events, text that is not a JSON object is added as context.</li>
+      <li><b><code>hookSpecificOutput.additionalContext</code></b>: the same, inside JSON, so you can combine it with other fields.</li>
+    </ul>
+    <p>Either way Claude Code wraps the text in a system reminder; it does not appear as a chat message. Lab 3 uses one of each and the model answered <code>HERON-7 oncall-blue</code> with the hooks on and <code>NONE</code> with them off. With <code>--output-format stream-json --verbose --include-hook-events</code> the stream shows a <code>hook_started</code> and a <code>hook_response</code> line per hook, ahead of the <code>system</code> <code>init</code> line, and the response carries <code>stdout</code>, <code>stderr</code>, <code>exit_code</code> and <code>outcome</code>.</p>
+    <p>Write the text as plain facts ("The deployment target is staging"), not as commands styled like a system message. The docs warn that text framed as out-of-band instructions can trigger the model's prompt-injection defences, and it then reports the text to you instead of using it. For facts that never change, CLAUDE.md is cheaper: it loads without spawning a process.</p>
+    <aside class="trap">On resume, Claude Code replays the context a <code>UserPromptSubmit</code> hook injected on past turns instead of re-running the hook, so timestamps and commit hashes go stale. <code>SessionStart</code> does re-run on resume with <code>source</code> set to <code>resume</code>.</aside>
+    <h3>What context costs</h3>
+    <p>Injected text is input tokens on every request that follows. A SessionStart line sits early in the conversation and is cached after the first request; a UserPromptSubmit line adds new tokens each prompt. On an API key that is billed per token; on a subscription it counts against the 5-hour window and weekly limit. A 50-word line is noise. A hook that dumps a 9,000-character ticket list into every prompt is not.</p>
+    <h3>Stop gates</h3>
+    <p>A <code>Stop</code> hook fires each time the main agent finishes responding, not only at the end of the task. Exit 2 (or <code>decision: "block"</code> with a <code>reason</code>) sends the model back to work with your stderr or reason as the explanation. That makes a completion gate: "do not stop until <code>done.txt</code> exists", "until the test suite passes".</p>
+    <p>The danger is a condition the model cannot meet: no permission to write the file, a test that cannot pass. Two brakes exist:</p>
+    <ul>
+      <li><code>stop_hook_active</code> in the input is <code>true</code> when the model is already continuing because of a Stop hook. Check it and let the model stop on the second attempt.</li>
+      <li>Claude Code caps a run of consecutive Stop-hook continuations at 8 and then ends the turn anyway. The count resets every time the model calls a tool. <code>CLAUDE_CODE_STOP_HOOK_BLOCK_CAP</code> raises it.</li>
+    </ul>
+    <p>Lab 4 measured what exit 2 on Stop does in a headless <code>-p</code> run, in three cases:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Run</th><th>Setup</th><th class="num">Stop hook runs</th><th class="num">num_turns</th><th>Outcome</th></tr>
+      <tr><td>A</td><td>Loop guard on, <code>Write</code> allowed</td><td class="num">2</td><td class="num">4</td><td>Model wrote <code>done.txt</code>; second run saw <code>stop_hook_active=True done=True</code></td></tr>
+      <tr><td>B</td><td>Loop guard on, no tools allowed</td><td class="num">2</td><td class="num">3</td><td>Write denied once; guard let it stop on the second run; file absent</td></tr>
+      <tr><td>C</td><td>Loop guard off, no tools allowed</td><td class="num">16</td><td class="num">23</td><td>4 denied Write attempts reset the cap counter; ended by the cap with an empty <code>result</code>, <code>subtype</code> still <code>success</code></td></tr>
+    </table></div>
+<figure class="diagram">
+<svg class="mm mm-statediagram-v" role="img" id="mm39ec232f73fd" width="100%" xmlns="http://www.w3.org/2000/svg" style="max-width: 479.59375px;" viewBox="4 4 479.59375 462.6000061035156"><style>#mm39ec232f73fd{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;fill:#000000;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#mm39ec232f73fd .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#mm39ec232f73fd .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#mm39ec232f73fd .error-icon{fill:#552222;}#mm39ec232f73fd .error-text{fill:#552222;stroke:#552222;}#mm39ec232f73fd .edge-thickness-normal{stroke-width:1px;}#mm39ec232f73fd .edge-thickness-thick{stroke-width:3.5px;}#mm39ec232f73fd .edge-pattern-solid{stroke-dasharray:0;}#mm39ec232f73fd .edge-thickness-invisible{stroke-width:0;fill:none;}#mm39ec232f73fd .edge-pattern-dashed{stroke-dasharray:3;}#mm39ec232f73fd .edge-pattern-dotted{stroke-dasharray:2;}#mm39ec232f73fd .marker{fill:#666;stroke:#666;}#mm39ec232f73fd .marker.cross{stroke:#666;}#mm39ec232f73fd svg{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;}#mm39ec232f73fd p{margin:0;}#mm39ec232f73fd defs [id$="-barbEnd"]{fill:#000;stroke:#000;}#mm39ec232f73fd g.stateGroup text{fill:#999;stroke:none;font-size:10px;}#mm39ec232f73fd g.stateGroup text{fill:#000000;stroke:none;font-size:10px;}#mm39ec232f73fd g.stateGroup .state-title{font-weight:bolder;fill:#111111;}#mm39ec232f73fd g.stateGroup rect{fill:#eee;stroke:#999;}#mm39ec232f73fd g.stateGroup line{stroke:#666;stroke-width:1;}#mm39ec232f73fd .transition{stroke:#000;stroke-width:1;fill:none;}#mm39ec232f73fd .stateGroup .composit{fill:#ffffff;border-bottom:1px;}#mm39ec232f73fd .stateGroup .alt-composit{fill:#e0e0e0;border-bottom:1px;}#mm39ec232f73fd .state-note{stroke:#999;fill:#666;}#mm39ec232f73fd .state-note text{fill:#fff;stroke:none;font-size:10px;}#mm39ec232f73fd .stateLabel .box{stroke:none;stroke-width:0;fill:#eee;opacity:0.5;}#mm39ec232f73fd .edgeLabel .label rect{fill:#eee;opacity:0.5;}#mm39ec232f73fd .edgeLabel{background-color:white;text-align:center;}#mm39ec232f73fd .edgeLabel p{background-color:white;}#mm39ec232f73fd .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mm39ec232f73fd .edgeLabel .label text{fill:#000000;}#mm39ec232f73fd .label div .edgeLabel{color:#000000;}#mm39ec232f73fd .stateLabel text{fill:#111111;font-size:10px;font-weight:bold;}#mm39ec232f73fd .node circle.state-start{fill:#222;stroke:#222;}#mm39ec232f73fd .node .fork-join{fill:#222;stroke:#222;}#mm39ec232f73fd .node circle.state-end{fill:hsl(0, 0%, 83.3333333333%);stroke:#ffffff;stroke-width:1.5;}#mm39ec232f73fd .end-state-inner{fill:#ffffff;stroke-width:1.5;}#mm39ec232f73fd .node rect{fill:#eee;stroke:#000;stroke-width:1px;}#mm39ec232f73fd .node polygon{fill:#eee;stroke:#000;stroke-width:1px;}#mm39ec232f73fd [id$="-barbEnd"]{fill:#666;}#mm39ec232f73fd .statediagram-cluster rect{fill:#eee;stroke:#000;stroke-width:1px;}#mm39ec232f73fd .cluster-label,#mm39ec232f73fd .nodeLabel{color:#111111;}#mm39ec232f73fd .statediagram-cluster rect.outer{rx:5px;ry:5px;}#mm39ec232f73fd .statediagram-state .divider{stroke:#000;}#mm39ec232f73fd .statediagram-state .title-state{rx:5px;ry:5px;}#mm39ec232f73fd .statediagram-cluster.statediagram-cluster .inner{fill:#ffffff;}#mm39ec232f73fd .statediagram-cluster.statediagram-cluster-alt .inner{fill:#f4f4f4;}#mm39ec232f73fd .statediagram-cluster .inner{rx:0;ry:0;}#mm39ec232f73fd .statediagram-state rect.basic{rx:5px;ry:5px;}#mm39ec232f73fd .statediagram-state rect.divider{stroke-dasharray:10,10;fill:#f4f4f4;}#mm39ec232f73fd .note-edge{stroke-dasharray:5;}#mm39ec232f73fd .statediagram-note rect{fill:#666;stroke:#999;stroke-width:1px;rx:0;ry:0;}#mm39ec232f73fd .statediagram-note rect{fill:#666;stroke:#999;stroke-width:1px;rx:0;ry:0;}#mm39ec232f73fd .statediagram-note text{fill:#fff;}#mm39ec232f73fd .statediagram-note .nodeLabel{color:#fff;}#mm39ec232f73fd .statediagram .edgeLabel{color:red;}#mm39ec232f73fd [id$="-dependencyStart"],#mm39ec232f73fd [id$="-dependencyEnd"]{fill:#666;stroke:#666;stroke-width:1;}#mm39ec232f73fd .statediagramTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mm39ec232f73fd [data-look="neo"].statediagram-cluster rect{fill:#eee;stroke:url(#mm39ec232f73fd-gradient);stroke-width:1;}#mm39ec232f73fd [data-look="neo"].statediagram-cluster rect.outer{rx:5px;ry:5px;filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm39ec232f73fd .node .neo-node{stroke:#999;}#mm39ec232f73fd [data-look="neo"].node rect,#mm39ec232f73fd [data-look="neo"].cluster rect,#mm39ec232f73fd [data-look="neo"].node polygon{stroke:url(#mm39ec232f73fd-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm39ec232f73fd [data-look="neo"].swimlane.cluster rect{filter:none;}#mm39ec232f73fd [data-look="neo"].node path{stroke:url(#mm39ec232f73fd-gradient);stroke-width:1px;}#mm39ec232f73fd [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm39ec232f73fd [data-look="neo"].node .neo-line path{stroke:#999;filter:none;}#mm39ec232f73fd [data-look="neo"].node circle{stroke:url(#mm39ec232f73fd-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm39ec232f73fd [data-look="neo"].node circle .state-start{fill:#000000;}#mm39ec232f73fd [data-look="neo"].icon-shape .icon{fill:url(#mm39ec232f73fd-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm39ec232f73fd [data-look="neo"].icon-shape .icon-neo path{stroke:url(#mm39ec232f73fd-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm39ec232f73fd :root{--mermaid-font-family:"Segoe UI",Arial,sans-serif;}</style><g><defs><marker id="mm39ec232f73fd_stateDiagram-barbEnd" refX="19" refY="7" markerWidth="20" markerHeight="14" markerUnits="strokeWidth" orient="auto"><path d="M 19,7 L11,14 L13,7 L11,0 Z"></path></marker></defs><defs><marker id="mm39ec232f73fd_stateDiagram-barbEnd-margin" refX="17" refY="7" markerWidth="20" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto"><path d="M 19,7 L11,14 L13,7 L11,0 Z" fill="#000"></path></marker></defs><g class="root"><g class="clusters"></g><g class="edges edgePaths"><path d="M281.8984375,26L281.8984375,60.5" id="mm39ec232f73fd-edge0" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 34.5 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge0" data-points="W3sieCI6MjgxLjg5ODQzNzUsInkiOjI2fSx7IngiOjI4MS44OTg0Mzc1LCJ5Ijo2Nn1d" data-look="neo" marker-end="url(#mm39ec232f73fd_stateDiagram-barbEnd-margin)"></path><path d="M262.5651041666667,103L262.5651041666667,115.92893218813452Q262.5651041666667,123 255.4940363548012,123L189.34450531186548,123Q182.2734375,123 182.2734375,130.07106781186548L182.2734375,180.92893218813452Q182.2734375,188 189.34450531186548,188L255.4940363548012,188Q262.5651041666667,188 262.5651041666667,195.07106781186548L262.5651041666667,202.5" id="mm39ec232f73fd-edge1" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 249.4267120361328 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge1" data-points="W3sieCI6MjYyLjU2NTEwNDE2NjY2NjcsInkiOjEwM30seyJ4IjoyNjIuNTY1MTA0MTY2NjY2NywieSI6MTIzfSx7IngiOjE4Mi4yNzM0Mzc1LCJ5IjoxMjN9LHsieCI6MTgyLjI3MzQzNzUsInkiOjE4OH0seyJ4IjoyNjIuNTY1MTA0MTY2NjY2NywieSI6MTg4fSx7IngiOjI2Mi41NjUxMDQxNjY2NjY3LCJ5IjoyMDh9XQ==" data-look="neo" marker-end="url(#mm39ec232f73fd_stateDiagram-barbEnd-margin)"></path><path d="M301.23177083333337,208L301.23177083333337,195.07106781186548Q301.23177083333337,188 308.30283864519885,188L374.4523696881346,188Q381.52343750000006,188 381.52343750000006,180.92893218813452L381.52343750000006,130.07106781186548Q381.52343750000006,123 374.4523696881346,123L308.30283864519885,123Q301.23177083333337,123 301.23177083333337,115.92893218813452L301.23177083333337,108.5" id="mm39ec232f73fd-edge2" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 249.42678833007812 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge2" data-points="W3sieCI6MzAxLjIzMTc3MDgzMzMzMzM3LCJ5IjoyMDh9LHsieCI6MzAxLjIzMTc3MDgzMzMzMzM3LCJ5IjoxODh9LHsieCI6MzgxLjUyMzQzNzUwMDAwMDA2LCJ5IjoxODh9LHsieCI6MzgxLjUyMzQzNzUwMDAwMDA2LCJ5IjoxMjN9LHsieCI6MzAxLjIzMTc3MDgzMzMzMzM3LCJ5IjoxMjN9LHsieCI6MzAxLjIzMTc3MDgzMzMzMzM3LCJ5IjoxMDN9XQ==" data-look="neo" marker-end="url(#mm39ec232f73fd_stateDiagram-barbEnd-margin)"></path><path d="M262.5651041666667,245L262.5651041666667,257.9289321881345Q262.5651041666667,265 255.4940363548012,265L185.91481781186548,265Q178.84375,265 178.84375,272.0710678118655L178.84375,340.5289306622556Q178.84375,347.5999984741211 185.91481781186548,347.5999984741211L255.4940363548012,347.5999984741211Q262.5651041666667,347.5999984741211 262.5651041666667,354.67106628598657L262.5651041666667,362.0999984741211" id="mm39ec232f73fd-edge3" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 273.8861389160156 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge3" data-points="W3sieCI6MjYyLjU2NTEwNDE2NjY2NjcsInkiOjI0NX0seyJ4IjoyNjIuNTY1MTA0MTY2NjY2NywieSI6MjY1fSx7IngiOjE3OC44NDM3NSwieSI6MjY1fSx7IngiOjE3OC44NDM3NSwieSI6MzQ3LjU5OTk5ODQ3NDEyMTF9LHsieCI6MjYyLjU2NTEwNDE2NjY2NjcsInkiOjM0Ny41OTk5OTg0NzQxMjExfSx7IngiOjI2Mi41NjUxMDQxNjY2NjY3LCJ5IjozNjcuNTk5OTk4NDc0MTIxMX1d" data-look="neo" marker-end="url(#mm39ec232f73fd_stateDiagram-barbEnd-margin)"></path><path d="M301.23177083333337,245L301.23177083333337,257.9289321881345Q301.23177083333337,265 308.30283864519885,265L377.8820571881346,265Q384.95312500000006,265 384.95312500000006,272.0710678118655L384.95312500000006,340.5289306622556Q384.95312500000006,347.5999984741211 377.8820571881346,347.5999984741211L308.30283864519885,347.5999984741211Q301.23177083333337,347.5999984741211 301.23177083333337,354.67106628598657L301.23177083333337,362.0999984741211" id="mm39ec232f73fd-edge4" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 273.8861389160156 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge4" data-points="W3sieCI6MzAxLjIzMTc3MDgzMzMzMzM3LCJ5IjoyNDV9LHsieCI6MzAxLjIzMTc3MDgzMzMzMzM3LCJ5IjoyNjV9LHsieCI6Mzg0Ljk1MzEyNTAwMDAwMDA2LCJ5IjoyNjV9LHsieCI6Mzg0Ljk1MzEyNTAwMDAwMDA2LCJ5IjozNDcuNTk5OTk4NDc0MTIxMX0seyJ4IjozMDEuMjMxNzcwODMzMzMzMzcsInkiOjM0Ny41OTk5OTg0NzQxMjExfSx7IngiOjMwMS4yMzE3NzA4MzMzMzMzNywieSI6MzY3LjU5OTk5ODQ3NDEyMTF9XQ==" data-look="neo" marker-end="url(#mm39ec232f73fd_stateDiagram-barbEnd-margin)"></path><path d="M213.8984375,82.33333333333334L196.06510416666666,82.33333333333334Q193.8984375,82.33333333333334 193.8984375,84.5L193.8984375,84.5Q193.8984375,86.66666666666667 196.06510416666666,86.66666666666667L208.3984375,86.66666666666667" id="mm39ec232f73fd-edge5" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 37.200687408447266 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge5" data-points="W3sieCI6MjEzLjg5ODQzNzUsInkiOjgyLjMzMzMzMzMzMzMzMzM0fSx7IngiOjE5My44OTg0Mzc1LCJ5Ijo4Mi4zMzMzMzMzMzMzMzMzNH0seyJ4IjoxOTMuODk4NDM3NSwieSI6ODYuNjY2NjY2NjY2NjY2Njd9LHsieCI6MjEzLjg5ODQzNzUsInkiOjg2LjY2NjY2NjY2NjY2NjY3fV0=" data-look="neo" marker-end="url(#mm39ec232f73fd_stateDiagram-barbEnd-margin)"></path><path d="M281.8984375,404.5999984741211L281.8984375,439.0999984741211" id="mm39ec232f73fd-edge6" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 34.5 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge6" data-points="W3sieCI6MjgxLjg5ODQzNzUsInkiOjQwNC41OTk5OTg0NzQxMjExfSx7IngiOjI4MS44OTg0Mzc1LCJ5Ijo0NDQuNTk5OTk4NDc0MTIxMX1d" data-look="neo" marker-end="url(#mm39ec232f73fd_stateDiagram-barbEnd-margin)"></path></g><g class="edgeLabels"><g class="edgeLabel" transform="translate(182.1484375, 155.5)"><g class="label" data-id="edge1" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-95.375" y="-3" width="190.75" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">model</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> finishes</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> responding</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(381.2109375, 155.5)"><g class="label" data-id="edge2" transform="translate(-0.2890625, -9.5)"><g><rect class="background" style="" x="-83.3984375" y="-3" width="167.375" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">exit</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> 2,</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> condition</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> unmet</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(178.3984375, 306.29999923706055)"><g class="label" data-id="edge3" transform="translate(0, -18.299999237060547)"><g><rect class="background" style="" x="-95.0546875" y="-3" width="190.109375" height="42.599998474121094"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">exit</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> 0,</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> or</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> stop_hook_active</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">guard</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> lets</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> it</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> stop</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(384.5234375, 306.29999923706055)"><g class="label" data-id="edge4" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-91.0703125" y="-3" width="182.140625" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">cap</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> of</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> 8</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> in</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> a</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> row</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> reached</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(100.94921875, 84.5)"><g class="label" data-id="edge5" transform="translate(-0.28515625, -9.5)"><g><rect class="background" style="" x="-88.6640625" y="-3" width="177.8984375" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">tool</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> call</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> resets</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> the</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> count</tspan></tspan></text></g></g></g></g><g class="nodes"><g class="node default" id="mm39ec232f73fd-state-root_start-0" data-look="neo" transform="translate(281.8984375, 19)"><circle class="state-start" r="7" width="14" height="14"></circle></g><g class="node  statediagram-state" id="mm39ec232f73fd-state-Working-5" data-look="neo" transform="translate(281.8984375, 84.5)"><rect class="basic label-container" style="" rx="5" ry="5" x="-68" y="-18.5" width="136" height="37"></rect><g class="label" style="" transform="translate(-60, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Working</tspan></tspan></text></g></g></g><g class="node  statediagram-state" id="mm39ec232f73fd-state-StopHook-4" data-look="neo" transform="translate(281.8984375, 226.5)"><rect class="basic label-container" style="" rx="5" ry="5" x="-68" y="-18.5" width="136" height="37"></rect><g class="label" style="" transform="translate(-60, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">StopHook</tspan></tspan></text></g></g></g><g class="node  statediagram-state" id="mm39ec232f73fd-state-Done-6" data-look="neo" transform="translate(281.8984375, 386.0999984741211)"><rect class="basic label-container" style="" rx="5" ry="5" x="-68" y="-18.5" width="136" height="37"></rect><g class="label" style="" transform="translate(-60, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Done</tspan></tspan></text></g></g></g><g class="node default" id="mm39ec232f73fd-state-root_end-6" data-look="neo" transform="translate(281.8984375, 451.5999984741211)"><g class="outer-path"><path d="M7 0 C7 0.40517908122283747, 6.964012880168563 0.816513743121899, 6.893654271085456 1.2155372436685123 C6.823295662002349 1.6145607442151257, 6.716427752933756 2.013397210557766, 6.5778483455013586 2.394141003279681 C6.439268938068961 2.7748847960015954, 6.26476736710249 3.149104622578984, 6.062177826491071 3.4999999999999996 C5.859588285879653 3.8508953774210153, 5.622755194947063 4.189128084166967, 5.362311101832846 4.499513267805774 C5.10186700871863 4.809898451444582, 4.809898451444583 5.10186700871863, 4.499513267805775 5.362311101832846 C4.189128084166968 5.622755194947063, 3.8508953774210166 5.859588285879652, 3.500000000000001 6.06217782649107 C3.149104622578985 6.264767367102489, 2.7748847960015963 6.439268938068961, 2.3941410032796817 6.5778483455013586 C2.013397210557767 6.716427752933756, 1.6145607442151264 6.823295662002349, 1.2155372436685128 6.893654271085456 C0.8165137431218992 6.964012880168563, 0.4051790812228379 7, 4.286263797015736e-16 7 C-0.405179081222837 7, -0.8165137431218985 6.964012880168563, -1.2155372436685121 6.893654271085456 C-1.6145607442151257 6.823295662002349, -2.0133972105577667 6.716427752933756, -2.394141003279681 6.5778483455013586 C-2.774884796001595 6.439268938068961, -3.149104622578983 6.26476736710249, -3.4999999999999982 6.062177826491071 C-3.8508953774210135 5.859588285879653, -4.189128084166966 5.6227551949470636, -4.499513267805773 5.362311101832848 C-4.809898451444581 5.101867008718632, -5.101867008718628 4.809898451444586, -5.3623111018328435 4.499513267805779 C-5.622755194947059 4.189128084166971, -5.859588285879649 3.8508953774210206, -6.062177826491068 3.5000000000000053 C-6.264767367102486 3.14910462257899, -6.439268938068958 2.774884796001602, -6.577848345501356 2.394141003279688 C-6.716427752933754 2.0133972105577738, -6.823295662002347 1.614560744215134, -6.893654271085454 1.215537243668521 C-6.9640128801685615 0.816513743121908, -6.999999999999999 0.4051790812228472, -7 1.0183126166254463e-14 C-7.000000000000001 -0.40517908122282686, -6.964012880168565 -0.8165137431218878, -6.893654271085459 -1.215537243668501 C-6.823295662002352 -1.6145607442151142, -6.716427752933759 -2.0133972105577542, -6.577848345501363 -2.394141003279669 C-6.439268938068967 -2.7748847960015834, -6.264767367102496 -3.149104622578972, -6.062177826491078 -3.4999999999999876 C-5.859588285879661 -3.8508953774210033, -5.6227551949470715 -4.1891280841669545, -5.362311101832856 -4.499513267805763 C-5.10186700871864 -4.809898451444571, -4.809898451444594 -5.10186700871862, -4.499513267805787 -5.362311101832836 C-4.189128084166979 -5.622755194947053, -3.850895377421028 -5.859588285879643, -3.5000000000000133 -6.062177826491062 C-3.1491046225789985 -6.264767367102482, -2.774884796001611 -6.439268938068954, -2.3941410032796973 -6.577848345501353 C-2.0133972105577835 -6.716427752933752, -1.6145607442151435 -6.823295662002345, -1.2155372436685306 -6.893654271085453 C-0.8165137431219176 -6.9640128801685615, -0.40517908122285695 -6.999999999999999, -1.9937625952807352e-14 -7 C0.4051790812228171 -7.000000000000001, 0.8165137431218781 -6.964012880168565, 1.2155372436684913 -6.89365427108546 C1.6145607442151044 -6.823295662002354, 2.013397210557745 -6.716427752933763, 2.3941410032796595 -6.5778483455013665 C2.774884796001574 -6.43926893806897, 3.149104622578963 -6.2647673671025, 3.499999999999979 -6.062177826491083 C3.8508953774209953 -5.859588285879665, 4.189128084166947 -5.622755194947077, 4.499513267805756 -5.362311101832862 C4.809898451444564 -5.1018670087186475, 5.101867008718613 -4.809898451444602, 5.362311101832829 -4.499513267805796 C5.622755194947046 -4.189128084166989, 5.859588285879637 -3.8508953774210393, 6.062177826491056 -3.500000000000025 C6.2647673671024755 -3.1491046225790105, 6.439268938068949 -2.774884796001623, 6.577848345501348 -2.3941410032797092 C6.716427752933747 -2.0133972105577955, 6.823295662002342 -1.6145607442151562, 6.893654271085451 -1.2155372436685434 C6.96401288016856 -0.8165137431219307, 6.982275711847575 -0.2025895406114567, 7 -3.2800750208310675e-14 C7.017724288152425 0.2025895406113911, 7.017724288152424 -0.2025895406114242, 7 0" stroke="none" stroke-width="0" fill="#eee" style=""></path><path d="M7 0 C7 0.40517908122283747, 6.964012880168563 0.816513743121899, 6.893654271085456 1.2155372436685123 C6.823295662002349 1.6145607442151257, 6.716427752933756 2.013397210557766, 6.5778483455013586 2.394141003279681 C6.439268938068961 2.7748847960015954, 6.26476736710249 3.149104622578984, 6.062177826491071 3.4999999999999996 C5.859588285879653 3.8508953774210153, 5.622755194947063 4.189128084166967, 5.362311101832846 4.499513267805774 C5.10186700871863 4.809898451444582, 4.809898451444583 5.10186700871863, 4.499513267805775 5.362311101832846 C4.189128084166968 5.622755194947063, 3.8508953774210166 5.859588285879652, 3.500000000000001 6.06217782649107 C3.149104622578985 6.264767367102489, 2.7748847960015963 6.439268938068961, 2.3941410032796817 6.5778483455013586 C2.013397210557767 6.716427752933756, 1.6145607442151264 6.823295662002349, 1.2155372436685128 6.893654271085456 C0.8165137431218992 6.964012880168563, 0.4051790812228379 7, 4.286263797015736e-16 7 C-0.405179081222837 7, -0.8165137431218985 6.964012880168563, -1.2155372436685121 6.893654271085456 C-1.6145607442151257 6.823295662002349, -2.0133972105577667 6.716427752933756, -2.394141003279681 6.5778483455013586 C-2.774884796001595 6.439268938068961, -3.149104622578983 6.26476736710249, -3.4999999999999982 6.062177826491071 C-3.8508953774210135 5.859588285879653, -4.189128084166966 5.6227551949470636, -4.499513267805773 5.362311101832848 C-4.809898451444581 5.101867008718632, -5.101867008718628 4.809898451444586, -5.3623111018328435 4.499513267805779 C-5.622755194947059 4.189128084166971, -5.859588285879649 3.8508953774210206, -6.062177826491068 3.5000000000000053 C-6.264767367102486 3.14910462257899, -6.439268938068958 2.774884796001602, -6.577848345501356 2.394141003279688 C-6.716427752933754 2.0133972105577738, -6.823295662002347 1.614560744215134, -6.893654271085454 1.215537243668521 C-6.9640128801685615 0.816513743121908, -6.999999999999999 0.4051790812228472, -7 1.0183126166254463e-14 C-7.000000000000001 -0.40517908122282686, -6.964012880168565 -0.8165137431218878, -6.893654271085459 -1.215537243668501 C-6.823295662002352 -1.6145607442151142, -6.716427752933759 -2.0133972105577542, -6.577848345501363 -2.394141003279669 C-6.439268938068967 -2.7748847960015834, -6.264767367102496 -3.149104622578972, -6.062177826491078 -3.4999999999999876 C-5.859588285879661 -3.8508953774210033, -5.6227551949470715 -4.1891280841669545, -5.362311101832856 -4.499513267805763 C-5.10186700871864 -4.809898451444571, -4.809898451444594 -5.10186700871862, -4.499513267805787 -5.362311101832836 C-4.189128084166979 -5.622755194947053, -3.850895377421028 -5.859588285879643, -3.5000000000000133 -6.062177826491062 C-3.1491046225789985 -6.264767367102482, -2.774884796001611 -6.439268938068954, -2.3941410032796973 -6.577848345501353 C-2.0133972105577835 -6.716427752933752, -1.6145607442151435 -6.823295662002345, -1.2155372436685306 -6.893654271085453 C-0.8165137431219176 -6.9640128801685615, -0.40517908122285695 -6.999999999999999, -1.9937625952807352e-14 -7 C0.4051790812228171 -7.000000000000001, 0.8165137431218781 -6.964012880168565, 1.2155372436684913 -6.89365427108546 C1.6145607442151044 -6.823295662002354, 2.013397210557745 -6.716427752933763, 2.3941410032796595 -6.5778483455013665 C2.774884796001574 -6.43926893806897, 3.149104622578963 -6.2647673671025, 3.499999999999979 -6.062177826491083 C3.8508953774209953 -5.859588285879665, 4.189128084166947 -5.622755194947077, 4.499513267805756 -5.362311101832862 C4.809898451444564 -5.1018670087186475, 5.101867008718613 -4.809898451444602, 5.362311101832829 -4.499513267805796 C5.622755194947046 -4.189128084166989, 5.859588285879637 -3.8508953774210393, 6.062177826491056 -3.500000000000025 C6.2647673671024755 -3.1491046225790105, 6.439268938068949 -2.774884796001623, 6.577848345501348 -2.3941410032797092 C6.716427752933747 -2.0133972105577955, 6.823295662002342 -1.6145607442151562, 6.893654271085451 -1.2155372436685434 C6.96401288016856 -0.8165137431219307, 6.982275711847575 -0.2025895406114567, 7 -3.2800750208310675e-14 C7.017724288152425 0.2025895406113911, 7.017724288152424 -0.2025895406114242, 7 0" stroke="#666" stroke-width="2" fill="none" stroke-dasharray="0 0" style=""></path><g><path d="M2.5 0 C2.5 0.14470681472244193, 2.487147457203058 0.29161205111496386, 2.46201938253052 0.4341204441673258 C2.436891307857982 0.5766288372196877, 2.3987241974763416 0.7190704323420595, 2.3492315519647713 0.8550503583141718 C2.299738906453201 0.991030284286284, 2.2374169168223177 1.124680222349637, 2.165063509461097 1.2499999999999998 C2.092710102099876 1.3753197776503625, 2.0081268553382365 1.496117172916774, 1.915111107797445 1.6069690242163481 C1.8220953602566536 1.7178208755159223, 1.7178208755159226 1.8220953602566536, 1.6069690242163484 1.915111107797445 C1.4961171729167742 2.0081268553382365, 1.375319777650363 2.0927101020998755, 1.2500000000000002 2.1650635094610964 C1.1246802223496375 2.2374169168223172, 0.9910302842862845 2.2997389064532, 0.8550503583141721 2.349231551964771 C0.7190704323420597 2.3987241974763416, 0.576628837219688 2.436891307857982, 0.43412044416732604 2.46201938253052 C0.291612051114964 2.487147457203058, 0.14470681472244212 2.5, 1.5308084989341916e-16 2.5 C-0.1447068147224418 2.5, -0.2916120511149638 2.487147457203058, -0.43412044416732576 2.46201938253052 C-0.5766288372196877 2.436891307857982, -0.7190704323420595 2.3987241974763416, -0.8550503583141718 2.3492315519647713 C-0.991030284286284 2.299738906453201, -1.124680222349637 2.2374169168223177, -1.2499999999999996 2.165063509461097 C-1.375319777650362 2.092710102099876, -1.4961171729167733 2.008126855338237, -1.6069690242163475 1.9151111077974459 C-1.7178208755159217 1.8220953602566548, -1.822095360256653 1.7178208755159234, -1.9151111077974443 1.6069690242163495 C-2.0081268553382357 1.4961171729167755, -2.0927101020998746 1.3753197776503645, -2.1650635094610955 1.250000000000002 C-2.2374169168223164 1.1246802223496395, -2.2997389064531992 0.9910302842862865, -2.34923155196477 0.8550503583141743 C-2.3987241974763407 0.7190704323420621, -2.436891307857981 0.5766288372196907, -2.4620193825305194 0.434120444167329 C-2.487147457203058 0.29161205111496724, -2.5 0.14470681472244545, -2.5 3.636830773662308e-15 C-2.5 -0.14470681472243818, -2.4871474572030587 -0.2916120511149599, -2.4620193825305208 -0.4341204441673218 C-2.436891307857983 -0.5766288372196837, -2.398724197476343 -0.7190704323420553, -2.3492315519647726 -0.8550503583141675 C-2.2997389064532023 -0.9910302842862798, -2.23741691682232 -1.1246802223496328, -2.165063509461099 -1.2499999999999956 C-2.092710102099878 -1.3753197776503583, -2.00812685533824 -1.4961171729167695, -1.9151111077974488 -1.606969024216344 C-1.8220953602566576 -1.7178208755159183, -1.7178208755159263 -1.82209536025665, -1.6069690242163523 -1.9151111077974416 C-1.4961171729167784 -2.0081268553382334, -1.3753197776503672 -2.0927101020998724, -1.2500000000000047 -2.1650635094610937 C-1.1246802223496422 -2.237416916822315, -0.9910302842862897 -2.299738906453198, -0.8550503583141776 -2.3492315519647686 C-0.7190704323420656 -2.3987241974763394, -0.5766288372196942 -2.4368913078579806, -0.43412044416733236 -2.462019382530519 C-0.29161205111497057 -2.4871474572030574, -0.1447068147224489 -2.4999999999999996, -7.120580697431198e-15 -2.5 C0.14470681472243463 -2.5000000000000004, 0.29161205111495647 -2.487147457203059, 0.4341204441673183 -2.4620193825305217 C0.5766288372196802 -2.436891307857984, 0.7190704323420518 -2.3987241974763442, 0.8550503583141642 -2.349231551964774 C0.9910302842862766 -2.2997389064532037, 1.1246802223496295 -2.2374169168223212, 1.2499999999999925 -2.165063509461101 C1.3753197776503554 -2.0927101020998804, 1.4961171729167668 -2.008126855338242, 1.6069690242163412 -1.915111107797451 C1.7178208755159157 -1.82209536025666, 1.8220953602566472 -1.7178208755159294, 1.915111107797439 -1.6069690242163557 C2.0081268553382308 -1.496117172916782, 2.09271010209987 -1.3753197776503712, 2.1650635094610915 -1.2500000000000089 C2.237416916822313 -1.1246802223496466, 2.299738906453196 -0.9910302842862939, 2.3492315519647673 -0.855050358314182 C2.3987241974763385 -0.71907043234207, 2.4368913078579792 -0.5766288372196986, 2.462019382530518 -0.4341204441673369 C2.487147457203057 -0.29161205111497523, 2.4936698970884197 -0.07235340736123454, 2.5 -1.1714553645825241e-14 C2.5063301029115803 0.07235340736121111, 2.50633010291158 -0.07235340736122292, 2.5 0" stroke="none" stroke-width="0" fill="#000" style=""></path><path d="M2.5 0 C2.5 0.14470681472244193, 2.487147457203058 0.29161205111496386, 2.46201938253052 0.4341204441673258 C2.436891307857982 0.5766288372196877, 2.3987241974763416 0.7190704323420595, 2.3492315519647713 0.8550503583141718 C2.299738906453201 0.991030284286284, 2.2374169168223177 1.124680222349637, 2.165063509461097 1.2499999999999998 C2.092710102099876 1.3753197776503625, 2.0081268553382365 1.496117172916774, 1.915111107797445 1.6069690242163481 C1.8220953602566536 1.7178208755159223, 1.7178208755159226 1.8220953602566536, 1.6069690242163484 1.915111107797445 C1.4961171729167742 2.0081268553382365, 1.375319777650363 2.0927101020998755, 1.2500000000000002 2.1650635094610964 C1.1246802223496375 2.2374169168223172, 0.9910302842862845 2.2997389064532, 0.8550503583141721 2.349231551964771 C0.7190704323420597 2.3987241974763416, 0.576628837219688 2.436891307857982, 0.43412044416732604 2.46201938253052 C0.291612051114964 2.487147457203058, 0.14470681472244212 2.5, 1.5308084989341916e-16 2.5 C-0.1447068147224418 2.5, -0.2916120511149638 2.487147457203058, -0.43412044416732576 2.46201938253052 C-0.5766288372196877 2.436891307857982, -0.7190704323420595 2.3987241974763416, -0.8550503583141718 2.3492315519647713 C-0.991030284286284 2.299738906453201, -1.124680222349637 2.2374169168223177, -1.2499999999999996 2.165063509461097 C-1.375319777650362 2.092710102099876, -1.4961171729167733 2.008126855338237, -1.6069690242163475 1.9151111077974459 C-1.7178208755159217 1.8220953602566548, -1.822095360256653 1.7178208755159234, -1.9151111077974443 1.6069690242163495 C-2.0081268553382357 1.4961171729167755, -2.0927101020998746 1.3753197776503645, -2.1650635094610955 1.250000000000002 C-2.2374169168223164 1.1246802223496395, -2.2997389064531992 0.9910302842862865, -2.34923155196477 0.8550503583141743 C-2.3987241974763407 0.7190704323420621, -2.436891307857981 0.5766288372196907, -2.4620193825305194 0.434120444167329 C-2.487147457203058 0.29161205111496724, -2.5 0.14470681472244545, -2.5 3.636830773662308e-15 C-2.5 -0.14470681472243818, -2.4871474572030587 -0.2916120511149599, -2.4620193825305208 -0.4341204441673218 C-2.436891307857983 -0.5766288372196837, -2.398724197476343 -0.7190704323420553, -2.3492315519647726 -0.8550503583141675 C-2.2997389064532023 -0.9910302842862798, -2.23741691682232 -1.1246802223496328, -2.165063509461099 -1.2499999999999956 C-2.092710102099878 -1.3753197776503583, -2.00812685533824 -1.4961171729167695, -1.9151111077974488 -1.606969024216344 C-1.8220953602566576 -1.7178208755159183, -1.7178208755159263 -1.82209536025665, -1.6069690242163523 -1.9151111077974416 C-1.4961171729167784 -2.0081268553382334, -1.3753197776503672 -2.0927101020998724, -1.2500000000000047 -2.1650635094610937 C-1.1246802223496422 -2.237416916822315, -0.9910302842862897 -2.299738906453198, -0.8550503583141776 -2.3492315519647686 C-0.7190704323420656 -2.3987241974763394, -0.5766288372196942 -2.4368913078579806, -0.43412044416733236 -2.462019382530519 C-0.29161205111497057 -2.4871474572030574, -0.1447068147224489 -2.4999999999999996, -7.120580697431198e-15 -2.5 C0.14470681472243463 -2.5000000000000004, 0.29161205111495647 -2.487147457203059, 0.4341204441673183 -2.4620193825305217 C0.5766288372196802 -2.436891307857984, 0.7190704323420518 -2.3987241974763442, 0.8550503583141642 -2.349231551964774 C0.9910302842862766 -2.2997389064532037, 1.1246802223496295 -2.2374169168223212, 1.2499999999999925 -2.165063509461101 C1.3753197776503554 -2.0927101020998804, 1.4961171729167668 -2.008126855338242, 1.6069690242163412 -1.915111107797451 C1.7178208755159157 -1.82209536025666, 1.8220953602566472 -1.7178208755159294, 1.915111107797439 -1.6069690242163557 C2.0081268553382308 -1.496117172916782, 2.09271010209987 -1.3753197776503712, 2.1650635094610915 -1.2500000000000089 C2.237416916822313 -1.1246802223496466, 2.299738906453196 -0.9910302842862939, 2.3492315519647673 -0.855050358314182 C2.3987241974763385 -0.71907043234207, 2.4368913078579792 -0.5766288372196986, 2.462019382530518 -0.4341204441673369 C2.487147457203057 -0.29161205111497523, 2.4936698970884197 -0.07235340736123454, 2.5 -1.1714553645825241e-14 C2.5063301029115803 0.07235340736121111, 2.50633010291158 -0.07235340736122292, 2.5 0" stroke="#000" stroke-width="2" fill="none" stroke-dasharray="0 0" style=""></path></g></g></g></g></g></g><defs><filter id="mm39ec232f73fd-drop-shadow" height="130%" width="130%"><feDropShadow dx="4" dy="4" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><defs><filter id="mm39ec232f73fd-drop-shadow-small" height="150%" width="150%"><feDropShadow dx="2" dy="2" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><linearGradient id="mm39ec232f73fd-gradient" gradientUnits="objectBoundingBox" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="hsl(0, 0%, 83.3333333333%)" stop-opacity="1"></stop><stop offset="100%" stop-color="hsl(0, 0%, 88.9215686275%)" stop-opacity="1"></stop></linearGradient></svg>
+  <figcaption>Run A and B ended through the guard after 2 hook runs; run C had no guard and only the cap stopped it, after 16 runs.</figcaption>
+</figure>
+    <p>So in headless mode exit 2 on Stop does keep the session going, the reason does reach the model (in run A it replied that it created the file "as the stop hook asked"), and the 8-in-a-row cap does end a runaway loop, but tool calls in between can stretch it well past 8. Run C cost about $0.009 at Haiku list price; on Opus the same loop would cost roughly 20 to 40 times that, depending on how much of it is cache reads. On a subscription the dollar figure is notional, but every one of those 23 turns draws on your window.</p>
+    <aside class="rule">Every Stop gate checks <code>stop_hook_active</code> first, and its condition is something the model has the tools to satisfy.</aside>
+    <aside class="trap">A run ended by the cap still reports <code>subtype: "success"</code> and <code>is_error: false</code>. A pipeline that trusts those fields will treat an unfinished job as done. Check the condition itself (the file, the test result), not the exit status.</aside>
+  </div>
+
+  <div class="lesson" id="m5-l6" data-title="Testing safely, and what hooks cannot do" data-minutes="15">
+    <h3>Offline first</h3>
+    <p>A command hook is a program that reads stdin and writes stdout. Test it like one, with no model involved:</p>
+    <pre><code>Get-Content samples\deny.json -Raw | powershell -NoProfile -ExecutionPolicy Bypass -File .claude\hooks\guard.ps1
+$LASTEXITCODE</code></pre>
+    <p>Where do samples come from? Record them. The Lab 1 logger saves each raw stdin to <code>hook-data\stdin-&lt;tool&gt;.json</code>, which gives you the exact shape Claude Code sends on your machine, including Windows paths and escaping. For edge cases, build the JSON with <code>ConvertTo-Json</code> from a table of commands so your test inputs are never hand-quoted. Lab 5's harness does that: 13 rows, each with an expected verdict, and a pass/fail count at the end. Add a row every time you find a new bypass.</p>
+    <p>Include a row of garbage input. Your guard should exit 2 on it. In Lab 2 it did: <code>garbage exit=2</code> with <code>guard: could not parse hook input, refusing</code> on stderr.</p>
+    <h3>Then one live run, with only that hook loaded</h3>
+    <p>Offline tests prove the script. A live run proves the wiring: the matcher matches, the path resolves, the JSON is read. Keep it small and isolated:</p>
+    <ul>
+      <li>Put the hook in a lab folder's <code>.claude/settings.json</code>, never in <code>~/.claude/settings.json</code> while it is untested.</li>
+      <li>Run <code>claude -p</code> with <code>--setting-sources project --strict-mcp-config</code> so your personal hooks, settings and MCP servers stay out.</li>
+      <li>Grant exactly the tools the test needs with <code>--allowedTools</code>, cap <code>--max-turns</code>, and point any destructive test at a harmless target (a <code>victim</code> folder with one file in it).</li>
+      <li>Check three things: <code>permission_denials</code> in the JSON result lists the call, the side effect did not happen, and the guard's own log has the DENY line.</li>
+    </ul>
+    <p>For details, <code>--debug-file &lt;path&gt;</code> writes a log with a <code>Hooks:</code> line per run, naming the event, the command, the exit status and the duration.</p>
+    <aside class="trap">In <code>-p</code> mode a settings file that fails validation is silently ignored. A trailing comma in <code>.claude/settings.json</code> does not produce an error; it produces a session with no guard. The live run with a deliberately denied command is how you find out.</aside>
+    <h3>What a hook cannot see or stop</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Gap</th><th>Why</th><th>Cover it with</th></tr>
+      <tr><td>Files added with <code>@path</code> in the prompt</td><td>Inserted while building the prompt; no tool call, so no PreToolUse</td><td><code>Read</code> deny rules</td></tr>
+      <tr><td>What a script does inside</td><td>The guard sees <code>-File x.ps1</code>, not the file</td><td>Guard <code>Write</code>/<code>Edit</code> too, or deny running local scripts</td></tr>
+      <tr><td>MCP tool calls</td><td>A <code>Bash|PowerShell</code> matcher does not cover <code>mcp__*</code></td><td>A second matcher group for the MCP tools</td></tr>
+      <tr><td>Anything already done</td><td>PostToolUse fires after the fact</td><td>PreToolUse</td></tr>
+      <tr><td>A hook that crashed or timed out</td><td>Fail-open by default on PreToolUse</td><td><code>onFailure: "block"</code></td></tr>
+      <tr><td>The user's own shell</td><td>Hooks govern Claude Code's tool calls, not you</td><td>Normal OS permissions</td></tr>
+      <tr><td>A user who edits the settings file</td><td>Project and user hooks are the user's to change</td><td>Managed settings and <code>allowManagedHooksOnly</code></td></tr>
+    </table></div>
+    <h3>Hooks are code you run</h3>
+    <p>A command hook runs with your full user rights, outside any sandbox. It can read your SSH keys, your cloud credentials and every repository you can reach. That applies to hooks you write and to hooks you install: a plugin's <code>hooks/hooks.json</code> merges with yours when the plugin is enabled and runs as you, and a repository's committed <code>.claude/settings.json</code> runs in any <code>claude -p</code> job you point at it. Read a plugin's hooks before enabling it, pin what you install, and treat a new hook in a pull request with the same suspicion as a new CI step. Plugins and marketplaces covers pinning and allowlists.</p>
+    <aside class="rule">Review a hook like a cron job: it runs unattended, as you, every time.</aside>
+    
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m5-lab1" data-title="Log every tool call and capture real hook input" data-minutes="15">
+      <p class="goal">You register a project-scoped PreToolUse hook that appends every tool call to a log and saves the raw stdin, and end up holding real input samples for the later labs.</p>
+      <ol class="steps">
+        <li><p>Make the lab folder and write the logger. It fails open: whatever happens, it exits 0.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m5/lab1/.claude/hooks | Out-Null
+Set-Location ~/bootcamp-labs/m5/lab1
+Set-Content -Encoding utf8 -Path .claude\hooks\log-tool.ps1 -Value @'
+$raw = [Console]::In.ReadToEnd()
+$in  = $raw | ConvertFrom-Json
+$dir = Join-Path $env:CLAUDE_PROJECT_DIR 'hook-data'
+New-Item -ItemType Directory -Force $dir | Out-Null
+$line = [ordered]@{ t = (Get-Date).ToString('o'); event = $in.hook_event_name; tool = $in.tool_name; input = $in.tool_input } | ConvertTo-Json -Compress -Depth 5
+Add-Content -Path (Join-Path $dir 'tool-log.jsonl') -Value $line -Encoding utf8
+Set-Content -Path (Join-Path $dir ("stdin-" + $in.tool_name + ".json")) -Value $raw -Encoding utf8
+exit 0
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output; <code>.claude\hooks\log-tool.ps1</code> exists.</p></li>
+        <li><p>Register it in the folder's own project settings, matching every tool, in exec form.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path .claude\settings.json -Value @'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${CLAUDE_PROJECT_DIR}/.claude/hooks/log-tool.ps1"],
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+'@
+Set-Content -Encoding utf8 -Path notes.txt -Value 'web-01 patched 2026-11-02'</code></pre>
+          <p class="expect"><b>Expected:</b> no output. The single quotes of the here-string keep <code>${CLAUDE_PROJECT_DIR}</code> literal; Claude Code substitutes it.</p></li>
+        <li><p>Run one headless session. <code>--setting-sources project</code> loads only this folder's settings, not your user settings and hooks, and <code>--strict-mcp-config</code> loads no MCP servers except ones passed on the command line (none here). Together they keep your personal setup out of the measurement; every lab in this module uses them. <code>--debug-file</code> writes a log with hook timings.</p>
+          <pre><code>claude -p "Read notes.txt, then list the files in this folder. Reply in one line." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read,Glob,Bash(ls *),Bash(dir *),PowerShell(Get-ChildItem *)" --max-turns 6 --output-format json --debug-file debug.log &gt; result.json
+$r = Get-Content result.json -Raw | ConvertFrom-Json
+"result: $($r.result)"; "num_turns: $($r.num_turns)  cost: $($r.total_cost_usd)"</code></pre>
+          <p class="expect"><b>Expected:</b> a one-line answer quoting "web-01 patched 2026-11-02" and listing the files; <code>num_turns</code> about 3; <code>total_cost_usd</code> about 0.002. On a subscription that cost is a list-price estimate, not a charge.</p></li>
+        <li><p>Read what the hook saw.</p>
+          <pre><code>Get-Content hook-data\tool-log.jsonl
+(Get-Content hook-data\tool-log.jsonl).Count
+Get-ChildItem hook-data | Select-Object Name, Length
+Select-String -Path debug.log -Pattern 'Hooks: PreToolUse'</code></pre>
+          <p class="expect"><b>Expected:</b> one JSON line per tool call, for example a <code>Read</code> with <code>file_path</code> and a <code>Glob</code> with <code>pattern</code> (2 lines in the verified run; the model may pick different tools). <code>hook-data</code> holds <code>stdin-Read.json</code> and <code>stdin-Glob.json</code> of about 550 bytes each. The debug log has lines like <code>Hooks: PreToolUse:Read [powershell -NoProfile ... log-tool.ps1] finished with status 0 (500ms)</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Which top-level fields does your <code>stdin-Read.json</code> contain?</b> In the verified run: <code>session_id</code>, <code>transcript_path</code>, <code>cwd</code>, <code>prompt_id</code>, <code>permission_mode</code>, <code>effort</code>, <code>hook_event_name</code>, <code>tool_name</code>, <code>tool_input</code>, <code>tool_use_id</code>.</p>
+        <p><b>Is <code>tool_input.file_path</code> relative or absolute?</b> Absolute, with backslashes. Claude Code expands paths before hooks run.</p>
+        <p><b>How long did each hook run take, and what would that cost across 50 tool calls?</b> About 440 to 500 ms each here, so roughly 20 to 25 seconds of waiting over 50 calls. That is the argument for a narrow matcher.</p>
+        <p><b>Why does the logger exit 0 even if writing fails?</b> It is observability, not enforcement. It must never block work.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m5-lab2" data-title="Deny a command, offline first, then live" data-minutes="20">
+      <p class="goal">You write a PreToolUse guard that denies any shell command mentioning prod, prove it on saved stdin samples, then watch it stop a live session, ending with a denial record and a file that was never created.</p>
+      <ol class="steps">
+        <li><p>Write the guard. It parses the input, fails closed on garbage, logs every decision and denies with JSON.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m5/lab2/.claude/hooks, ~/bootcamp-labs/m5/lab2/samples | Out-Null
+Set-Location ~/bootcamp-labs/m5/lab2
+Set-Content -Encoding utf8 -Path .claude\hooks\guard.ps1 -Value @'
+$ErrorActionPreference = 'Stop'
+$log = Join-Path $PSScriptRoot 'decisions.log'
+try {
+  $in  = [Console]::In.ReadToEnd() | ConvertFrom-Json
+  $cmd = [string]$in.tool_input.command
+} catch {
+  [Console]::Error.WriteLine("guard: could not parse hook input, refusing: $_")
+  exit 2
+}
+if ($cmd -match '(?i)\bprod\b') {
+  Add-Content -Path $log -Value ("{0} DENY  {1} {2}" -f (Get-Date -Format s), $in.tool_name, $cmd)
+  @{ hookSpecificOutput = @{
+       hookEventName = 'PreToolUse'
+       permissionDecision = 'deny'
+       permissionDecisionReason = 'Policy: nothing in this project may touch prod. Ask a human.'
+  } } | ConvertTo-Json -Compress
+  exit 0
+}
+Add-Content -Path $log -Value ("{0} PASS  {1} {2}" -f (Get-Date -Format s), $in.tool_name, $cmd)
+exit 0
+'@
+Set-Content -Encoding utf8 -Path .claude\settings.json -Value @'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.ps1"],
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Save three stdin samples in the shape Lab 1 recorded: one to deny, one to allow, one that is not JSON.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path samples\deny.json -Value '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo deployed &gt; prod.txt"}}'
+Set-Content -Encoding utf8 -Path samples\allow.json -Value '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo built &gt; build.txt"}}'
+Set-Content -Encoding utf8 -Path samples\garbage.json -Value 'this is not json'</code></pre>
+          <p class="expect"><b>Expected:</b> three files in <code>samples\</code>.</p></li>
+        <li><p>Test offline. No model is involved.</p>
+          <pre><code>foreach ($s in 'deny', 'allow', 'garbage') {
+  $out = Get-Content "samples\$s.json" -Raw | powershell -NoProfile -ExecutionPolicy Bypass -File .claude\hooks\guard.ps1
+  "{0,-8} exit={1} out={2}" -f $s, $LASTEXITCODE, ($out -join ' ')
+}</code></pre>
+          <p class="expect"><b>Expected:</b></p>
+          <pre data-cap="output"><code>deny     exit=0 out={"hookSpecificOutput":{"permissionDecision":"deny","hookEventName":"PreToolUse","permissionDecisionReason":"Policy: nothing in this project may touch prod. Ask a human."}}
+allow    exit=0 out=
+garbage  exit=2 out=</code></pre>
+          <p>plus <code>guard: could not parse hook input, refusing: Invalid JSON primitive: this.</code> on stderr for the garbage case.</p></li>
+        <li><p>Run it live. The model is told to run the denied command, and <code>--allowedTools</code> grants the shell tools, so only the hook stands in the way.</p>
+          <pre><code>claude -p "Run this exact shell command and nothing else: echo deployed &gt; prod.txt" --model haiku --setting-sources project --strict-mcp-config --allowedTools "Bash,PowerShell" --max-turns 3 --output-format json &gt; result.json
+$r = Get-Content result.json -Raw | ConvertFrom-Json
+"result: $($r.result)"
+"permission_denials: " + ($r.permission_denials | ConvertTo-Json -Compress -Depth 5)
+"prod.txt exists: " + (Test-Path prod.txt)
+Get-Content .claude\hooks\decisions.log</code></pre>
+          <p class="expect"><b>Expected:</b> <code>result</code> says a pre-tool hook blocked the command and quotes the policy reason (in the verified run Haiku added that it had not tried another way to write the file). <code>permission_denials</code> holds one entry with <code>tool_name</code> <code>Bash</code> (or <code>PowerShell</code>) and the command. <code>prod.txt exists: False</code>. The log ends with a third line, <code>DENY  Bash echo deployed &gt; prod.txt</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>The deny case exits 0. Why does it still block?</b> Exit 0 means "read my JSON", and the JSON says <code>permissionDecision: deny</code>. Exit 2 with a stderr message would block too.</p>
+        <p><b>What would happen live if the guard exited 1 on the deny case instead?</b> A non-blocking error notice, and the command runs. <code>prod.txt</code> would exist.</p>
+        <p><b>The guard fails closed on bad JSON. What happens if <code>powershell</code> itself cannot start?</b> With this settings file, the call goes ahead: a hook that fails to start is a non-blocking error. Lab 5 adds <code>"onFailure": "block"</code> to close that gap.</p>
+        <p><b>Where do you look to prove the block from a script, without reading prose?</b> <code>permission_denials</code> in the JSON result, plus the file check.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m5-lab3" data-title="Inject context and prove the model saw it" data-minutes="15">
+      <p class="goal">You add a SessionStart hook that returns <code>additionalContext</code> and a UserPromptSubmit hook that prints plain text, and prove both reached the model by comparing against a run with hooks switched off.</p>
+      <ol class="steps">
+        <li><p>Write both hooks and a settings file that turns all hooks off, for the control run.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m5/lab3/.claude/hooks | Out-Null
+Set-Location ~/bootcamp-labs/m5/lab3
+Set-Content -Encoding utf8 -Path .claude\hooks\session-context.ps1 -Value @'
+$in = [Console]::In.ReadToEnd() | ConvertFrom-Json
+@{ hookSpecificOutput = @{
+     hookEventName = 'SessionStart'
+     additionalContext = "The change-freeze code word for this repository is HERON-7. Session source: $($in.source)."
+} } | ConvertTo-Json -Compress
+'@
+Set-Content -Encoding utf8 -Path .claude\hooks\prompt-context.ps1 -Value @'
+$null = [Console]::In.ReadToEnd()
+"The on-call alias for this week is oncall-blue."
+'@
+Set-Content -Encoding utf8 -Path .claude\settings.json -Value @'
+{
+  "hooks": {
+    "SessionStart": [
+      { "matcher": "startup",
+        "hooks": [ { "type": "command", "command": "powershell",
+          "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${CLAUDE_PROJECT_DIR}/.claude/hooks/session-context.ps1"] } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "powershell",
+          "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${CLAUDE_PROJECT_DIR}/.claude/hooks/prompt-context.ps1"] } ] }
+    ]
+  }
+}
+'@
+Set-Content -Encoding utf8 -Path no-hooks.json -Value '{ "disableAllHooks": true }'</code></pre>
+          <p class="expect"><b>Expected:</b> no output. The UserPromptSubmit group has no <code>matcher</code> because that event does not support one.</p></li>
+        <li><p>Ask with the hooks on, then the same question with <code>--settings no-hooks.json</code>. The prompt forbids tools, so the model cannot go looking.</p>
+          <pre><code>$q = "What is the change-freeze code word and the on-call alias for this repository? Answer as WORD ALIAS on one line, or NONE if you do not know. Do not use any tools."
+claude -p $q --model haiku --setting-sources project --strict-mcp-config --max-turns 2 --output-format json &gt; with.json
+"with hooks:    " + (Get-Content with.json -Raw | ConvertFrom-Json).result
+claude -p $q --model haiku --setting-sources project --strict-mcp-config --settings no-hooks.json --max-turns 2 --output-format json &gt; without.json
+"without hooks: " + (Get-Content without.json -Raw | ConvertFrom-Json).result</code></pre>
+          <p class="expect"><b>Expected:</b> <code>with hooks:    HERON-7 oncall-blue</code> and <code>without hooks: NONE</code>.</p></li>
+        <li><p>Watch the hooks fire in the event stream.</p>
+          <pre><code>claude -p "Reply OK." --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format stream-json --verbose --include-hook-events &gt; stream.jsonl
+Get-Content stream.jsonl | ForEach-Object { $o = $_ | ConvertFrom-Json; "{0} {1} {2}" -f $o.type, $o.subtype, $o.hook_event }</code></pre>
+          <p class="expect"><b>Expected:</b> the first four lines are <code>system hook_started SessionStart</code>, <code>system hook_response SessionStart</code>, <code>system hook_started UserPromptSubmit</code>, <code>system hook_response UserPromptSubmit</code>, then <code>system init</code>, <code>assistant</code> and <code>result success</code> (a <code>rate_limit_event</code> line may also appear). Open a <code>hook_response</code> line: it carries <code>stdout</code>, <code>stderr</code>, <code>exit_code</code> 0 and <code>outcome</code> <code>success</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Why is the control run necessary?</b> Without it, a correct answer could be a guess or come from somewhere else in context. <code>NONE</code> with hooks off and the right words with hooks on isolates the hook as the cause.</p>
+        <p><b>The UserPromptSubmit hook printed plain text, the SessionStart hook printed JSON. Would plain text work on PreToolUse?</b> No. Plain stdout becomes context only on UserPromptSubmit, SessionStart and a couple of other events; on PreToolUse it goes to the debug log. Use <code>additionalContext</code> there.</p>
+        <p><b>Which of the two injections is paid again on every prompt?</b> The UserPromptSubmit line: it is added each time a prompt is submitted. The SessionStart line is added once and then read from cache.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m5-lab4" data-title="Gate Stop on a file, then remove the loop guard" data-minutes="20">
+      <p class="goal">You build a Stop hook that refuses to let the session end until <code>done.txt</code> exists, run it three ways, and hold the turn counts that show what the loop guard and the built-in cap really do in a headless run.</p>
+      <ol class="steps">
+        <li><p>Write the gate. It logs every run, lets the model stop if the file exists, lets it stop on a repeat attempt unless the guard is switched off by an environment variable (for step 4 only), and otherwise exits 2 with a reason.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m5/lab4/.claude/hooks | Out-Null
+Set-Location ~/bootcamp-labs/m5/lab4
+Set-Content -Encoding utf8 -Path .claude\hooks\stop-gate.ps1 -Value @'
+$in  = [Console]::In.ReadToEnd() | ConvertFrom-Json
+$log = Join-Path $PSScriptRoot 'stop.log'
+$done = Test-Path (Join-Path $env:CLAUDE_PROJECT_DIR 'done.txt')
+Add-Content $log ("{0} stop_hook_active={1} done={2}" -f (Get-Date -Format s), $in.stop_hook_active, $done)
+if ($done) { exit 0 }
+if ($in.stop_hook_active -and $env:STOP_GATE_NO_GUARD -ne '1') { exit 0 }
+[Console]::Error.WriteLine('Not finished: write a file named done.txt in the project folder containing the word ok, then stop.')
+exit 2
+'@
+Set-Content -Encoding utf8 -Path .claude\settings.json -Value @'
+{
+  "hooks": {
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "powershell",
+          "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${CLAUDE_PROJECT_DIR}/.claude/hooks/stop-gate.ps1"] } ] }
+    ]
+  }
+}
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Run A: the model may use <code>Write</code>, so it can satisfy the gate. The prompt says nothing about the file.</p>
+          <pre><code>claude -p "Say hello in one word." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Write" --max-turns 5 --output-format json &gt; a.json
+$a = Get-Content a.json -Raw | ConvertFrom-Json
+"num_turns=$($a.num_turns) subtype=$($a.subtype) cost=$($a.total_cost_usd)"
+"done.txt: " + (Test-Path done.txt) + " " + (Get-Content done.txt -ErrorAction SilentlyContinue)
+Get-Content .claude\hooks\stop.log</code></pre>
+          <p class="expect"><b>Expected:</b> <code>num_turns</code> about 4, <code>subtype=success</code>, cost about $0.003; <code>done.txt: True ok</code>; the result mentions creating the file because the stop hook asked. Two log lines: <code>stop_hook_active=False done=False</code>, then <code>stop_hook_active=True done=True</code>.</p></li>
+        <li><p>Run B: no tools allowed, so the gate cannot be satisfied. The loop guard should let the session end on the second Stop.</p>
+          <pre><code>Remove-Item done.txt, .claude\hooks\stop.log -ErrorAction SilentlyContinue
+claude -p "Say hello in one word." --model haiku --setting-sources project --strict-mcp-config --max-turns 5 --output-format json &gt; b.json
+$b = Get-Content b.json -Raw | ConvertFrom-Json
+"num_turns=$($b.num_turns) subtype=$($b.subtype) denials=$(@($b.permission_denials).Count)"
+"done.txt: " + (Test-Path done.txt)
+Get-Content .claude\hooks\stop.log</code></pre>
+          <p class="expect"><b>Expected:</b> <code>num_turns</code> about 3, <code>denials=1</code> (the model tried <code>Write</code> and nobody could approve it), <code>done.txt: False</code>; two log lines, the second with <code>stop_hook_active=True done=False</code>, where the guard let it stop.</p></li>
+        <li><p>Run C: switch the loop guard off and repeat. This is the runaway case; <code>--max-turns 30</code> is a backstop.</p>
+          <pre><code>Remove-Item done.txt, .claude\hooks\stop.log -ErrorAction SilentlyContinue
+$env:STOP_GATE_NO_GUARD = '1'
+claude -p "Say hello in one word." --model haiku --setting-sources project --strict-mcp-config --max-turns 30 --output-format json &gt; c.json
+Remove-Item Env:\STOP_GATE_NO_GUARD
+$c = Get-Content c.json -Raw | ConvertFrom-Json
+"result=[$($c.result)] num_turns=$($c.num_turns) subtype=$($c.subtype) is_error=$($c.is_error) denials=$(@($c.permission_denials).Count) cost=$($c.total_cost_usd)"
+"stop hook runs: " + (Get-Content .claude\hooks\stop.log).Count</code></pre>
+          <p class="expect"><b>Expected:</b> in the verified run, 16 Stop hook runs, <code>num_turns=23</code>, 4 denied <code>Write</code> attempts, an empty <code>result</code>, <code>subtype=success</code>, <code>is_error=False</code>, cost about $0.009. Your counts will vary with how often the model retries the write, because each tool call resets the 8-in-a-row cap.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>What does exit 2 on Stop do in a headless run?</b> It keeps the session going and gives the model the stderr text as the reason; the model acts on it (run A).</p>
+        <p><b>Why did run C take 16 hook runs and not 8?</b> The cap counts consecutive continuations with no tool call in between. Each denied <code>Write</code> attempt was a tool call and reset the count.</p>
+        <p><b>Run C reports <code>subtype=success</code>. Was the job done?</b> No: <code>done.txt</code> does not exist and the result is empty. Check the condition, not the status field.</p>
+        <p><b>What would run C cost on Opus 5.5 instead of Haiku 5.5?</b> Opus 5.5 input and output list prices are 40 times Haiku 5.5's (for prompts under 100k tokens), but its cache reads are only 20 times dearer (0.05x versus 0.1x of input). A loop made mostly of cache reads therefore lands between about $0.18 and $0.35, before any difference in output length.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m5-lab5" data-title="Guard your own riskiest command, with a test table" data-minutes="30">
+      <p class="goal">You write a guard for the command you would least like an agent to run on your systems, prove it against a table of allowed and denied spellings including wrapper bypasses, and confirm it in one live run against a harmless target.</p>
+      <ol class="steps">
+        <li><p>Pick your command. Write it down with three ways a shell could spell it differently: a wrapper (<code>cmd /c</code>, <code>powershell -Command</code>, <code>bash -c</code>), an alias or short flag, and an argument order. The worked example below guards force pushes and recursive deletes; replace its <code>$rules</code> with yours.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m5/lab5/.claude/hooks, ~/bootcamp-labs/m5/lab5/victim | Out-Null
+Set-Location ~/bootcamp-labs/m5/lab5
+Set-Content -Encoding utf8 -Path victim\keep.txt -Value 'still here'
+Set-Content -Encoding utf8 -Path .claude\hooks\guard.ps1 -Value @'
+$log = Join-Path $PSScriptRoot 'decisions.log'
+try {
+  $in  = [Console]::In.ReadToEnd() | ConvertFrom-Json
+  $cmd = [string]$in.tool_input.command
+} catch {
+  [Console]::Error.WriteLine('guard: unreadable hook input, refusing')
+  exit 2
+}
+$rules = [ordered]@{
+  'force push'       = '(?i)\bgit\b.*\bpush\b.*(\s--force(-with-lease)?\b|\s-f\b|\s\+\S)'
+  'recursive delete' = '(?i)\b(remove-item|ri|rm|del|erase|rd|rmdir)\b[^|;&amp;]*\s(-r|-recurse|-rf|-fr|/s)\b'
+  'encoded command'  = '(?i)\b(powershell|pwsh)(\.exe)?\b.*\s-e(c|nc|ncodedcommand)?\b'
+}
+foreach ($name in $rules.Keys) {
+  if ($cmd -match $rules[$name]) {
+    Add-Content $log ("{0} DENY ({1}) {2}" -f (Get-Date -Format s), $name, $cmd)
+    @{ hookSpecificOutput = @{ hookEventName = 'PreToolUse'; permissionDecision = 'deny'
+         permissionDecisionReason = "Blocked by project guard: $name. Ask a human to run it." } } | ConvertTo-Json -Compress
+    exit 0
+  }
+}
+Add-Content $log ("{0} PASS {1}" -f (Get-Date -Format s), $cmd)
+exit 0
+'@
+Set-Content -Encoding utf8 -Path .claude\settings.json -Value @'
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Bash|PowerShell",
+        "hooks": [ { "type": "command", "command": "powershell",
+          "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.ps1"],
+          "timeout": 30, "onFailure": "block" } ] }
+    ]
+  }
+}
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output. Note <code>"onFailure": "block"</code>: if the script cannot start, crashes or times out, the call is blocked instead of allowed.</p></li>
+        <li><p>Write the test table: at least 3 allowed rows (commands that look close but are fine) and at least 6 denied rows covering your wrapper, alias and argument-order spellings. A double quote inside a CSV field is written twice.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path cases.csv -Value @'
+command,expect
+git status,allow
+git push origin main,allow
+git push --force origin main,deny
+git push origin +main,deny
+"cmd /c ""git push -f origin main""",deny
+bash -c 'rm -rf build',deny
+rm -r -f build,deny
+Remove-Item .\build -Recurse -Force,deny
+"powershell -Command ""ri build -r""",deny
+rd /s /q build,deny
+powershell -EncodedCommand cgBtACAALQByAGYAIABiAHUAaQBsAGQA,deny
+Remove-Item build.log,allow
+Get-ChildItem -Recurse,allow
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> <code>cases.csv</code> with 13 data rows.</p></li>
+        <li><p>Write and run the harness. It builds each stdin with <code>ConvertTo-Json</code>, so no test input is hand-quoted, and times each call.</p>
+          <pre><code>Set-Content -Encoding utf8 -Path test-guard.ps1 -Value @'
+$fail = 0
+foreach ($c in Import-Csv cases.csv) {
+  $json = @{ hook_event_name = 'PreToolUse'; tool_name = 'Bash'; tool_input = @{ command = $c.command } } | ConvertTo-Json -Compress
+  $sw  = [Diagnostics.Stopwatch]::StartNew()
+  $out = $json | powershell -NoProfile -ExecutionPolicy Bypass -File .claude\hooks\guard.ps1
+  $ms  = $sw.ElapsedMilliseconds
+  $got = if ($LASTEXITCODE -eq 2 -or "$out" -match '"permissionDecision":\s*"deny"') { 'deny' } else { 'allow' }
+  $ok  = if ($got -eq $c.expect) { 'ok  ' } else { $fail++; 'FAIL' }
+  "{0} {1,-5} {2,5}ms  {3}" -f $ok, $got, $ms, $c.command
+}
+"failures: $fail"
+'@
+.\test-guard.ps1</code></pre>
+          <p class="expect"><b>Expected</b> (worked example):</p>
+          <pre data-cap="output"><code>ok   allow   275ms  git status
+ok   allow   249ms  git push origin main
+ok   deny    353ms  git push --force origin main
+ok   deny    378ms  git push origin +main
+ok   deny    286ms  cmd /c "git push -f origin main"
+ok   deny    368ms  bash -c 'rm -rf build'
+ok   deny    602ms  rm -r -f build
+ok   deny    375ms  Remove-Item .\build -Recurse -Force
+ok   deny    312ms  powershell -Command "ri build -r"
+ok   deny    325ms  rd /s /q build
+ok   deny    361ms  powershell -EncodedCommand cgBtACAALQByAGYAIABiAHUAaQBsAGQA
+ok   allow   433ms  Remove-Item build.log
+ok   allow   378ms  Get-ChildItem -Recurse
+failures: 0</code></pre>
+          <p>If a row fails, fix the rule, not the row. Then add a row for every bypass you can think of and run again.</p></li>
+        <li><p>One live run, against the harmless <code>victim</code> folder. For your own command, choose a target that costs nothing if the guard fails.</p>
+          <pre><code>claude -p "Run this exact shell command and nothing else: rm -rf victim" --model haiku --setting-sources project --strict-mcp-config --allowedTools "Bash,PowerShell" --max-turns 3 --output-format json &gt; live.json
+$r = Get-Content live.json -Raw | ConvertFrom-Json
+"denials: " + @($r.permission_denials).Count + "  victim\keep.txt exists: " + (Test-Path victim\keep.txt)
+Get-Content .claude\hooks\decisions.log -Tail 1</code></pre>
+          <p class="expect"><b>Expected:</b> <code>denials: 1  victim\keep.txt exists: True</code> and a last log line <code>DENY (recursive delete) rm -rf victim</code>.</p></li>
+        <li><p>Done-test for your own guard: <code>failures: 0</code> on a table of at least 9 rows that includes a wrapper, an alias or short flag and a garbage-input case you add by hand; one live run with <code>denials: 1</code> and the target intact. Only then copy the hook into a real project's <code>.claude/settings.json</code>. Nothing in this lab touched anything outside <code>~/bootcamp-labs/m5</code>, so there is nothing to remove.</p>
+          <p class="expect"><b>Expected:</b> a <code>guard.ps1</code>, a <code>cases.csv</code> and a passing <code>test-guard.ps1</code> you can rerun after every rule change.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Does <code>echo "never git push --force"</code> pass or fail the worked guard?</b> It is denied: the rule matches anywhere in the string. That false positive is the price of catching wrappers, and the reason text tells the model what to do instead.</p>
+        <p><b>Name one bypass this guard still misses.</b> Writing a script with the Write tool and running it by path; a variable built from pieces (<code>$a='re'+'move-item'</code>) passed to <code>Invoke-Expression</code>; any MCP tool that deletes files. Each needs its own rule or a different control.</p>
+        <p><b>Why test with <code>tool_name</code> Bash only when the matcher also covers PowerShell?</b> The guard reads <code>tool_input.command</code>, which both tools use the same way. If your rules depend on the tool, add PowerShell rows.</p>
+        <p><b>What does <code>onFailure: "block"</code> change if someone deletes <code>guard.ps1</code>?</b> Every shell call in that project is blocked with a "failed; blocking because onFailure is block" error, instead of every call being allowed.</p>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Events used in this module</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Event</th><th>Matcher filters on</th><th>Exit 2 does</th><th>Decision fields</th></tr>
+      <tr><td><code>SessionStart</code></td><td><code>startup</code>, <code>resume</code>, <code>clear</code>, <code>compact</code>, <code>fork</code></td><td>Shows stderr to user only</td><td><code>additionalContext</code>; plain stdout becomes context</td></tr>
+      <tr><td><code>UserPromptSubmit</code></td><td>no matcher</td><td>Rejects the prompt</td><td><code>decision: "block"</code>, <code>reason</code>, <code>additionalContext</code>; plain stdout becomes context</td></tr>
+      <tr><td><code>PreToolUse</code></td><td>tool name</td><td>Blocks the call; stderr to model</td><td><code>hookSpecificOutput.permissionDecision</code> (allow, deny, ask, defer), <code>permissionDecisionReason</code>, <code>updatedInput</code>, <code>additionalContext</code></td></tr>
+      <tr><td><code>PostToolUse</code></td><td>tool name</td><td>Shows stderr to model; tool already ran</td><td><code>decision: "block"</code>, <code>reason</code>, <code>additionalContext</code></td></tr>
+      <tr><td><code>Stop</code></td><td>no matcher</td><td>Model keeps working; stderr is the reason</td><td><code>decision: "block"</code>, <code>reason</code>, <code>additionalContext</code></td></tr>
+      <tr><td><code>SubagentStop</code></td><td>agent type</td><td>Subagent keeps working</td><td>as Stop</td></tr>
+    </table></div>
+    <h3>Handler fields (command type)</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Meaning</th></tr>
+      <tr><td><code>type</code></td><td><code>command</code>, <code>http</code>, <code>mcp_tool</code>, <code>prompt</code>, <code>agent</code></td></tr>
+      <tr><td><code>command</code></td><td>Executable (exec form, with <code>args</code>) or a shell string (shell form)</td></tr>
+      <tr><td><code>args</code></td><td>Argument list; presence selects exec form, no shell</td></tr>
+      <tr><td><code>shell</code></td><td><code>bash</code> or <code>powershell</code> for shell form; ignored with <code>args</code></td></tr>
+      <tr><td><code>timeout</code></td><td>Seconds; default 600, 30 on UserPromptSubmit</td></tr>
+      <tr><td><code>onFailure</code></td><td><code>continue</code> or <code>block</code>; 2.1.295 or later; no effect on Stop</td></tr>
+      <tr><td><code>if</code></td><td>One permission-rule pattern, e.g. <code>Bash(git *)</code>; tool events only; best-effort</td></tr>
+      <tr><td><code>async</code></td><td>Run in background; cannot block</td></tr>
+    </table></div>
+    <h3>Locations</h3>
+    <div class="tablewrap"><table>
+      <tr><th>File</th><th>Scope</th></tr>
+      <tr><td><code>~/.claude/settings.json</code></td><td>User, all projects</td></tr>
+      <tr><td><code>.claude/settings.json</code></td><td>Project, committed</td></tr>
+      <tr><td><code>.claude/settings.local.json</code></td><td>Project, this machine</td></tr>
+      <tr><td>Managed policy settings</td><td>Organisation; cannot be disabled from below</td></tr>
+      <tr><td>Plugin <code>hooks/hooks.json</code></td><td>While enabled; uses <code>${CLAUDE_PLUGIN_ROOT}</code></td></tr>
+      <tr><td>Skill or subagent frontmatter <code>hooks:</code></td><td>After the skill is invoked / while the subagent runs</td></tr>
+    </table></div>
+    <h3>Flags and settings</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Flag or key</th><th>Use</th></tr>
+      <tr><td><code>--setting-sources project</code></td><td>Load only project settings (no user hooks)</td></tr>
+      <tr><td><code>--strict-mcp-config</code></td><td>Load only MCP servers from <code>--mcp-config</code></td></tr>
+      <tr><td><code>--settings &lt;file-or-json&gt;</code></td><td>Extra settings for one run, e.g. <code>{"disableAllHooks": true}</code></td></tr>
+      <tr><td><code>--debug-file &lt;path&gt;</code></td><td>Debug log with a <code>Hooks:</code> line per run: event, command, status, duration</td></tr>
+      <tr><td><code>--output-format stream-json --verbose --include-hook-events</code></td><td><code>hook_started</code> / <code>hook_response</code> events in the stream</td></tr>
+      <tr><td><code>--bare</code></td><td>Skip hooks, plugins, MCP and memory entirely; needs <code>ANTHROPIC_API_KEY</code></td></tr>
+      <tr><td><code>disableAllHooks</code></td><td>Settings key; turns hooks off at the levels it can reach</td></tr>
+      <tr><td><code>allowManagedHooksOnly</code></td><td>Managed key; only managed (and force-enabled plugin) hooks run</td></tr>
+      <tr><td><code>CLAUDE_CODE_STOP_HOOK_BLOCK_CAP</code></td><td>Env var; raises the 8-consecutive Stop continuation cap</td></tr>
+      <tr><td><code>${CLAUDE_PROJECT_DIR}</code></td><td>Project root, in commands and as an env var in the hook</td></tr>
+    </table></div>
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>Guard detects the command, command runs anyway</td><td>Script exits 1</td><td><code>exit 2</code> or JSON <code>deny</code> with exit 0</td></tr>
+      <tr><td>Valid JSON deny is ignored, no error</td><td><code>permissionDecision</code> at top level, or extra text before <code>{</code></td><td>Put it inside <code>hookSpecificOutput</code>; print nothing else; use exec form and <code>-NoProfile</code></td></tr>
+      <tr><td>Hook never fires on Windows</td><td>Matcher <code>Bash</code> while the shell tool is <code>PowerShell</code></td><td>Matcher <code>Bash|PowerShell</code></td></tr>
+      <tr><td>Hook never fires in <code>-p</code></td><td>Settings file invalid (silently ignored) or wrong folder</td><td>Validate the JSON; check the <code>hook_started</code> events or the debug log</td></tr>
+      <tr><td>Everything allowed after a deploy</td><td>Script path wrong or script crashes; fail-open</td><td><code>"onFailure": "block"</code>; watch the first live run for a hook error</td></tr>
+      <tr><td>Session crawls</td><td><code>*</code> matcher, slow interpreter start, network call in hook</td><td>Narrow matcher, <code>if</code> filter, no network in the decision path</td></tr>
+      <tr><td>Stop hook loops, bill climbs</td><td>Condition cannot be met, no <code>stop_hook_active</code> check</td><td>Check <code>stop_hook_active</code>; make sure the model has the tools to comply</td></tr>
+      <tr><td>Pipeline reports success on unfinished work</td><td>Cap ended a Stop loop; <code>subtype</code> still <code>success</code></td><td>Verify the condition itself after the run</td></tr>
+      <tr><td>Injected context ignored or reported back to you</td><td>Phrased as system-style commands</td><td>State plain facts</td></tr>
+      <tr><td>Stale facts after resume</td><td>UserPromptSubmit context replayed, not re-run</td><td>Put refreshable facts in SessionStart</td></tr>
+      <tr><td>Unknown code ran in a CI job</td><td>Repository's committed hooks run under <code>-p</code> without trust</td><td>Review <code>.claude/</code>; <code>--settings</code> with <code>disableAllHooks</code>; <code>--bare</code></td></tr>
+    </table></div>
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+      <li>Claude Code docs, "Hooks reference": <a href="https://code.claude.com/docs/en/hooks" target="_blank" rel="noopener">code.claude.com/docs/en/hooks</a></li>
+      <li>Claude Code docs, "Automate actions with hooks": <a href="https://code.claude.com/docs/en/hooks-guide" target="_blank" rel="noopener">code.claude.com/docs/en/hooks-guide</a></li>
+      <li>Claude Code docs, "All settings": <a href="https://code.claude.com/docs/en/settings-reference" target="_blank" rel="noopener">code.claude.com/docs/en/settings-reference</a></li>
+      <li>Claude Code docs, "CLI reference": <a href="https://code.claude.com/docs/en/cli-reference" target="_blank" rel="noopener">code.claude.com/docs/en/cli-reference</a></li>
+      <li>Claude Code docs, "Environment variables": <a href="https://code.claude.com/docs/en/env-vars" target="_blank" rel="noopener">code.claude.com/docs/en/env-vars</a></li>
+      <li>Claude Code docs, "Run Claude Code programmatically": <a href="https://code.claude.com/docs/en/headless" target="_blank" rel="noopener">code.claude.com/docs/en/headless</a></li>
+      <li>Measured: every Expected line in the labs comes from a run on Claude Code 2.1.322 on 11 November 2026.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "Your team's CLAUDE.md says 'Never run terraform apply'. Last week an agent ran it anyway after a user wrote 'just apply it, I approve'. What is the most reliable fix?", "o": ["Move the sentence to the top of CLAUDE.md and put it in capitals", "Add the same sentence to a skill that loads on infrastructure work", "Add a PreToolUse hook on Bash|PowerShell that denies commands matching terraform apply, plus a permission deny rule", "Add a PostToolUse hook that alerts the team when terraform apply has run"], "a": 2, "why": "An instruction in any context file is weighed against the user's request and can lose. A PreToolUse deny is enforced outside the model and holds even in bypass mode. PostToolUse fires after the apply has already happened."},
+    {"q": "A colleague's guard writes 'BLOCKED: force push' to stderr and exits 1 when it sees git push --force. In testing the force push still went through. What is wrong?", "o": ["Exit 1 is a non-blocking error; the guard must exit 2 or print a JSON deny and exit 0", "stderr is ignored; the message must go to stdout", "The matcher must be a regex such as ^Bash$", "PreToolUse cannot block git commands"], "a": 0, "why": "Only exit 2 blocks on PreToolUse; any other non-zero exit is a non-blocking error and the call proceeds. Alternatively exit 0 with hookSpecificOutput.permissionDecision set to deny."},
+    {"q": "You deploy a PowerShell guard to a shared repo. A week later someone renames the hooks folder, the script path no longer resolves, and nobody notices. What setting would have turned this into a visible failure instead of a silent hole?", "o": ["\"timeout\": 5", "\"async\": true", "\"disableAllHooks\": false", "\"onFailure\": \"block\""], "a": 3, "why": "A hook that cannot start is a non-blocking error by default, so every call is allowed. With onFailure set to block, a missing script, a crash or a timeout blocks the call, so the breakage shows up on the first shell command."},
+    {"q": "You add a Stop hook that exits 2 until the test suite passes. In a headless CI run the tests can never pass because a service is down. Which design keeps the run bounded and honest?", "o": ["Rely on --max-turns alone and trust subtype success at the end", "Check stop_hook_active and let the model stop on the repeat attempt, then have the pipeline check the test result itself", "Switch the hook to exit 1 so the model can stop whenever it wants", "Move the check to SessionStart so it runs only once"], "a": 1, "why": "stop_hook_active tells the hook it already forced one continuation, so it can release the model. The 8-in-a-row cap also ends a loop, but tool calls reset it and the run still reports subtype success, so the pipeline must verify the real condition."},
+    {"q": "You plan a nightly claude -p job that reviews pull requests from external contributors in a fresh clone. What is the hook-related risk to handle first?", "o": ["Hooks do not run in -p mode, so your guards will be off", "UserPromptSubmit hooks time out after 30 seconds in CI", "A contributor can commit .claude/settings.json with hooks, and -p runs them without a trust prompt, as your CI user", "Plugins installed on the runner will override the repository's hooks"], "a": 2, "why": "In -p mode Claude Code treats the folder as trusted, so committed project hooks run arbitrary code with the job's rights. Review the .claude folder, pass --settings with disableAllHooks, or use --bare for untrusted repositories."}
+  ]</script>
+</section>
+
+    <section class="view" id="view-share" hidden>
+      <div>
+        <div class="kicker">Export and share</div>
+        <h2>Hand this module on</h2>
+        <p class="lede">This module is a complete page on its own: briefing, labs, judgment calls and cheat sheet. It names no organization, host, account or internal tool, and every lab runs on plain Claude Code in a scratch folder.</p>
+      </div>
+      <div class="panel">
+        <h3>1. The link</h3>
+        <p>When you are reading this on claude.ai, use Share on this page. A viewer needs only the link. Each module has its own link, so you can send one module to one person. Their progress stays in their own browser and is never visible to you.</p>
+        <h3>2. One HTML file</h3>
+        <p>This module is also the single self-contained file <code>m05-hooks.html</code>. It needs no server and no network: mail it, put it on a file share, or open it from a USB stick. Offline it falls back to system fonts; everything else is identical, diagrams and instruments included.</p>
+        <div class="row"><button class="btn" type="button" data-save="m05-hooks.html">Save this module as a file</button><span class="note"></span></div>
+        <h3>3. The whole set</h3>
+        <p>All modules plus the catalogue page (<code>index.html</code>) form one folder of files that link to each other. Keep them together and the links between modules work offline. The same folder works behind any static web server with nothing to configure.</p>
+        <h3>Moving progress between copies</h3>
+        <p>The link, the file and a hosted copy each keep their own progress. Use the progress code on this module's overview to carry it across.</p>
+        
+      </div>
+    </section>
+    <div class="pager" id="pager"></div>
+  </main>
+</div>
+
+<script type="application/json" id="manifest">{"edition":"portable","kind":"file","self":"m5","catalogue":"index.html","modules":[{"id":"m1","title":"Context","sub":"What the model sees, and what it costs to show it","level":"foundation","prereq":[],"minutes":240,"lessons":6,"labs":5,"calls":5,"href":"m01-context.html"},{"id":"m2","title":"Tokens and their price","sub":"Input, output, cache write, cache read","level":"foundation","prereq":[],"minutes":220,"lessons":6,"labs":5,"calls":5,"href":"m02-tokens.html"},{"id":"m3","title":"Skills","sub":"Instructions that load only when needed","level":"practitioner","prereq":["m1"],"minutes":230,"lessons":6,"labs":5,"calls":5,"href":"m03-skills.html"},{"id":"m4","title":"Commands","sub":"Built-in and your own","level":"practitioner","prereq":["m1"],"minutes":245,"lessons":6,"labs":5,"calls":5,"href":"m04-commands.html"},{"id":"m5","title":"Hooks","sub":"Rules the model cannot talk its way past","level":"practitioner","prereq":[],"minutes":200,"lessons":6,"labs":5,"calls":5,"href":"m05-hooks.html"},{"id":"m6","title":"Plugins and marketplaces","sub":"Package it, publish it, control it","level":"advanced","prereq":["m3","m5"],"minutes":255,"lessons":5,"labs":5,"calls":5,"href":"m06-marketplaces.html"},{"id":"m7","title":"Headless runs and subagents","sub":"Claude Code as a program, and as a team","level":"practitioner","prereq":["m1","m2"],"minutes":220,"lessons":6,"labs":5,"calls":5,"href":"m07-agents.html"},{"id":"m8","title":"Orchestration","sub":"Briefs, handoffs, queues and the ways they fail","level":"advanced","prereq":["m7"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m08-orchestration.html"},{"id":"m9","title":"Telemetry","sub":"See tokens, cache and cost as they happen","level":"practitioner","prereq":["m2"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m09-telemetry.html"},{"id":"m10","title":"Cutting cost","sub":"The levers, and proof that each one worked","level":"advanced","prereq":["m2","m9"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m10-cost.html"},{"id":"m11","title":"Evals and A/B testing","sub":"Compare prompts, models and setups without fooling yourself","level":"advanced","prereq":["m2","m7"],"minutes":250,"lessons":6,"labs":5,"calls":5,"href":"m11-ab-testing.html"},{"id":"m12","title":"Session transcripts","sub":"The anatomy of the JSONL behind every session","level":"practitioner","prereq":["m1","m2"],"minutes":215,"lessons":6,"labs":5,"calls":5,"href":"m12-transcripts.html"},{"id":"m13","title":"Models and ways to teach them","sub":"Model tiers, retrieval, ingestion, fine-tuning and what you will actually use","level":"foundation","prereq":[],"minutes":230,"lessons":6,"labs":5,"calls":5,"href":"m13-models.html"},{"id":"m14","title":"Agent SDK and agent teams","sub":"Your own agent loop, and sessions that message each other","level":"advanced","prereq":["m7"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m14-agent-sdk.html"},{"id":"m15","title":"The wider ecosystem","sub":"Multiplexers, community skills and how to vet them","level":"practitioner","prereq":["m3"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m15-ecosystem.html"},{"id":"m16","title":"Security","sub":"Permissions, sandboxing, prompt injection and what you install","level":"practitioner","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m16-security.html"},{"id":"m17","title":"Daily workflow","sub":"Plan mode, rewind, worktrees, effort and git habits","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m17-workflow.html"},{"id":"m18","title":"Unattended and CI","sub":"GitHub Actions, review in the pipeline, scheduled runs","level":"advanced","prereq":["m7","m16"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m18-ci.html"},{"id":"m19","title":"Claude API building blocks","sub":"Tool use, structured outputs, vision, citations, batch, computer use","level":"practitioner","prereq":["m2"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m19-api.html"},{"id":"m20","title":"Writing for agents","sub":"Briefs, specs, handoffs and CLAUDE.md design","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m20-writing.html"},{"id":"m21","title":"Where Claude Code runs","sub":"Terminal, VS Code, JetBrains, desktop and web compared","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m21-surfaces.html"},{"id":"m22","title":"Sensitive data","sub":"PHI, PII and secrets: what leaves the machine and how to stop it","level":"practitioner","prereq":["m5","m16"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m22-sensitive-data.html"},{"id":"m23","title":"MCP: anatomy of the protocol","sub":"JSON-RPC, capabilities, transports, auth, and a server you build","level":"practitioner","prereq":["m1"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m23-mcp.html"},{"id":"m24","title":"MCP server or CLI tool","sub":"The same job both ways, measured in tokens and turns","level":"advanced","prereq":["m2","m23"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m24-mcp-or-cli.html"}]}</script>
+<script>
+/* AI/LLM Bootcamp page script. One file for the catalogue page and every module page.
+   Reads the manifest (module list, links, edition) that the build embeds, then:
+   - theme: a "Theme:" dropdown at the top right, remembered per viewer; light or dark follows the host page or the system
+   - module page: part navigation on the hash (#overview, #l1.., #labs, #calls, #ref, #share), lab step ticks, lab done,
+     drill answers, progress code. State is kept per module in localStorage, so each module page stands alone.
+   - catalogue page: module cards with level, time and prerequisites, a level filter, and progress where it can be read. */
+(function () {
+  'use strict';
+  var PRISTINE = ''; try { PRISTINE = '<!doctype html>\n' + document.documentElement.outerHTML; } catch (e) {}
+  var root = document.documentElement;
+  var MAN = { modules: [] }; try { MAN = JSON.parse(document.getElementById('manifest').textContent); } catch (e) {}
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function put(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function modById(id) { return MAN.modules.filter(function (x) { return x.id === id; })[0]; }
+  function num(id) { return +id.slice(1); }
+  function mins(n) { n = +n || 0; return n >= 60 ? (Math.round(n / 6) / 10) + ' h' : n + ' min'; }
+  function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+  function link(a, href) { if (href) a.href = href; return a; }
+
+  /* ---- theme ---- */
+  var THEMES = [['a', 'Meter'], ['b', 'Workbench'], ['c', 'Blueprint'], ['d', 'Classroom'], ['e', 'Console']];
+  var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null, forced = null;
+  function mode() { var t = forced || root.getAttribute('data-theme'); root.setAttribute('data-mode', t === 'dark' || (t !== 'light' && mq && mq.matches) ? 'dark' : 'light'); }
+  var sel = document.getElementById('theme');
+  function pick(s, keep) { if (!/^[a-e]$/.test(s)) s = 'a'; root.setAttribute('data-style', s); if (sel) sel.value = s; if (keep) put('ai-bootcamp-theme', s); }
+  if (sel) {
+    THEMES.forEach(function (t) { var o = el('option', '', t[1]); o.value = t[0]; sel.appendChild(o); });
+    sel.addEventListener('change', function () { pick(sel.value, true); });
+  }
+  var qs = /[?&]style=([1-5a-e])/.exec(location.search), qm = /[?&]mode=(light|dark)/.exec(location.search);
+  if (qm) forced = qm[1];
+  pick(qs ? (/\d/.test(qs[1]) ? 'abcde'.charAt(+qs[1] - 1) : qs[1]) : (get('ai-bootcamp-theme') || 'a'), false);
+  mode();
+  if (mq && mq.addEventListener) mq.addEventListener('change', mode);
+  try { new MutationObserver(mode).observe(root, { attributes: true, attributeFilter: ['data-theme'] }); } catch (e) {}
+
+  /* ---- code blocks: caption with a file name or "shell", plus a copy button ---- */
+  [].forEach.call(document.querySelectorAll('pre'), function (pre) {
+    var box = el('div', 'codebox'), c = el('div', 'cap');
+    c.appendChild(el('span', '', pre.getAttribute('data-file') ? 'file  ' + pre.getAttribute('data-file') : (pre.getAttribute('data-cap') || 'shell')));
+    var b = el('button', 'copy', 'Copy'); b.type = 'button';
+    b.addEventListener('click', function () {
+      var t = pre.textContent;
+      function pickText() { try { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = 'Selected'; } catch (e) {} }
+      try { navigator.clipboard.writeText(t).then(function () { b.textContent = 'Copied'; }, pickText); } catch (e) { pickText(); }
+      setTimeout(function () { b.textContent = 'Copy'; }, 1600);
+    });
+    c.appendChild(b); pre.parentNode.insertBefore(box, pre); box.appendChild(c); box.appendChild(pre);
+  });
+
+  function levelChip(lv) { return el('span', 'chip lv-' + lv, lv); }
+  function readState(id) { var S = { labs: {}, steps: {}, drill: [], seen: {} }; try { var r = JSON.parse(get('ai-bootcamp-v2-' + id) || 'null'); if (r && typeof r === 'object') { ['labs', 'steps', 'seen'].forEach(function (k) { if (r[k] && typeof r[k] === 'object') S[k] = r[k]; }); if (r.drill && r.drill.length != null) S.drill = r.drill; } } catch (e) {} return S; }
+  function doneCount(S) { var n = 0, k; for (k in S.labs) if (S.labs[k]) n++; (S.drill || []).forEach(function (x) { if (x != null) n++; }); return n; }
+
+  var hn = document.getElementById('home-notes');
+  function homeNotes() { var off = get('ai-bootcamp-home') === '0'; if (hn) hn.checked = !off; document.body.classList.toggle('hide-home', off); }
+  if (hn) hn.addEventListener('change', function () { put('ai-bootcamp-home', hn.checked ? '1' : '0'); homeNotes(); });
+  homeNotes();
+
+  /* ---- save a copy of this page as one file ---- */
+  /* Inside a hosted viewer the page may be given a save function; it is asked for once, at load. Everywhere else
+     (a file on disk, a plain web server) it stays null and the button uses an ordinary download link. */
+  var DL = null;
+  try {
+    if (window.claude && typeof window.claude.use === 'function') {
+      Promise.resolve(window.claude.use('downloads')).then(function (d) { DL = d || null; }, function () { DL = null; });
+    }
+  } catch (e) { DL = null; }
+  [].forEach.call(document.querySelectorAll('[data-save]'), function (b) {
+    b.addEventListener('click', function () {
+      var msg = b.parentNode.querySelector('.note') || b;
+      var name = b.getAttribute('data-save');
+      function say(t) { if (msg !== b) msg.textContent = t; }
+      function viaLink() {
+        try {
+          var a = el('a'); a.href = URL.createObjectURL(new Blob([PRISTINE], { type: 'text/html' })); a.download = name;
+          document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+          say('Saved as ' + name + ' if your browser allows downloads from this page. If nothing happened, use the file from the export set instead.');
+        } catch (e) { say('This page cannot start a download here. Use the file from the export set instead.'); }
+      }
+      if (DL && typeof DL.save === 'function') {
+        DL.save({ filename: name, data: PRISTINE }).then(function () { say('Saved as ' + name + '.'); }, function (err) {
+          var code = err && err.code;
+          if (code === 'declined') return;
+          if (code === 'rate_limited') { say('A save is already waiting for your answer. Wait a moment, then try again.'); return; }
+          viaLink();
+        });
+      } else { viaLink(); }
+    });
+  });
+
+  /* ================= catalogue page ================= */
+  var cards = document.getElementById('cards');
+  if (cards) {
+    var filter = get('ai-bootcamp-level') || 'all', fbar = document.getElementById('levels');
+    var draw = function () {
+      cards.textContent = '';
+      MAN.modules.forEach(function (m) {
+        if (filter !== 'all' && m.level !== filter) return;
+        var c = link(el(m.href ? 'a' : 'div', 'mcard'), m.href);
+        var top = el('div', 'chips'); top.appendChild(el('span', 'n', 'MODULE ' + num(m.id))); top.appendChild(levelChip(m.level)); top.appendChild(el('span', 'chip', mins(m.minutes))); c.appendChild(top);
+        c.appendChild(el('span', 't', m.title)); c.appendChild(el('span', 's', m.sub));
+        c.appendChild(el('span', 'pre', (m.lessons || 0) + ' lessons · ' + (m.labs || 0) + ' labs · ' + (m.prereq.length ? 'after ' + m.prereq.map(function (p) { var x = modById(p); return x ? num(p) + ' ' + x.title : p; }).join(', ') : 'no prerequisites')));
+        if (!m.href) c.appendChild(el('span', 'pre', 'Published as its own page; ask for the link or use the file set.'));
+        var S = readState(m.id), d = doneCount(S), total = (m.labs || 0) + (m.calls || 0);
+        if (d && total) { var mt = el('div', 'meter'), sp = el('span'); sp.style.width = Math.min(100, Math.round(100 * d / total)) + '%'; mt.appendChild(sp); c.appendChild(mt); }
+        cards.appendChild(c);
+      });
+      if (fbar) [].forEach.call(fbar.children, function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-level') === filter ? 'true' : 'false'); });
+    };
+    if (fbar) ['all', 'foundation', 'practitioner', 'advanced'].forEach(function (lv) {
+      var b = el('button', 'btn', lv === 'all' ? 'All levels' : cap(lv)); b.type = 'button'; b.setAttribute('data-level', lv);
+      b.addEventListener('click', function () { filter = lv; put('ai-bootcamp-level', lv); draw(); }); fbar.appendChild(b);
+    });
+    draw();
+    [].forEach.call(document.querySelectorAll('[data-mod]'), function (a) { var m = modById(a.getAttribute('data-mod')); if (m) { if (!a.textContent) a.textContent = num(m.id) + '. ' + m.title; link(a, m.href); } });
+    var tot = document.getElementById('totals');
+    if (tot) { var tl = 0, tm = 0; MAN.modules.forEach(function (m) { tl += m.labs || 0; tm += +m.minutes || 0; }); tot.textContent = MAN.modules.length + ' modules, ' + tl + ' labs, about ' + Math.round(tm / 60) + ' hours in all'; }
+    return;
+  }
+
+  /* ================= module page ================= */
+  var m = document.querySelector('section.module'); if (!m) return;
+  var id = m.id, me = modById(id) || { prereq: [], level: m.getAttribute('data-level') || '', minutes: m.getAttribute('data-minutes') }, KEY = 'ai-bootcamp-v2-' + id;
+  var S = readState(id);
+  function save() { put(KEY, JSON.stringify(S)); }
+  var nav = document.getElementById('nav'), pager = document.getElementById('pager'), crumb = document.getElementById('crumb'), share = document.getElementById('view-share');
+  var overview = m.querySelector('.overview'), labsEl = m.querySelector('.labs'), ref = m.querySelector('.reference');
+  var lessons = [].slice.call(m.querySelectorAll('.lesson')), labEls = [].slice.call(m.querySelectorAll('article.lab'));
+  var drill = el('div', 'drill'); m.appendChild(drill);
+  var qsn = []; try { qsn = JSON.parse(m.querySelector('script.drill').textContent); } catch (e) {}
+
+  var parts = [];
+  if (overview) parts.push({ key: 'overview', n: '', title: 'Overview', el: overview });
+  lessons.forEach(function (l, i) { parts.push({ key: 'l' + (i + 1), n: String(i + 1), title: l.getAttribute('data-title') || 'Lesson ' + (i + 1), el: l, kind: 'Lesson ' + (i + 1) + ' of ' + lessons.length, min: l.getAttribute('data-minutes') }); });
+  if (labsEl && labEls.length) parts.push({ key: 'labs', n: 'L', title: 'Labs', el: labsEl, kind: labEls.length + ' labs' });
+  if (qsn.length) parts.push({ key: 'calls', n: '?', title: 'Calls', el: drill, kind: qsn.length + ' judgment calls' });
+  if (ref && ref.children.length) parts.push({ key: 'ref', n: '#', title: 'Cheat sheet', el: ref, kind: 'Reference' });
+
+  /* header: full on the overview, slim on the other parts */
+  var head = el('div', 'mhead'), kick = el('div', 'kicker'), h = el('h1', '', m.getAttribute('data-title')), meta = el('div', 'meta'), chips = el('div', 'chips');
+  head.appendChild(kick); head.appendChild(h); head.appendChild(meta); head.appendChild(chips); m.insertBefore(head, m.firstChild);
+  chips.appendChild(levelChip(me.level || 'practitioner')); chips.appendChild(el('span', 'chip', mins(m.getAttribute('data-minutes'))));
+  chips.appendChild(el('span', 'chip', lessons.length + ' lessons')); chips.appendChild(el('span', 'chip', labEls.length + ' labs'));
+  (me.prereq || []).forEach(function (p) { var x = modById(p); if (x) chips.appendChild(link(el(x.href ? 'a' : 'span', 'chip'), x.href)).textContent = 'after ' + num(p) + ' ' + x.title; });
+  if (!(me.prereq || []).length) chips.appendChild(el('span', 'chip', 'no prerequisites'));
+
+  /* overview extras: the parts of this module, what to take next, the progress code */
+  if (overview) {
+    var pl = el('div', 'panel'); pl.appendChild(el('div', 'kicker', 'In this module')); var ul = el('ol', 'partlist');
+    parts.forEach(function (p) { if (p.key === 'overview') return; var li = el('li'), a = el('a'); a.href = '#' + p.key; a.appendChild(el('span', 'n', p.n)); a.appendChild(el('span', '', p.title)); a.appendChild(el('span', 'm', p.min ? p.min + ' min' : (p.kind || ''))); li.appendChild(a); ul.appendChild(li); });
+    pl.appendChild(ul); overview.appendChild(pl);
+    var nexts = MAN.modules.filter(function (x) { return x.prereq.indexOf(id) >= 0; });
+    if (nexts.length || MAN.catalogue) {
+      var nx = el('div', 'panel'); nx.appendChild(el('div', 'kicker', 'Where to go from here')); var row = el('div', 'chips'); row.style.marginTop = '8px';
+      nexts.forEach(function (x) { var a = link(el(x.href ? 'a' : 'span', 'chip'), x.href); a.textContent = num(x.id) + ' ' + x.title; row.appendChild(a); });
+      if (MAN.catalogue) { var ca = link(el('a', 'chip'), MAN.catalogue); ca.textContent = 'All modules'; row.appendChild(ca); }
+      nx.appendChild(row); overview.appendChild(nx);
+    }
+    var pp = el('div', 'panel'); pp.appendChild(el('div', 'kicker', 'Progress code'));
+    var pd = el('p', 'muted', 'Progress for this module lives in this browser only. To move it to another device or another copy of this page, copy the code here and load it there.'); pd.style.marginTop = '6px'; pp.appendChild(pd);
+    var pr = el('div', 'row'), pc = el('input'); pc.type = 'text'; pc.setAttribute('aria-label', 'Progress code'); pc.style.cssText = 'flex:1;min-width:200px;font-family:var(--font-mono);font-size:0.8rem';
+    var b1 = el('button', 'btn', 'Copy mine'), b2 = el('button', 'btn', 'Load'), pm = el('p', 'note'); b1.type = b2.type = 'button'; pm.style.marginBottom = '0';
+    pr.appendChild(pc); pr.appendChild(b1); pr.appendChild(b2); pp.appendChild(pr); pp.appendChild(pm); overview.appendChild(pp);
+    b1.addEventListener('click', function () {
+      try { pc.value = 'AIB2.' + id + '.' + btoa(unescape(encodeURIComponent(JSON.stringify(S)))); } catch (e) { pm.textContent = 'Could not build the code.'; return; }
+      pc.select(); try { navigator.clipboard.writeText(pc.value).then(function () { pm.textContent = 'Copied.'; }, function () { pm.textContent = 'Selected. Copy it with Ctrl+C.'; }); } catch (e) { pm.textContent = 'Selected. Copy it with Ctrl+C.'; }
+    });
+    b2.addEventListener('click', function () {
+      try { var v = pc.value.trim(), pre = 'AIB2.' + id + '.'; if (v.indexOf(pre) !== 0) throw 0; var o = JSON.parse(decodeURIComponent(escape(atob(v.slice(pre.length))))); if (!o || typeof o !== 'object') throw 0; put(KEY, JSON.stringify(o)); location.reload(); }
+      catch (e) { pm.textContent = 'That is not a progress code for this module. It starts with AIB2.' + id + '.'; }
+    });
+  }
+
+  /* labs */
+  labEls.forEach(function (lab, li) {
+    var lh = el('div', 'labhead'); lh.appendChild(el('h3', '', 'Lab ' + (li + 1) + '  ' + lab.getAttribute('data-title'))); lh.appendChild(el('span', 'meta', lab.getAttribute('data-minutes') + ' min')); lab.insertBefore(lh, lab.firstChild);
+    [].forEach.call(lab.querySelectorAll('ol.steps > li'), function (step, si) {
+      var c = el('input', 'tick'); c.type = 'checkbox'; c.setAttribute('aria-label', 'Step ' + (si + 1) + ' done'); c.checked = (S.steps[lab.id] || []).indexOf(si) >= 0;
+      c.addEventListener('change', function () { var a = (S.steps[lab.id] || []).filter(function (x) { return x !== si; }); if (c.checked) a.push(si); S.steps[lab.id] = a; save(); });
+      step.insertBefore(c, step.firstChild);
+    });
+    var foot = el('div', 'labfoot'), btn = el('button', 'btn'); btn.type = 'button';
+    function paint() { var d = !!S.labs[lab.id]; lab.classList.toggle('done', d); btn.textContent = d ? 'Done. Undo' : 'Mark lab done'; }
+    btn.addEventListener('click', function () { if (S.labs[lab.id]) delete S.labs[lab.id]; else S.labs[lab.id] = 1; save(); paint(); progress(); });
+    foot.appendChild(btn); lab.appendChild(foot); paint();
+  });
+
+  /* calls */
+  qsn.forEach(function (q, qi) {
+    var box = el('div', 'q'); box.appendChild(el('div', 'qt', (qi + 1) + '. ' + q.q));
+    var opts = el('div', 'opts'), why = el('div', 'why', q.why); why.hidden = true;
+    var btns = q.o.map(function (o, oi) {
+      var b = el('button', 'opt'); b.type = 'button'; b.appendChild(el('span', 'k', 'ABCD'.charAt(oi))); b.appendChild(el('span', '', o));
+      b.addEventListener('click', function () { S.drill[qi] = oi; save(); mark(); progress(); }); opts.appendChild(b); return b;
+    });
+    function mark() { var a = S.drill[qi]; btns.forEach(function (b, oi) { b.classList.toggle('right', a != null && oi === q.a); b.classList.toggle('wrong', a === oi && oi !== q.a); }); why.hidden = a == null; }
+    box.appendChild(opts); box.appendChild(why); drill.appendChild(box); mark();
+  });
+  if (qsn.length) { var reset = el('button', 'btn', 'Clear my answers'); reset.type = 'button'; reset.style.justifySelf = 'start'; reset.addEventListener('click', function () { S.drill = []; save(); location.reload(); }); drill.appendChild(reset); }
+
+  /* navigation */
+  parts.forEach(function (p) {
+    var a = el('a', 'navlink'); a.href = '#' + p.key; a.appendChild(el('span', 'n', p.n || '·')); a.appendChild(el('span', '', p.title)); a.appendChild(el('span', 'p')); nav.appendChild(a); p.nav = a;
+  });
+  var shareNav = null;
+  if (share) { shareNav = el('a', 'navlink'); shareNav.href = '#share'; shareNav.appendChild(el('span', 'n', '\u2197')); shareNav.appendChild(el('span', '', 'Export and share')); shareNav.appendChild(el('span', 'p')); nav.appendChild(shareNav); }
+  function progress() {
+    parts.forEach(function (p) {
+      var t = p.nav.querySelector('.p'), txt = '', full = false;
+      if (p.key === 'labs') { var d = labEls.filter(function (l) { return S.labs[l.id]; }).length; txt = d ? d + '/' + labEls.length : ''; full = d === labEls.length; }
+      else if (p.key === 'calls') { var a = S.drill.filter(function (x) { return x != null; }).length; txt = a ? a + '/' + qsn.length : ''; full = a === qsn.length; }
+      else if (S.seen[p.key]) { txt = '✓'; full = true; }
+      t.textContent = txt; t.classList.toggle('full', full);
+    });
+  }
+  function route() {
+    var key = (location.hash || '#overview').slice(1), isShare = key === 'share' && share;
+    var cur = parts.filter(function (p) { return p.key === key; })[0]; if (!cur && !isShare) cur = parts[0];
+    m.hidden = !!isShare; if (share) share.hidden = !isShare;
+    if (shareNav) shareNav.classList.toggle('active', !!isShare);
+    parts.forEach(function (p) { p.el.hidden = p !== cur; p.nav.classList.toggle('active', p === cur); });
+    if (cur) {
+      var first = cur.key === 'overview';
+      kick.textContent = 'Module ' + num(id) + (first ? ' · ' + cap(me.level || '') : ' · ' + m.getAttribute('data-title'));
+      h.textContent = first ? m.getAttribute('data-title') : cur.title;
+      meta.textContent = first ? m.getAttribute('data-sub') : (cur.kind || '') + (cur.min ? ' · about ' + cur.min + ' min' : '');
+      chips.hidden = !first;
+      if (/^l\d+$/.test(cur.key) && !S.seen[cur.key]) { S.seen[cur.key] = 1; save(); }
+      if (crumb) crumb.textContent = 'Module ' + num(id) + ' · ' + m.getAttribute('data-title') + (first ? '' : ' · ' + cur.title);
+      var i = parts.indexOf(cur); pager.textContent = '';
+      if (i > 0) { var pv = el('a', 'btn', '← ' + parts[i - 1].title); pv.href = '#' + parts[i - 1].key; pager.appendChild(pv); }
+      if (i < parts.length - 1) { var nx2 = el('a', 'btn primary next', parts[i + 1].title + ' →'); nx2.href = '#' + parts[i + 1].key; pager.appendChild(nx2); }
+      try { cur.nav.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {}
+    } else { pager.textContent = ''; if (crumb) crumb.textContent = 'Export and share'; }
+    progress(); window.scrollTo(0, 0);
+  }
+  route(); window.addEventListener('hashchange', route);
+})();
+
+</script>
+<script>
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,8 @@
+#!/bin/sh
+# Git pre-commit hook sample: refuse the commit if the public-release scan finds anything.
+#   cp tools/pre-commit.sample .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+root=$(git rev-parse --show-toplevel) || exit 1
+node "$root/tools/public-scan.js" --root "$root" || {
+  echo "pre-commit: public-scan found private-looking content; commit refused." >&2
+  exit 1
+}

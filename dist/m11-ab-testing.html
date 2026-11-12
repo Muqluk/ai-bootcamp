@@ -1,0 +1,1572 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>html,body{height:100%}body{margin:0}img{max-width:100%}</style>
+<title>Evals and A/B testing · AI/LLM Bootcamp</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&family=Nunito:wght@700;800&display=swap">
+<style>
+/* AI/LLM Bootcamp. One stylesheet for the catalogue page and every module page.
+   Layout: a top bar (brand, where you are, theme picker), a part rail on the left (a strip in some themes and on phones),
+   one reading column that swaps parts on the hash.
+   The four token types keep one colour each everywhere, the way a utility meter keeps one colour per tariff.
+   Five themes: data-style a..e on the root (a = Meter is the base). data-mode light|dark is resolved in script. */
+:root {
+  --bg: #f1f3f6; --surface: #ffffff; --sunk: #e8ebf0; --fg: #17202b; --muted: #566273; --line: #d3d9e2;
+  --accent: #a4460d; --accent-ink: #ffffff; --accent-soft: #fbeadf;
+  --t-in: #2a66b3; --t-out: #b8500f; --t-cw: #7446bd; --t-cr: #25784c;
+  --good: #25784c; --good-soft: #e0f1e7; --bad: #a8372f; --bad-soft: #f8e3e1; --home: #7446bd; --home-soft: #efe8fa;
+  --font-display: "Archivo", "Segoe UI Semibold", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, "SF Mono", monospace;
+  --top-h: 46px;
+}
+:root[data-mode="dark"] {
+  --bg: #11151b; --surface: #19202a; --sunk: #0d1116; --fg: #e5e9ef; --muted: #98a4b3; --line: #2b3542;
+  --accent: #f09460; --accent-ink: #1d0f05; --accent-soft: #3a2415;
+  --t-in: #6ea9ee; --t-out: #f09460; --t-cw: #b396f0; --t-cr: #6cc795;
+  --good: #6cc795; --good-soft: #17301f; --bad: #e6837b; --bad-soft: #3a1f1d; --home: #b396f0; --home-soft: #261f38; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+script, pre.mermaid { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.6; margin: 0; }
+a { color: var(--accent); }
+h1, h2, h3, h4 { font-family: var(--font-display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(1.9rem, 4.6vw, 2.7rem); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.6rem; font-weight: 700; }
+h3 { font-size: 1.15rem; font-weight: 700; margin-top: 1.7em; }
+h4 { font-size: 1rem; font-weight: 700; margin-top: 1.2em; }
+p { margin: 0.7em 0; }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--sunk); padding: 0.08em 0.32em; border-radius: 4px; overflow-wrap: anywhere; }
+.codebox { margin: 0.7em 0; border: 1px solid var(--line); border-radius: 8px; background: var(--sunk); min-width: 0; }
+.codebox .cap { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--line); font: 600 0.72rem var(--font-mono); color: var(--muted); }
+.codebox pre { margin: 0; padding: 11px 13px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.5; }
+.codebox pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: normal; }
+.copy { font: 600 0.72rem var(--font-body); padding: 3px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
+.copy:hover { color: var(--fg); }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* top bar */
+.top { position: sticky; top: 0; z-index: 12; height: var(--top-h); display: flex; align-items: center; gap: 14px; background: var(--surface); border-bottom: 1px solid var(--line); padding: 0 max(14px, env(safe-area-inset-right, 0px)) 0 max(14px, env(safe-area-inset-left, 0px)); }
+.brand { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; text-decoration: none; color: var(--fg); white-space: nowrap; }
+.crumb { font-size: 0.86rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.themepick { margin-left: auto; display: flex; align-items: center; gap: 6px; font: 600 0.8rem var(--font-body); color: var(--muted); white-space: nowrap; }
+.themepick select { font: 600 0.8rem var(--font-body); padding: 4px 6px; }
+
+/* frame */
+.app { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: calc(100vh - var(--top-h)); }
+.app.solo { grid-template-columns: minmax(0, 1fr); }
+.side { position: sticky; top: var(--top-h); align-self: start; height: calc(100vh - var(--top-h)); overflow-y: auto; background: var(--surface); border-right: 1px solid var(--line); padding: 16px 12px 18px max(12px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 14px; }
+#nav { display: flex; flex-direction: column; gap: 2px; }
+.navlink { display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; align-items: center; text-decoration: none; color: var(--fg); font-size: 0.9rem; padding: 6px 8px; border-radius: 7px; line-height: 1.3; }
+.navlink:hover { background: var(--sunk); }
+.navlink.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.navlink .n { font: 600 0.74rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.navlink .p { font: 600 0.68rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.navlink .p.full { color: var(--good); }
+.side-foot { margin-top: auto; display: grid; gap: 6px; font-size: 0.85rem; padding: 0 8px; }
+.side-foot label { display: flex; gap: 8px; align-items: center; color: var(--muted); cursor: pointer; }
+main { min-width: 0; padding-block: 30px 72px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.view, section.module, .pager { max-width: 780px; margin: 0 auto; min-width: 0; }
+.view, section.module { display: grid; gap: 20px; }
+.view.wide { max-width: 1040px; }
+.view > *, section.module > * { min-width: 0; }
+@media (max-width: 860px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { z-index: 9; height: auto; flex-direction: row; align-items: center; gap: 10px; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px max(14px, env(safe-area-inset-right, 0px)) 6px max(14px, env(safe-area-inset-left, 0px)); overflow: visible; }
+  .side-foot { display: none; }
+  #nav { flex-direction: row; overflow-x: auto; scrollbar-width: none; min-width: 0; flex: 1; }
+  #nav::-webkit-scrollbar { display: none; }
+  .navlink { grid-template-columns: auto auto; flex: 0 0 auto; white-space: nowrap; padding: 5px 9px; }
+  .navlink .p { display: none; }
+  main { padding-block: 22px 56px; }
+  .crumb { display: none; }
+}
+
+/* shared pieces */
+.kicker { font: 600 0.72rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); }
+.muted { color: var(--muted); }
+.lede { font-size: 1.08rem; color: var(--muted); max-width: 66ch; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; min-width: 0; }
+.panel > h3:first-child { margin-top: 0; }
+.btn { font: 600 0.9rem var(--font-body); padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; text-decoration: none; display: inline-block; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+input[type="text"], input[type="number"], textarea, select { font: inherit; font-size: 0.92rem; color: var(--fg); background: var(--sunk); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; min-width: 0; }
+textarea { width: 100%; min-height: 96px; resize: vertical; font-family: var(--font-mono); font-size: 0.8rem; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 0.74rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 0.84rem; }
+.tok { font: 600 0.78rem var(--font-mono); white-space: nowrap; }
+.tok::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; background: currentColor; }
+.tok.in { color: var(--t-in); } .tok.out { color: var(--t-out); } .tok.cw { color: var(--t-cw); } .tok.cr { color: var(--t-cr); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.chip { font: 600 0.7rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; text-decoration: none; }
+a.chip:hover { border-color: var(--accent); color: var(--accent); }
+.chip.lv-foundation { color: var(--t-cr); border-color: var(--t-cr); }
+.chip.lv-practitioner { color: var(--t-in); border-color: var(--t-in); }
+.chip.lv-advanced { color: var(--t-cw); border-color: var(--t-cw); }
+
+/* catalogue */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+.mcard { display: grid; gap: 6px; align-content: start; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; text-decoration: none; color: inherit; }
+a.mcard:hover { border-color: var(--accent); }
+.mcard .n { font: 600 0.72rem var(--font-mono); color: var(--accent); }
+.mcard .t { font-family: var(--font-display); font-weight: 700; font-size: 1.08rem; }
+.mcard .s { font-size: 0.86rem; color: var(--muted); }
+.mcard .pre { font-size: 0.8rem; color: var(--muted); }
+.meter { height: 6px; background: var(--sunk); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.meter span { display: block; height: 100%; width: 0; background: var(--good); }
+.howto { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 18px; }
+.howto b { display: block; font-family: var(--font-display); font-size: 1rem; }
+.howto div { font-size: 0.92rem; color: var(--muted); }
+.paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.paths .panel { padding: 14px 16px; }
+.paths b { font-family: var(--font-display); }
+.paths ol { margin: 6px 0 0; padding-left: 1.3em; font-size: 0.9rem; }
+
+/* module */
+.mhead { display: grid; gap: 8px; }
+.mhead .meta { color: var(--muted); font-size: 0.92rem; }
+.partlist { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; }
+.partlist a { display: grid; grid-template-columns: 34px 1fr auto; gap: 8px; padding: 7px 8px; border-radius: 7px; text-decoration: none; color: var(--fg); }
+.partlist a:hover { background: var(--sunk); }
+.partlist .n { font: 600 0.74rem var(--font-mono); color: var(--accent); padding-top: 3px; }
+.partlist .m { font: 600 0.72rem var(--font-mono); color: var(--muted); padding-top: 3px; }
+.overview p, .overview li, .lesson p, .lesson li, .lab p, .lab li, .reference p, .reference li { max-width: 70ch; }
+.overview ul, .lesson ul, .lesson ol, .lab ul, .reference ul { padding-left: 1.2em; }
+.overview li, .lesson li, .lab li { margin: 0.3em 0; }
+.overview > h3:first-of-type { margin-top: 0.6em; }
+.recap { background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 14px 18px; margin-top: 1.2em; }
+.recap h3 { margin-top: 0; font-size: 1rem; }
+.sources { font-size: 0.88rem; color: var(--muted); }
+.sources h3 { color: var(--fg); }
+.sources li { margin: 0.25em 0; overflow-wrap: anywhere; }
+aside.rule { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; margin: 1.1em 0; max-width: 70ch; font-weight: 600; }
+aside.trap { background: var(--bad-soft); border-radius: 8px; padding: 10px 14px; margin: 1em 0; max-width: 70ch; font-size: 0.94rem; }
+aside.trap::before { content: "Trap"; display: block; font: 600 0.68rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--bad); }
+aside.home { background: var(--home-soft); border-radius: 8px; padding: 10px 14px; margin: 1em 0; max-width: 70ch; font-size: 0.94rem; }
+aside.home::before { content: "At home"; display: block; font: 600 0.68rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--home); }
+body.hide-home aside.home { display: none; }
+.labs { display: grid; gap: 18px; }
+.lab { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; min-width: 0; }
+.lab.done { border-color: var(--good); }
+.labhead { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.labhead h3 { margin: 0; }
+.labhead .meta { font: 600 0.72rem var(--font-mono); color: var(--muted); }
+.goal { color: var(--muted); }
+ol.steps { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 14px; counter-reset: step; }
+ol.steps > li { counter-increment: step; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 0 10px; margin: 0; max-width: none; }
+ol.steps > li > .tick { grid-row: 1 / span 30; }
+ol.steps > li > :not(.tick) { grid-column: 2; margin-top: 0; margin-bottom: 8px; min-width: 0; }
+ol.steps > li > :last-child { margin-bottom: 0; }
+.tick { appearance: none; -webkit-appearance: none; width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--sunk); cursor: pointer; display: grid; place-items: center; margin: 0; }
+.tick::before { content: counter(step); font: 600 0.78rem var(--font-mono); color: var(--muted); }
+.tick:checked { background: var(--good); border-color: var(--good); }
+.tick:checked::before { content: "\2713"; color: var(--surface); }
+p.expect { font-size: 0.92rem; border-left: 3px solid var(--t-cr); padding-left: 12px; color: var(--muted); }
+p.expect b { color: var(--fg); }
+details.check { border: 1px dashed var(--line); border-radius: 8px; padding: 10px 14px; margin-top: 12px; }
+details.check summary { cursor: pointer; font-weight: 600; }
+details.check[open] summary { margin-bottom: 6px; }
+.labfoot { display: flex; justify-content: flex-end; margin-top: 14px; }
+.lab.done .labfoot .btn { background: var(--good-soft); color: var(--good); border-color: var(--good); }
+.pager { display: flex; justify-content: space-between; gap: 10px; margin-top: 28px; }
+.pager .btn { max-width: 48%; }
+.pager .next { margin-left: auto; }
+
+/* calls */
+.drill { display: grid; gap: 14px; }
+.q { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 10px; }
+.q .qt { font-weight: 600; max-width: 70ch; }
+.opts { display: grid; gap: 7px; }
+.opt { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: transparent; color: var(--fg); font: inherit; font-size: 0.94rem; text-align: left; line-height: 1.45; }
+.opt:hover { border-color: var(--accent); }
+.opt .k { flex: 0 0 22px; font: 600 0.76rem var(--font-mono); color: var(--muted); padding-top: 2px; }
+.opt.right { border-color: var(--good); background: var(--good-soft); }
+.opt.wrong { border-color: var(--bad); background: var(--bad-soft); }
+.why { font-size: 0.92rem; color: var(--muted); border-left: 3px solid var(--line); padding-left: 12px; max-width: 70ch; }
+
+/* instruments */
+.tool { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin: 1em 0; display: grid; gap: 12px; min-width: 0; }
+.tool h4 { margin: 0; }
+.tool .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.tool label { display: grid; gap: 3px; font-size: 0.78rem; color: var(--muted); font-weight: 600; }
+.tool label input, .tool label select { width: 100%; }
+.bar { display: flex; height: 22px; border-radius: 5px; overflow: hidden; background: var(--sunk); }
+.bar span { display: block; height: 100%; min-width: 0; }
+.bar .in { background: var(--t-in); } .bar .out { background: var(--t-out); } .bar .cw { background: var(--t-cw); } .bar .cr { background: var(--t-cr); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; }
+.big { font: 700 1.5rem var(--font-display); font-variant-numeric: tabular-nums; }
+.verdict { font-weight: 600; }
+.note { font-size: 0.82rem; color: var(--muted); }
+
+/* diagrams: inline SVG drawn in the boxes-and-arrows style; every colour comes from the theme */
+figure.diagram { margin: 1.2em 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 10px; overflow-x: auto; }
+figure.diagram svg { display: block; width: 100%; height: auto; min-width: 520px; max-width: 760px; margin: 0 auto; font-family: var(--font-body); }
+figure.diagram figcaption { font-size: 0.84rem; color: var(--muted); margin-top: 8px; text-align: center; }
+.dg-box { fill: var(--sunk); stroke: var(--muted); stroke-width: 1.5; }
+.dg-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.dg-good { fill: var(--good-soft); stroke: var(--good); stroke-width: 1.5; }
+.dg-bad { fill: var(--bad-soft); stroke: var(--bad); stroke-width: 1.5; }
+.dg-ghost { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 6 4; }
+.dg-in { fill: var(--t-in); } .dg-out { fill: var(--t-out); } .dg-cw { fill: var(--t-cw); } .dg-cr { fill: var(--t-cr); }
+.dg-line { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.dg-line.dash { stroke-dasharray: 5 4; }
+.dg-line.hot { stroke: var(--accent); }
+.dg-head { fill: var(--muted); stroke: none; }
+.dg-head.hot { fill: var(--accent); }
+.dg-text { fill: var(--fg); font-size: 13px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+.dg-sub { fill: var(--muted); font-size: 11px; text-anchor: middle; dominant-baseline: middle; }
+.dg-label { fill: var(--muted); font-size: 11px; font-family: var(--font-mono); text-anchor: middle; dominant-baseline: middle; }
+.dg-on { fill: var(--surface); font-size: 12px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+.dg-left { text-anchor: start; } .dg-right { text-anchor: end; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+
+/* ---------- themes b to e: token overrides and a few shapes ---------- */
+/* a strip under the top bar instead of the left rail (b, d, e) */
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .app { grid-template-columns: minmax(0, 1fr); }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .side { z-index: 9; height: auto; flex-direction: row; align-items: center; gap: 12px; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px max(14px, env(safe-area-inset-right, 0px)) 6px max(14px, env(safe-area-inset-left, 0px)); overflow: visible; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) :is(.side-foot, .navlink .p) { display: none; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) #nav { flex-direction: row; overflow-x: auto; min-width: 0; flex: 1; scrollbar-width: none; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .navlink { grid-template-columns: auto auto; flex: 0 0 auto; white-space: nowrap; }
+:root:is([data-style="b"], [data-style="c"], [data-style="e"]) :is(.panel, .lab, .q, .tool, .codebox, .mcard, .btn, .opt, .copy, .bar, .navlink, input, textarea, select, details.check, aside.trap, aside.home, code, .recap, figure.diagram, .chip, .partlist a) { border-radius: var(--r, 2px); }
+
+/* b: Workbench. Editor greys, one cobalt accent, 2px corners, dense system type. */
+:root[data-style="b"] { --r: 2px; --bg: #f4f4f5; --surface: #ffffff; --sunk: #ececee; --fg: #1e1e1e; --muted: #5a5f66; --line: #d0d0d4; --accent: #2f6fe0; --accent-ink: #ffffff; --accent-soft: rgba(47, 111, 224, 0.1);
+  --t-in: #2f6fe0; --t-out: #a5641f; --t-cw: #8a4a81; --t-cr: #2f7a55; --good: #2f7a55; --good-soft: #e3f1ea; --bad: #b8404c; --bad-soft: #f8e4e6;
+  --font-display: "Segoe UI", system-ui, -apple-system, sans-serif; --font-body: "Segoe UI", system-ui, -apple-system, sans-serif; --font-mono: "Cascadia Code", Consolas, "Courier New", monospace; }
+:root[data-style="b"][data-mode="dark"] { --bg: #1e1e1e; --surface: #252526; --sunk: #181818; --fg: #d4d4d4; --muted: #a8adb4; --line: #3c3c3c; --accent: #4c8dff; --accent-ink: #ffffff; --accent-soft: rgba(76, 141, 255, 0.14);
+  --t-in: #4c8dff; --t-out: #c0813f; --t-cw: #a8689f; --t-cr: #6fae8c; --good: #6fae8c; --good-soft: rgba(111, 174, 140, 0.12); --bad: #e0707c; --bad-soft: rgba(224, 112, 124, 0.1); }
+:root[data-style="b"] body { font-size: 14px; line-height: 1.5; }
+:root[data-style="b"] .side { background: var(--sunk); padding-block: 4px; }
+:root[data-style="b"] .navlink.active { background: transparent; box-shadow: inset 0 -2px 0 var(--accent); border-radius: 0; }
+:root[data-style="b"] :is(h1, h2, h3, h4) { font-weight: 600; letter-spacing: 0; }
+:root[data-style="b"] h2 { font-size: 1.35rem; } :root[data-style="b"] h3 { font-size: 1.05rem; }
+:root[data-style="b"] .lab { border-left: 3px solid var(--accent); }
+:root[data-style="b"] .lab.done { border-left-color: var(--good); }
+:root[data-style="b"] .tick { border-radius: 2px; width: 24px; height: 24px; }
+:root[data-style="b"] .bar { height: 14px; }
+
+/* c: Blueprint. Drafting-sheet blues on a faint grid, mono headings, dashed frames, square corners. */
+:root[data-style="c"] { --r: 0px; --bg: #eaf1f8; --surface: #f7fafd; --sunk: #dbe6f2; --fg: #0f2a47; --muted: #476483; --line: #b3c7dc; --accent: #0b5cad; --accent-ink: #ffffff; --accent-soft: #d5e5f6;
+  --t-in: #0b5cad; --t-out: #b0560c; --t-cw: #6b3fb0; --t-cr: #1d7a55; --good: #1d7a55; --good-soft: #d9efe4; --bad: #a8372f; --bad-soft: #f6dedb;
+  --font-display: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; }
+:root[data-style="c"][data-mode="dark"] { --bg: #0f2540; --surface: #143052; --sunk: #0b1c31; --fg: #e8f1fb; --muted: #9db8d6; --line: #2d5484; --accent: #7fd4ff; --accent-ink: #06213a; --accent-soft: #1b426e;
+  --t-in: #7fd4ff; --t-out: #ffb86b; --t-cw: #d7a6ff; --t-cr: #8fe3b0; --good: #8fe3b0; --good-soft: #17463f; --bad: #ff9d94; --bad-soft: #4a2a3a; }
+:root[data-style="c"] body { background-image: linear-gradient(color-mix(in srgb, var(--line) 30%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--line) 30%, transparent) 1px, transparent 1px); background-size: 28px 28px; }
+:root[data-style="c"] :is(h1, h2, h3, h4) { text-transform: uppercase; letter-spacing: 0.03em; font-weight: 600; }
+:root[data-style="c"] h1 { font-size: clamp(1.5rem, 3.6vw, 2.1rem); }
+:root[data-style="c"] h2 { font-size: 1.35rem; } :root[data-style="c"] h3 { font-size: 0.98rem; }
+:root[data-style="c"] :is(.lab, .tool, .panel, .q, .mcard, figure.diagram) { border-style: dashed; border-color: var(--accent); }
+:root[data-style="c"] .side { background: var(--bg); border-right-style: dashed; }
+:root[data-style="c"] .tick { border-radius: 0; transform: rotate(45deg) scale(0.8); } :root[data-style="c"] .tick::before { transform: rotate(-45deg); }
+
+/* d: Classroom. Big friendly type, a coloured module banner, soft round cards, raspberry accent. */
+:root[data-style="d"] { --bg: #ffffff; --surface: #f5f6fa; --sunk: #e9ecf4; --fg: #151a2d; --muted: #565d78; --line: #dfe3ee; --accent: #c2255c; --accent-ink: #ffffff; --accent-soft: #fde8f0;
+  --t-in: #2a66b3; --t-out: #c2255c; --t-cw: #7446bd; --t-cr: #25784c;
+  --font-display: "Nunito", "Segoe UI", system-ui, sans-serif; }
+:root[data-style="d"][data-mode="dark"] { --bg: #16141c; --surface: #201d29; --sunk: #110f16; --fg: #f1eef7; --muted: #a8a2b8; --line: #342f42; --accent: #ff7aa8; --accent-ink: #2a0a17; --accent-soft: #3d1c2b;
+  --t-in: #6ea9ee; --t-out: #ff7aa8; --t-cw: #b396f0; --t-cr: #6cc795; }
+:root[data-style="d"] body { font-size: 17px; }
+:root[data-style="d"] :is(h1, h2, h3, h4) { font-weight: 800; }
+:root[data-style="d"] h2 { font-size: 2rem; }
+:root[data-style="d"] .mhead { background: var(--accent); color: var(--accent-ink); padding: 26px 28px; border-radius: 20px; }
+:root[data-style="d"] .mhead :is(.kicker, .meta) { color: inherit; opacity: 0.9; }
+:root[data-style="d"] .mhead .chip { color: inherit; border-color: currentColor; }
+:root[data-style="d"] :is(.lab, .tool, .panel, .q, .mcard, figure.diagram, .recap) { border: 0; border-radius: 20px; padding: 22px 24px; }
+:root[data-style="d"] .navlink { border-radius: 999px; padding: 6px 12px; }
+:root[data-style="d"] .tick { width: 36px; height: 36px; } :root[data-style="d"] ol.steps > li { grid-template-columns: 40px minmax(0, 1fr); }
+:root[data-style="d"] .bar { height: 30px; border-radius: 999px; }
+:root[data-style="d"] .btn { border-radius: 999px; }
+
+/* e: Console. Everything monospaced, hard rules, amber accent, no rounding, headings marked like Markdown. */
+:root[data-style="e"] { --r: 0px; --bg: #f5f5f2; --surface: #f5f5f2; --sunk: #e9e9e4; --fg: #141414; --muted: #5c5c55; --line: #2a2a28; --accent: #8a5a00; --accent-ink: #ffffff; --accent-soft: #f1e6c8;
+  --t-in: #1f5fa8; --t-out: #b34700; --t-cw: #7a3fb5; --t-cr: #1f7a4a; --good: #1f7a4a; --good-soft: #dcefe2; --bad: #a8372f; --bad-soft: #f6dedb;
+  --font-display: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; --font-body: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; }
+:root[data-style="e"][data-mode="dark"] { --bg: #141210; --surface: #141210; --sunk: #1e1b17; --fg: #f2e9d8; --muted: #a89c86; --line: #5a5246; --accent: #ffb000; --accent-ink: #141210; --accent-soft: #3a2c0a;
+  --t-in: #7ab8ff; --t-out: #ff8f4d; --t-cw: #c79bff; --t-cr: #7ee0a0; --good: #7ee0a0; --good-soft: #1b3324; --bad: #ff9d94; --bad-soft: #3d201d; }
+:root[data-style="e"] body { font-size: 14px; }
+:root[data-style="e"] :is(h1, h2, h3, h4) { font-weight: 600; letter-spacing: 0; }
+:root[data-style="e"] h1 { font-size: clamp(1.4rem, 3.4vw, 1.9rem); }
+:root[data-style="e"] h2 { font-size: 1.3rem; } :root[data-style="e"] h3 { font-size: 1rem; }
+:root[data-style="e"] .mhead h2::before, :root[data-style="e"] .mhead h1::before { content: "# "; color: var(--accent); }
+:root[data-style="e"] :is(.lesson, .overview, .reference) h3::before { content: "## "; color: var(--accent); }
+:root[data-style="e"] .tick { border-radius: 0; border-width: 1px; border-color: var(--line); }
+:root[data-style="e"] .bar { height: 18px; border: 1px solid var(--line); }
+:root[data-style="e"] .navlink.active { background: var(--fg); color: var(--bg); } :root[data-style="e"] .navlink.active .n { color: inherit; }
+
+/* ---------- Mermaid diagrams, pre-rendered to SVG at build time. Layout is Mermaid's; every colour is the theme's. ---------- */
+figure.diagram svg.mm { font-family: "Segoe UI", system-ui, Arial, sans-serif; min-width: 0; max-height: 620px; }
+figure.diagram.map svg.mm { max-width: 1000px; max-height: 1150px; }
+svg.mm text, svg.mm tspan { fill: var(--fg) !important; stroke: none !important; }
+svg.mm .node > :is(rect, circle, ellipse, polygon, path), svg.mm .label-container, svg.mm :is(rect.actor, .actor-box, .labelBox, .activation0, .activation1, .activation2), svg.mm .statediagram-state :is(rect, path).basic, svg.mm .classGroup rect, svg.mm .er.entityBox { fill: var(--sunk) !important; stroke: var(--muted) !important; }
+svg.mm .node .label rect, svg.mm .cluster-label rect { fill: none !important; stroke: none !important; }
+svg.mm :is(.edgeLabel rect, rect.background, .labelBkg, .edgeLabel .label rect) { fill: var(--surface) !important; stroke: none !important; opacity: 1 !important; }
+svg.mm :is(.flowchart-link, .transition, .relation, .messageLine0, .messageLine1, .edgePath path, .actor-line, .loopLine, line.divider, .edge-thickness-normal) { stroke: var(--muted) !important; }
+svg.mm :is(.flowchart-link, .transition, .relation, .edgePath path) { fill: none !important; }
+svg.mm marker :is(path, circle, polygon), svg.mm :is(.arrowMarkerPath, .arrowheadPath) { fill: var(--muted) !important; stroke: var(--muted) !important; }
+svg.mm .cluster > :is(rect, polygon, path), svg.mm .statediagram-cluster rect, svg.mm rect.rect { fill: color-mix(in srgb, var(--surface) 55%, transparent) !important; stroke: var(--line) !important; }
+svg.mm :is(.note, .state-note) :is(rect, path), svg.mm rect.note, svg.mm g.note > rect { fill: var(--accent-soft) !important; stroke: var(--accent) !important; }
+svg.mm :is(.state-start, .start-state, circle.state-start) { fill: var(--fg) !important; stroke: var(--fg) !important; }
+svg.mm :is(.end-state-outer, .state-end) { fill: var(--surface) !important; stroke: var(--fg) !important; }
+svg.mm .end-state-inner { fill: var(--fg) !important; stroke: var(--fg) !important; }
+svg.mm .node:is(.hot) > :is(rect, circle, ellipse, polygon, path) { fill: var(--accent-soft) !important; stroke: var(--accent) !important; }
+svg.mm .node:is(.good, .found) > :is(rect, circle, ellipse, polygon, path) { fill: var(--good-soft) !important; stroke: var(--good) !important; }
+svg.mm .node.bad > :is(rect, circle, ellipse, polygon, path) { fill: var(--bad-soft) !important; stroke: var(--bad) !important; }
+svg.mm .node:is(.info, .prac) > :is(rect, circle, ellipse, polygon, path) { fill: color-mix(in srgb, var(--t-in) 14%, var(--surface)) !important; stroke: var(--t-in) !important; }
+svg.mm .node:is(.alt, .adv) > :is(rect, circle, ellipse, polygon, path) { fill: color-mix(in srgb, var(--t-cw) 14%, var(--surface)) !important; stroke: var(--t-cw) !important; }
+svg.mm .node.ghost > :is(rect, circle, ellipse, polygon, path) { fill: none !important; stroke: var(--line) !important; stroke-dasharray: 6 4; }
+
+</style>
+</head>
+<body>
+<div class="top">
+  <a class="brand" href="index.html">AI/LLM Bootcamp</a>
+  <span class="crumb" id="crumb"></span>
+  <label class="themepick">Theme: <select id="theme" aria-label="Theme"></select></label>
+</div>
+<div class="app">
+  <aside class="side">
+    <nav id="nav" aria-label="Parts of this module"></nav>
+    <div class="side-foot">
+      
+      <a href="index.html">All modules</a>
+    </div>
+  </aside>
+  <main>
+<section class="module" id="m11" data-title="Evals and A/B testing" data-sub="Compare prompts, models and setups without fooling yourself" data-level="advanced" data-prereq="m2,m7" data-minutes="250">
+  <div class="overview">
+    <p class="lede">A prompt change that feels better is an anecdote. An eval is a fixed set of cases, a scoring rule and a repeatable run, so a change to a prompt, a model or a setup becomes a measurement with a number and an error bar. This module builds that harness with headless runs, shows how to pair and repeat the runs, how to read a small result honestly, and how to catch answers that are confident and wrong.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Build a golden set of cases with expected answers and a grader that scores a run with no human in the loop.</li>
+      <li>Choose the cheapest grader that works (exact match, code check, model judge) and audit a model judge against hand labels and a position swap.</li>
+      <li>Run a paired, repeated, randomised A/B of two prompts with the model, effort, tools and settings pinned, and measure the noise floor first.</li>
+      <li>Read a result as wins, losses and ties with an exact sign test and a bootstrap interval, and say how many cases you would need to see a given improvement.</li>
+      <li>Measure the rate of confident wrong answers separately from accuracy, and test an abstention rule.</li>
+      <li>Price an eval run on a subscription plan (window share) and on an API key (dollars), and decide when a batch run pays.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key). The labs use Haiku and cost well under one US cent of list-price estimate per lab.</li>
+      <li>Windows PowerShell 5.1 or later. The labs write their files to <code>~/bootcamp-labs/m11</code>.</li>
+      <li>About 250 minutes for everything; the lessons stand alone if you only want the method.</li>
+    </ul>
+    <div class="recap"><h3>If you skipped the prerequisites</h3>
+      <p>From Tokens and their price: a request is billed in four token types, input, output, cache write and cache read, and output costs five times input on every current model. Current list prices per million tokens, input/output, are Haiku 5.5 $0.10/$0.50 (for prompts up to 100k tokens), Sonnet 5.5 $2/$10, Opus 5.5 $4/$20. The Batch API is 50 percent off input and output. A subscription plan is a flat fee whose usage draws down a 5-hour window and weekly limits, while an API key pays per token. From Headless runs and subagents: <code>claude -p "prompt"</code> runs one non-interactive turn; <code>--output-format json</code> returns a result object with <code>result</code>, <code>total_cost_usd</code>, <code>usage</code> and <code>duration_ms</code>; <code>--max-turns</code> caps the loop and <code>--allowedTools</code> grants tools. A headless run starts a fresh context, which is what makes it usable as a measurement unit.</p></div>
+  </div>
+
+  <div class="lesson" id="m11-l1" data-title="Why measure first" data-minutes="15">
+    <h3>The failure an eval prevents</h3>
+    <p>You change a prompt, try it on three inputs, and it looks better. Three weeks later a case you did not try breaks, and nobody can say whether the change caused it. The model is not deterministic, so one run of one input tells you almost nothing about either prompt. An eval replaces the three-input impression with a fixed list of cases that every candidate runs against, so the comparison is the same each time.</p>
+    <h3>The four parts</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Part</th><th>What it is</th><th>Example</th></tr>
+      <tr><td>Cases</td><td>Inputs with a known right answer, saved in a file</td><td><code>tickets.csv</code>: 12 IT tickets with a label each</td></tr>
+      <tr><td>Arm</td><td>One candidate: a prompt, a model, a setup</td><td><code>prompt-a.txt</code>, <code>prompt-b.txt</code></td></tr>
+      <tr><td>Grader</td><td>Code or a judge that turns an output into a score</td><td>Exact match after lowercasing</td></tr>
+      <tr><td>Run</td><td>Every case against every arm, repeated, in random order</td><td>One <code>claude -p</code> per case, arm and repeat</td></tr>
+    </table></div>
+    <h3>What measuring gets you</h3>
+    <p>In the first lab you run a 12-case ticket classifier three times with the same prompt. The model was Haiku 5.5. Each repeat scored 11 of 12, and the same case (a copier that stopped scanning to email after a mail password change, expected "printer", answered "auth") failed all three times. No case flipped between runs. That is two findings a single impression would not give you: the baseline is 11 of 12, and the miss is systematic, not noise. A systematic miss is something a prompt change can fix. A case that flips between runs is noise, and no prompt change can be judged against it.</p>
+    <p>The whole 36-run baseline cost about $0.003 at list price and a median of about 1,020 ms per call. Evals of this size are cheap enough that skipping them is hard to defend.</p>
+    <h3>Eval versus test</h3>
+    <p>A unit test passes or fails the same way every run. An eval returns a rate with variance, so you compare rates between arms and ask whether the gap is bigger than the noise. The rest of this module is about that question.</p>
+    <aside class="rule">Never compare two prompts on fewer cases than you can list in a file, and never on one run per case.</aside>
+    <aside class="trap">Cases you wrote while tuning the prompt are not a test of it. Keep some cases you did not look at while editing, and add every real failure you meet in use to the set.</aside>
+  </div>
+
+  <div class="lesson" id="m11-l2" data-title="Golden sets and graders" data-minutes="25">
+    <h3>The golden set</h3>
+    <p>A golden set is a file of inputs with the expected answer, small enough to run on every change. Build it from real inputs, and include the hard ones on purpose: ambiguous cases whose correct answer is "unclear", cases with a plausible decoy, and cases that need the model to decline. In the labs the set has five labels and two ticket types designed to mislead: a copier problem triggered by a password change, and a vague ticket with no device named.</p>
+    <pre data-file="tickets.csv"><code>id,text,expected
+1,"Disk C: on web-01 is at 98 percent and the app log is still growing.",disk
+5,"It is broken again. Please fix it today.",unclear
+9,"Scan-to-email on the copier stopped sending since we changed the mail account password.",printer</code></pre>
+    <h3>Graders, cheapest first</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Grader</th><th>Use when</th><th>Cost</th><th>Weakness</th></tr>
+      <tr><td>Exact match</td><td>The answer is a label, number or short token</td><td>None</td><td>Punishes format drift ("disk varcache deployweb job" is wrong even if disk was meant)</td></tr>
+      <tr><td>Code check</td><td>The answer can be tested: valid JSON, a regex, a script exit code, a file that exists</td><td>None</td><td>Checks only what you wrote a check for</td></tr>
+      <tr><td>Model judge</td><td>The answer is free text and quality is a judgement</td><td>One more model call per case</td><td>Has biases; needs an audit (below)</td></tr>
+    </table></div>
+    <p>Use the first grader on the list that can score the task. If you can make the model answer in a constrained form (one word, a number, JSON), you turn a judge problem into an exact-match problem. The lab harness normalises an answer by stripping punctuation and lowercasing it, then compares it to the expected value.</p>
+    <figure class="diagram">
+<svg class="mm mm-flowchart" role="img" id="mmf3ecc49aa60e" width="100%" xmlns="http://www.w3.org/2000/svg" style="max-width: 474.3000183105469px;" viewBox="4 4 474.3000183105469 1079.60009765625"><style>#mmf3ecc49aa60e{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;fill:#000000;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#mmf3ecc49aa60e .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#mmf3ecc49aa60e .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#mmf3ecc49aa60e .error-icon{fill:#552222;}#mmf3ecc49aa60e .error-text{fill:#552222;stroke:#552222;}#mmf3ecc49aa60e .edge-thickness-normal{stroke-width:1px;}#mmf3ecc49aa60e .edge-thickness-thick{stroke-width:3.5px;}#mmf3ecc49aa60e .edge-pattern-solid{stroke-dasharray:0;}#mmf3ecc49aa60e .edge-thickness-invisible{stroke-width:0;fill:none;}#mmf3ecc49aa60e .edge-pattern-dashed{stroke-dasharray:3;}#mmf3ecc49aa60e .edge-pattern-dotted{stroke-dasharray:2;}#mmf3ecc49aa60e .marker{fill:#666;stroke:#666;}#mmf3ecc49aa60e .marker.cross{stroke:#666;}#mmf3ecc49aa60e svg{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;}#mmf3ecc49aa60e p{margin:0;}#mmf3ecc49aa60e .label{font-family:"Segoe UI",Arial,sans-serif;color:#000000;}#mmf3ecc49aa60e .cluster-label text{fill:#333;}#mmf3ecc49aa60e .cluster-label span{color:#333;}#mmf3ecc49aa60e .cluster-label span p{background-color:transparent;}#mmf3ecc49aa60e .label text,#mmf3ecc49aa60e span{fill:#000000;color:#000000;}#mmf3ecc49aa60e .node rect,#mmf3ecc49aa60e .node circle,#mmf3ecc49aa60e .node ellipse,#mmf3ecc49aa60e .node polygon,#mmf3ecc49aa60e .node path{fill:#eee;stroke:#999;stroke-width:1px;}#mmf3ecc49aa60e .rough-node .label text,#mmf3ecc49aa60e .node .label text,#mmf3ecc49aa60e .image-shape .label,#mmf3ecc49aa60e .icon-shape .label{text-anchor:middle;}#mmf3ecc49aa60e .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#mmf3ecc49aa60e .rough-node .label,#mmf3ecc49aa60e .node .label,#mmf3ecc49aa60e .image-shape .label,#mmf3ecc49aa60e .icon-shape .label{text-align:center;}#mmf3ecc49aa60e .node.clickable{cursor:pointer;}#mmf3ecc49aa60e .root .anchor path{fill:#666!important;stroke-width:0;stroke:#666;}#mmf3ecc49aa60e .arrowheadPath{fill:#333333;}#mmf3ecc49aa60e .edgePaths .path{stroke:#666;stroke-width:1px;}#mmf3ecc49aa60e .flowchart-link{stroke:#666;fill:none;}#mmf3ecc49aa60e .edgeLabel{background-color:white;text-align:center;}#mmf3ecc49aa60e .edgeLabel p{background-color:white;}#mmf3ecc49aa60e .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mmf3ecc49aa60e .labelBkg{background-color:rgba(255, 255, 255, 0.5);}#mmf3ecc49aa60e .cluster rect{fill:hsl(0, 0%, 98.9215686275%);stroke:#707070;stroke-width:1px;}#mmf3ecc49aa60e .cluster text{fill:#333;}#mmf3ecc49aa60e .cluster span{color:#333;}#mmf3ecc49aa60e .node .collapsed-indicator{fill:#707070;stroke:none;opacity:0.6;}#mmf3ecc49aa60e .node .collapsed-separator{stroke:#707070;stroke-width:0.75px;}#mmf3ecc49aa60e div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"Segoe UI",Arial,sans-serif;font-size:12px;background:hsl(-160, 0%, 93.3333333333%);border:1px solid #707070;border-radius:2px;pointer-events:none;z-index:100;}#mmf3ecc49aa60e .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mmf3ecc49aa60e rect.text{fill:none;stroke-width:0;}#mmf3ecc49aa60e .icon-shape,#mmf3ecc49aa60e .image-shape{background-color:white;text-align:center;}#mmf3ecc49aa60e .icon-shape p,#mmf3ecc49aa60e .image-shape p{background-color:white;padding:2px;}#mmf3ecc49aa60e .icon-shape .label rect,#mmf3ecc49aa60e .image-shape .label rect{opacity:0.5;background-color:white;fill:white;}#mmf3ecc49aa60e .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#mmf3ecc49aa60e .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#mmf3ecc49aa60e .node .neo-node{stroke:#999;}#mmf3ecc49aa60e [data-look="neo"].node rect,#mmf3ecc49aa60e [data-look="neo"].cluster rect,#mmf3ecc49aa60e [data-look="neo"].node polygon{stroke:url(#mmf3ecc49aa60e-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmf3ecc49aa60e [data-look="neo"].swimlane.cluster rect{filter:none;}#mmf3ecc49aa60e [data-look="neo"].node path{stroke:url(#mmf3ecc49aa60e-gradient);stroke-width:1px;}#mmf3ecc49aa60e [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmf3ecc49aa60e [data-look="neo"].node .neo-line path{stroke:#999;filter:none;}#mmf3ecc49aa60e [data-look="neo"].node circle{stroke:url(#mmf3ecc49aa60e-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmf3ecc49aa60e [data-look="neo"].node circle .state-start{fill:#000000;}#mmf3ecc49aa60e [data-look="neo"].icon-shape .icon{fill:url(#mmf3ecc49aa60e-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmf3ecc49aa60e [data-look="neo"].icon-shape .icon-neo path{stroke:url(#mmf3ecc49aa60e-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmf3ecc49aa60e :root{--mermaid-font-family:"Segoe UI",Arial,sans-serif;}</style><g><marker id="mmf3ecc49aa60e_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mmf3ecc49aa60e_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mmf3ecc49aa60e_flowchart-v2-pointEnd-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="11.5" refY="7" markerUnits="userSpaceOnUse" markerWidth="10.5" markerHeight="14" orient="auto"><path d="M 0 0 L 11.5 7 L 0 14 z" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></path></marker><marker id="mmf3ecc49aa60e_flowchart-v2-pointStart-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="1" refY="7" markerUnits="userSpaceOnUse" markerWidth="11.5" markerHeight="14" orient="auto"><polygon points="0,7 11.5,14 11.5,0" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></polygon></marker><marker id="mmf3ecc49aa60e_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmf3ecc49aa60e_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmf3ecc49aa60e_flowchart-v2-circleEnd-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refY="5" refX="12.25" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmf3ecc49aa60e_flowchart-v2-circleStart-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-2" refY="5" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmf3ecc49aa60e_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mmf3ecc49aa60e_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mmf3ecc49aa60e_flowchart-v2-crossEnd-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="17.7" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5;"></path></marker><marker id="mmf3ecc49aa60e_flowchart-v2-crossStart-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="-3.5" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edges edgePaths"><path d="M187.28333536783856,201.83331729347992L187.28333536783856,235.8000030517578L187.28333536783856,248.72893523989234Q187.28333536783856,255.8000030517578 180.21226755597309,255.8000030517578L155.4210688291181,255.8000030517578Q148.35000101725262,255.8000030517578 148.35000101725262,262.8710708636233L148.35000101725262,336.8000030517578" id="mmf3ecc49aa60e-L_a_b_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 164.57171630859375 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_a_b_0" data-points="W3sieCI6MTg3LjI4MzMzNTM2NzgzODU2LCJ5IjoyMDEuODMzMzE3MjkzNDc5OTJ9LHsieCI6MTg3LjI4MzMzNTM2NzgzODU2LCJ5IjoyMzUuODAwMDAzMDUxNzU3OH0seyJ4IjoxODcuMjgzMzM1MzY3ODM4NTYsInkiOjI1NS44MDAwMDMwNTE3NTc4fSx7IngiOjE0OC4zNTAwMDEwMTcyNTI2MiwieSI6MjU1LjgwMDAwMzA1MTc1Nzh9LHsieCI6MTQ4LjM1MDAwMTAxNzI1MjYyLCJ5IjozNDAuODAwMDAzMDUxNzU3OH1d" data-look="neo" marker-end="url(#mmf3ecc49aa60e_flowchart-v2-pointEnd-margin)"></path><path d="M255.2166697184245,201.83331729347992L255.2166697184245,235.8000030517578L255.2166697184245,248.72893523989234Q255.2166697184245,255.8000030517578 262.28773753029,255.8000030517578L319.32893625714496,255.8000030517578Q326.40000406901044,255.8000030517578 326.40000406901044,262.8710708636233L326.40000406901044,288.3000030517578L326.40000406901044,581.9000091552734L326.40000406901044,634.4000091552734L326.40000406901044,658.5000927482179" id="mmf3ecc49aa60e-L_a_c_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 518.5218505859375 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_a_c_0" data-points="W3sieCI6MjU1LjIxNjY2OTcxODQyNDUsInkiOjIwMS44MzMzMTcyOTM0Nzk5Mn0seyJ4IjoyNTUuMjE2NjY5NzE4NDI0NSwieSI6MjM1LjgwMDAwMzA1MTc1Nzh9LHsieCI6MjU1LjIxNjY2OTcxODQyNDUsInkiOjI1NS44MDAwMDMwNTE3NTc4fSx7IngiOjMyNi40MDAwMDQwNjkwMTA0NCwieSI6MjU1LjgwMDAwMzA1MTc1Nzh9LHsieCI6MzI2LjQwMDAwNDA2OTAxMDQ0LCJ5IjoyODguMzAwMDAzMDUxNzU3OH0seyJ4IjozMjYuNDAwMDA0MDY5MDEwNDQsInkiOjU4MS45MDAwMDkxNTUyNzM0fSx7IngiOjMyNi40MDAwMDQwNjkwMTA0NCwieSI6NjM0LjQwMDAwOTE1NTI3MzR9LHsieCI6MzI2LjQwMDAwNDA2OTAxMDQ0LCJ5Ijo2NjIuNTAwMDkyNzQ4MjE3OX1d" data-look="neo" marker-end="url(#mmf3ecc49aa60e_flowchart-v2-pointEnd-margin)"></path><path d="M120.25000000000001,501.299925562329L120.25000000000001,529.4000091552734L120.25000000000001,542.3289413434079Q120.25000000000001,549.4000091552734 113.17893218813454,549.4000091552734L95.07106781186548,549.4000091552734Q88,549.4000091552734 88,556.471076967139L88,630.4000091552734" id="mmf3ecc49aa60e-L_b_d_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 152.02178955078125 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_b_d_0" data-points="W3sieCI6MTIwLjI1MDAwMDAwMDAwMDAxLCJ5Ijo1MDEuMjk5OTI1NTYyMzI5fSx7IngiOjEyMC4yNTAwMDAwMDAwMDAwMSwieSI6NTI5LjQwMDAwOTE1NTI3MzR9LHsieCI6MTIwLjI1MDAwMDAwMDAwMDAxLCJ5Ijo1NDkuNDAwMDA5MTU1MjczNH0seyJ4Ijo4OCwieSI6NTQ5LjQwMDAwOTE1NTI3MzR9LHsieCI6ODgsInkiOjYzNC40MDAwMDkxNTUyNzM0fV0=" data-look="neo" marker-end="url(#mmf3ecc49aa60e_flowchart-v2-pointEnd-margin)"></path><path d="M176.45000203450525,501.299925562329L176.45000203450525,529.4000091552734L176.45000203450525,542.3289413434079Q176.45000203450525,549.4000091552734 183.52106984637072,549.4000091552734L232.37893422263977,549.4000091552734Q239.45000203450525,549.4000091552734 239.45000203450525,556.471076967139L239.45000203450525,607.3289413434079Q239.45000203450525,614.4000091552734 246.52106984637072,614.4000091552734L263.12893422263977,614.4000091552734Q270.20000203450525,614.4000091552734 270.20000203450525,621.471076967139L270.20000203450525,634.4000091552734L270.20000203450525,658.5000927482179" id="mmf3ecc49aa60e-L_b_c_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 236.2935791015625 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_b_c_0" data-points="W3sieCI6MTc2LjQ1MDAwMjAzNDUwNTI1LCJ5Ijo1MDEuMjk5OTI1NTYyMzI5fSx7IngiOjE3Ni40NTAwMDIwMzQ1MDUyNSwieSI6NTI5LjQwMDAwOTE1NTI3MzR9LHsieCI6MTc2LjQ1MDAwMjAzNDUwNTI1LCJ5Ijo1NDkuNDAwMDA5MTU1MjczNH0seyJ4IjoyMzkuNDUwMDAyMDM0NTA1MjUsInkiOjU0OS40MDAwMDkxNTUyNzM0fSx7IngiOjIzOS40NTAwMDIwMzQ1MDUyNSwieSI6NjE0LjQwMDAwOTE1NTI3MzR9LHsieCI6MjcwLjIwMDAwMjAzNDUwNTI1LCJ5Ijo2MTQuNDAwMDA5MTU1MjczNH0seyJ4IjoyNzAuMjAwMDAyMDM0NTA1MjUsInkiOjYzNC40MDAwMDkxNTUyNzM0fSx7IngiOjI3MC4yMDAwMDIwMzQ1MDUyNSwieSI6NjYyLjUwMDA5Mjc0ODIxNzl9XQ==" data-look="neo" marker-end="url(#mmf3ecc49aa60e_flowchart-v2-pointEnd-margin)"></path><path d="M270.20000203450525,794.8999316658446L270.20000203450525,823.0000152587891L270.20000203450525,835.9289474469235Q270.20000203450525,843.0000152587891 263.12893422263977,843.0000152587891L209.3710708636233,843.0000152587891Q202.3000030517578,843.0000152587891 202.3000030517578,850.0710830706546L202.3000030517578,924.0000152587891" id="mmf3ecc49aa60e-L_c_e_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 187.67181396484375 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_c_e_0" data-points="W3sieCI6MjcwLjIwMDAwMjAzNDUwNTI1LCJ5Ijo3OTQuODk5OTMxNjY1ODQ0Nn0seyJ4IjoyNzAuMjAwMDAyMDM0NTA1MjUsInkiOjgyMy4wMDAwMTUyNTg3ODkxfSx7IngiOjI3MC4yMDAwMDIwMzQ1MDUyNSwieSI6ODQzLjAwMDAxNTI1ODc4OTF9LHsieCI6MjAyLjMwMDAwMzA1MTc1NzgsInkiOjg0My4wMDAwMTUyNTg3ODkxfSx7IngiOjIwMi4zMDAwMDMwNTE3NTc4LCJ5Ijo5MjguMDAwMDE1MjU4Nzg5MX1d" data-look="neo" marker-end="url(#mmf3ecc49aa60e_flowchart-v2-pointEnd-margin)"></path><path d="M326.40000406901044,794.8999316658446L326.40000406901044,823.0000152587891L326.40000406901044,835.9289474469235Q326.40000406901044,843.0000152587891 333.4710718808759,843.0000152587891L387.22893523989234,843.0000152587891Q394.3000030517578,843.0000152587891 394.3000030517578,850.0710830706546L394.3000030517578,924.0000152587891" id="mmf3ecc49aa60e-L_c_f_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 187.67185974121094 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_c_f_0" data-points="W3sieCI6MzI2LjQwMDAwNDA2OTAxMDQ0LCJ5Ijo3OTQuODk5OTMxNjY1ODQ0Nn0seyJ4IjozMjYuNDAwMDA0MDY5MDEwNDQsInkiOjgyMy4wMDAwMTUyNTg3ODkxfSx7IngiOjMyNi40MDAwMDQwNjkwMTA0NCwieSI6ODQzLjAwMDAxNTI1ODc4OTF9LHsieCI6Mzk0LjMwMDAwMzA1MTc1NzgsInkiOjg0My4wMDAwMTUyNTg3ODkxfSx7IngiOjM5NC4zMDAwMDMwNTE3NTc4LCJ5Ijo5MjguMDAwMDE1MjU4Nzg5MX1d" data-look="neo" marker-end="url(#mmf3ecc49aa60e_flowchart-v2-pointEnd-margin)"></path><path d="M394.3000030517578,973.0000152587891L394.3000030517578,1009.0000152587891" id="mmf3ecc49aa60e-L_f_g_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_f_g_0" data-points="W3sieCI6Mzk0LjMwMDAwMzA1MTc1NzgsInkiOjk3My4wMDAwMTUyNTg3ODkxfSx7IngiOjM5NC4zMDAwMDMwNTE3NTc4LCJ5IjoxMDEzLjAwMDAxNTI1ODc4OTF9XQ==" data-look="neo" marker-end="url(#mmf3ecc49aa60e_flowchart-v2-pointEnd-margin)"></path></g><g class="edgeLabels"><g class="edgeLabel" transform="translate(147.90468851725262, 288.3000030517578)"><g class="label" data-id="L_a_b_0" transform="translate(0.3984375, -9.5)"><g><rect class="background" style="" x="-14.453125" y="-3" width="28.109375" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">yes</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(326.11875406901044, 435.1000061035156)"><g class="label" data-id="L_a_c_0" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-11.21875" y="-3" width="22.4375" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">no</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(87.5546875, 581.9000091552734)"><g class="label" data-id="L_b_d_0" transform="translate(0.3984375, -9.5)"><g><rect class="background" style="" x="-14.453125" y="-3" width="28.109375" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">yes</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(239.16875203450525, 581.9000091552734)"><g class="label" data-id="L_b_c_0" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-11.21875" y="-3" width="22.4375" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">no</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(201.8546905517578, 875.5000152587891)"><g class="label" data-id="L_c_e_0" transform="translate(0.3984375, -9.5)"><g><rect class="background" style="" x="-14.453125" y="-3" width="28.109375" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">yes</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(394.0187530517578, 875.5000152587891)"><g class="label" data-id="L_c_f_0" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-11.21875" y="-3" width="22.4375" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">no</tspan></tspan></text></g></g></g></g><g class="nodes"><g class="node default" id="mmf3ecc49aa60e-flowchart-a-0" data-look="neo" transform="translate(221.25000254313153, 123.9000015258789)"><polygon points="111.9000015258789,0 223.8000030517578,-111.9000015258789 111.9000015258789,-223.8000030517578 0,-111.9000015258789" class="label-container" transform="translate(-111.4000015258789, 111.9000015258789)"></polygon><g class="label" style="" transform="translate(0, -36.900001525878906)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Can</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> the</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> model</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">answer</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> in</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> a</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="2.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">constrained</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="3.2em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">form?</tspan></tspan></text></g></g></g><g class="node default" id="mmf3ecc49aa60e-flowchart-b-1" data-look="neo" transform="translate(148.35000101725262, 435.1000061035156)"><polygon points="94.29999923706055,0 188.5999984741211,-94.29999923706055 94.29999923706055,-188.5999984741211 0,-94.29999923706055" class="label-container" transform="translate(-93.79999923706055, 94.29999923706055)"></polygon><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Is</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> the</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> answer</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> a</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">label</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> or</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> number?</tspan></tspan></text></g></g></g><g class="node default" id="mmf3ecc49aa60e-flowchart-c-3" data-look="neo" transform="translate(298.3000030517578, 728.7000122070312)"><polygon points="94.29999923706055,0 188.5999984741211,-94.29999923706055 94.29999923706055,-188.5999984741211 0,-94.29999923706055" class="label-container" transform="translate(-93.79999923706055, 94.29999923706055)"></polygon><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Can</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> a</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> script</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> test</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">the</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> answer?</tspan></tspan></text></g></g></g><g class="node default good" id="mmf3ecc49aa60e-flowchart-d-5" data-look="neo" transform="translate(88, 656.9000091552734)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Exact</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> match</tspan></tspan></text></g></g></g><g class="node default good" id="mmf3ecc49aa60e-flowchart-e-9" data-look="neo" transform="translate(202.3000030517578, 950.5000152587891)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Code</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> check</tspan></tspan></text></g></g></g><g class="node default hot" id="mmf3ecc49aa60e-flowchart-f-11" data-look="neo" transform="translate(394.3000030517578, 950.5000152587891)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Model</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> judge</tspan></tspan></text></g></g></g><g class="node default info" id="mmf3ecc49aa60e-flowchart-g-13" data-look="neo" transform="translate(394.3000030517578, 1044.3000144958496)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Audit</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> against</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">hand</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> labels</tspan></tspan></text></g></g></g></g></g></g><defs><filter id="mmf3ecc49aa60e-drop-shadow" height="130%" width="130%"><feDropShadow dx="4" dy="4" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><defs><filter id="mmf3ecc49aa60e-drop-shadow-small" height="150%" width="150%"><feDropShadow dx="2" dy="2" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><linearGradient id="mmf3ecc49aa60e-gradient" gradientUnits="objectBoundingBox" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="hsl(0, 0%, 83.3333333333%)" stop-opacity="1"></stop><stop offset="100%" stop-color="hsl(0, 0%, 88.9215686275%)" stop-opacity="1"></stop></linearGradient></svg>
+      <figcaption>Take the first grader that can score the task; a model judge is the last resort and always gets an audit.</figcaption>
+    </figure>
+    <h3>The model judge and its limits</h3>
+    <p>A judge is a second model call with a rubric: "reply PASS only if the summary names the affected system, states the impact, and makes no claim that is not in the ticket." It is fast and scales, but it is a measuring instrument that you must calibrate. Two known weaknesses:</p>
+    <ul>
+      <li><b>Leniency.</b> The judge passes an answer you would fail. Measure it: hand-label a handful of outputs, count how many the judge passes that you failed.</li>
+      <li><b>Position bias.</b> In a pairwise comparison, the judge prefers the first or second slot regardless of content. Test it by judging each pair in both orders; a pair judged differently depending on order shows the verdict depends on slot, not quality.</li>
+    </ul>
+    <p>In lab 3, Haiku 5.5 as judge agreed with six hand labels 6 of 6, including two summaries that invented a cause and one that was vague, and passed nothing you failed. In the position swap it picked the same summary in both orders for 2 of 3 pairs; on the badge-reader pair it picked slot 2 in both orders, so one of those two verdicts was wrong. Six labels is far too few to trust the judge in general, but it is enough to show that the audit catches something.</p>
+    <h3>Auditing a judge</h3>
+    <ol>
+      <li>Hand-label 20 to 50 outputs, including several you know are bad.</li>
+      <li>Run the judge and report agreement, judge-passed-your-fail, and judge-failed-your-pass separately. The first error type is the dangerous one.</li>
+      <li>For pairwise judging, run both orders and discard or flag pairs whose verdict follows the slot.</li>
+      <li>Re-audit when you change the judge prompt or the judge model.</li>
+    </ol>
+    <aside class="rule">A judge you have not audited against hand labels is an opinion with a cost.</aside>
+    <aside class="trap">Do not let a model judge grade its own arm's output without a hand-labelled check; the judge and the candidate may share the same blind spots.</aside>
+  </div>
+
+  <div class="lesson" id="m11-l3" data-title="Designing an A/B comparison" data-minutes="20">
+    <h3>Paired, repeated, randomised, fixed</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Property</th><th>What you do</th><th>What it prevents</th></tr>
+      <tr><td>Paired</td><td>Every arm runs every case; compare per case, not pooled averages</td><td>Case difficulty swamping the arm difference</td></tr>
+      <tr><td>Repeated</td><td>Run each case and arm more than once (2 or 3 times)</td><td>Reading one lucky or unlucky sample as a trait</td></tr>
+      <tr><td>Randomised</td><td>Shuffle the order of all runs</td><td>Drift over time (load, caching, rate limits) landing on one arm</td></tr>
+      <tr><td>Fixed</td><td>Change one thing; pin everything else</td><td>Not knowing which change moved the number</td></tr>
+    </table></div>
+    <h3>What to pin</h3>
+    <p>Aliases such as <code>haiku</code> move to newer models over time, so a result measured on an alias today may not reproduce later. Pin the full model id for any eval you intend to keep (for example <code>claude-haiku-5-5</code>); the model-configuration page documents that aliases update. The lab harness records the model id from <code>modelUsage</code> on every run so you can check it. Also pin:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Setting</th><th>Why</th></tr>
+      <tr><td><code>--model</code></td><td>Model is the biggest single variable</td></tr>
+      <tr><td><code>--effort</code> (if you set it)</td><td>Haiku 5.5 defaults to medium effort; thinking cannot be turned off on the 5.5 models, so effort changes the work done</td></tr>
+      <tr><td><code>--tools ""</code></td><td>For a classification task, no tools. This also cut the fixed prompt to about 3,760 tokens in the probe</td></tr>
+      <tr><td><code>--setting-sources project</code> and <code>--strict-mcp-config</code></td><td>Keep your personal settings, hooks and MCP servers out of the measurement</td></tr>
+      <tr><td><code>--max-turns 1</code>, <code>--no-session-persistence</code></td><td>One turn, nothing written to the session history</td></tr>
+    </table></div>
+    <h3>Noise floor first</h3>
+    <p>Before comparing two prompts, run one prompt against itself. Lab 1 does this: three repeats, 36 runs, same score each time, no case flipping. That is a quiet task, and it tells you a gap of one case between arms is a real difference on this model. If your baseline flips cases between repeats, the noise floor is the number of flips, and an arm difference smaller than that is not evidence.</p>
+    <h3>The harness</h3>
+    <p>The harness is one script, <code>eval.ps1</code>, that builds the list of case, arm and repeat jobs, shuffles it with <code>Get-Random</code>, runs <code>claude -p</code> for each with the case text on stdin, grades the answer, and writes one CSV row per run with the score, output tokens, cost and duration. A second script, <code>pairs.ps1</code>, collapses the rows into one line per case: correct runs for A, correct runs for B.</p>
+    <figure class="diagram">
+<svg class="mm mm-flowchart" role="img" id="mm18346a116af1" width="100%" xmlns="http://www.w3.org/2000/svg" style="max-width: 1320px;" viewBox="4 4 1320 146"><style>#mm18346a116af1{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;fill:#000000;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#mm18346a116af1 .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#mm18346a116af1 .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#mm18346a116af1 .error-icon{fill:#552222;}#mm18346a116af1 .error-text{fill:#552222;stroke:#552222;}#mm18346a116af1 .edge-thickness-normal{stroke-width:1px;}#mm18346a116af1 .edge-thickness-thick{stroke-width:3.5px;}#mm18346a116af1 .edge-pattern-solid{stroke-dasharray:0;}#mm18346a116af1 .edge-thickness-invisible{stroke-width:0;fill:none;}#mm18346a116af1 .edge-pattern-dashed{stroke-dasharray:3;}#mm18346a116af1 .edge-pattern-dotted{stroke-dasharray:2;}#mm18346a116af1 .marker{fill:#666;stroke:#666;}#mm18346a116af1 .marker.cross{stroke:#666;}#mm18346a116af1 svg{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;}#mm18346a116af1 p{margin:0;}#mm18346a116af1 .label{font-family:"Segoe UI",Arial,sans-serif;color:#000000;}#mm18346a116af1 .cluster-label text{fill:#333;}#mm18346a116af1 .cluster-label span{color:#333;}#mm18346a116af1 .cluster-label span p{background-color:transparent;}#mm18346a116af1 .label text,#mm18346a116af1 span{fill:#000000;color:#000000;}#mm18346a116af1 .node rect,#mm18346a116af1 .node circle,#mm18346a116af1 .node ellipse,#mm18346a116af1 .node polygon,#mm18346a116af1 .node path{fill:#eee;stroke:#999;stroke-width:1px;}#mm18346a116af1 .rough-node .label text,#mm18346a116af1 .node .label text,#mm18346a116af1 .image-shape .label,#mm18346a116af1 .icon-shape .label{text-anchor:middle;}#mm18346a116af1 .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#mm18346a116af1 .rough-node .label,#mm18346a116af1 .node .label,#mm18346a116af1 .image-shape .label,#mm18346a116af1 .icon-shape .label{text-align:center;}#mm18346a116af1 .node.clickable{cursor:pointer;}#mm18346a116af1 .root .anchor path{fill:#666!important;stroke-width:0;stroke:#666;}#mm18346a116af1 .arrowheadPath{fill:#333333;}#mm18346a116af1 .edgePaths .path{stroke:#666;stroke-width:1px;}#mm18346a116af1 .flowchart-link{stroke:#666;fill:none;}#mm18346a116af1 .edgeLabel{background-color:white;text-align:center;}#mm18346a116af1 .edgeLabel p{background-color:white;}#mm18346a116af1 .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mm18346a116af1 .labelBkg{background-color:rgba(255, 255, 255, 0.5);}#mm18346a116af1 .cluster rect{fill:hsl(0, 0%, 98.9215686275%);stroke:#707070;stroke-width:1px;}#mm18346a116af1 .cluster text{fill:#333;}#mm18346a116af1 .cluster span{color:#333;}#mm18346a116af1 .node .collapsed-indicator{fill:#707070;stroke:none;opacity:0.6;}#mm18346a116af1 .node .collapsed-separator{stroke:#707070;stroke-width:0.75px;}#mm18346a116af1 div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"Segoe UI",Arial,sans-serif;font-size:12px;background:hsl(-160, 0%, 93.3333333333%);border:1px solid #707070;border-radius:2px;pointer-events:none;z-index:100;}#mm18346a116af1 .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mm18346a116af1 rect.text{fill:none;stroke-width:0;}#mm18346a116af1 .icon-shape,#mm18346a116af1 .image-shape{background-color:white;text-align:center;}#mm18346a116af1 .icon-shape p,#mm18346a116af1 .image-shape p{background-color:white;padding:2px;}#mm18346a116af1 .icon-shape .label rect,#mm18346a116af1 .image-shape .label rect{opacity:0.5;background-color:white;fill:white;}#mm18346a116af1 .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#mm18346a116af1 .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#mm18346a116af1 .node .neo-node{stroke:#999;}#mm18346a116af1 [data-look="neo"].node rect,#mm18346a116af1 [data-look="neo"].cluster rect,#mm18346a116af1 [data-look="neo"].node polygon{stroke:url(#mm18346a116af1-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm18346a116af1 [data-look="neo"].swimlane.cluster rect{filter:none;}#mm18346a116af1 [data-look="neo"].node path{stroke:url(#mm18346a116af1-gradient);stroke-width:1px;}#mm18346a116af1 [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm18346a116af1 [data-look="neo"].node .neo-line path{stroke:#999;filter:none;}#mm18346a116af1 [data-look="neo"].node circle{stroke:url(#mm18346a116af1-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm18346a116af1 [data-look="neo"].node circle .state-start{fill:#000000;}#mm18346a116af1 [data-look="neo"].icon-shape .icon{fill:url(#mm18346a116af1-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm18346a116af1 [data-look="neo"].icon-shape .icon-neo path{stroke:url(#mm18346a116af1-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm18346a116af1 :root{--mermaid-font-family:"Segoe UI",Arial,sans-serif;}</style><g><marker id="mm18346a116af1_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mm18346a116af1_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mm18346a116af1_flowchart-v2-pointEnd-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="11.5" refY="7" markerUnits="userSpaceOnUse" markerWidth="10.5" markerHeight="14" orient="auto"><path d="M 0 0 L 11.5 7 L 0 14 z" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></path></marker><marker id="mm18346a116af1_flowchart-v2-pointStart-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="1" refY="7" markerUnits="userSpaceOnUse" markerWidth="11.5" markerHeight="14" orient="auto"><polygon points="0,7 11.5,14 11.5,0" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></polygon></marker><marker id="mm18346a116af1_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm18346a116af1_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm18346a116af1_flowchart-v2-circleEnd-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refY="5" refX="12.25" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm18346a116af1_flowchart-v2-circleStart-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-2" refY="5" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm18346a116af1_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mm18346a116af1_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mm18346a116af1_flowchart-v2-crossEnd-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="17.7" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5;"></path></marker><marker id="mm18346a116af1_flowchart-v2-crossStart-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="-3.5" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edges edgePaths"><path d="M164,77L200,77" id="mm18346a116af1-L_g_j_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_g_j_0" data-points="W3sieCI6MTY0LCJ5Ijo3N30seyJ4IjoyMDQsInkiOjc3fV0=" data-look="neo" marker-end="url(#mm18346a116af1_flowchart-v2-pointEnd-margin)"></path><path d="M356,77L392,77" id="mm18346a116af1-L_j_s_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_j_s_0" data-points="W3sieCI6MzU2LCJ5Ijo3N30seyJ4IjozOTYsInkiOjc3fV0=" data-look="neo" marker-end="url(#mm18346a116af1_flowchart-v2-pointEnd-margin)"></path><path d="M548,72.83333333333333L560.9289321881345,72.83333333333333Q568,72.83333333333333 568,65.76226552146785L568,41.571067811865476Q568,34.5 575.0710678118655,34.5L584,34.5" id="mm18346a116af1-L_s_a_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 65.00506591796875 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_s_a_0" data-points="W3sieCI6NTQ4LCJ5Ijo3Mi44MzMzMzMzMzMzMzMzM30seyJ4Ijo1NjgsInkiOjcyLjgzMzMzMzMzMzMzMzMzfSx7IngiOjU2OCwieSI6MzQuNX0seyJ4Ijo1ODgsInkiOjM0LjV9XQ==" data-look="neo" marker-end="url(#mm18346a116af1_flowchart-v2-pointEnd-margin)"></path><path d="M548,81.16666666666667L560.9289321881345,81.16666666666667Q568,81.16666666666667 568,88.23773447853215L568,112.42893218813452Q568,119.5 575.0710678118655,119.5L584,119.5" id="mm18346a116af1-L_s_b_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 65.00505065917969 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_s_b_0" data-points="W3sieCI6NTQ4LCJ5Ijo4MS4xNjY2NjY2NjY2NjY2N30seyJ4Ijo1NjgsInkiOjgxLjE2NjY2NjY2NjY2NjY3fSx7IngiOjU2OCwieSI6MTE5LjV9LHsieCI6NTg4LCJ5IjoxMTkuNX1d" data-look="neo" marker-end="url(#mm18346a116af1_flowchart-v2-pointEnd-margin)"></path><path d="M740,34.5L752.9289321881345,34.5Q760,34.5 760,41.571067811865476L760,62.828932442447666Q760,69.90000025431314 767.0710678118655,69.90000025431314L776,69.90000025431314" id="mm18346a116af1-L_a_r_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 62.07173156738281 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_a_r_0" data-points="W3sieCI6NzQwLCJ5IjozNC41fSx7IngiOjc2MCwieSI6MzQuNX0seyJ4Ijo3NjAsInkiOjY5LjkwMDAwMDI1NDMxMzE0fSx7IngiOjc4MCwieSI6NjkuOTAwMDAwMjU0MzEzMTR9XQ==" data-look="neo" marker-end="url(#mm18346a116af1_flowchart-v2-pointEnd-margin)"></path><path d="M740,119.5L752.9289321881345,119.5Q760,119.5 760,112.42893218813452L760,91.17106755755232Q760,84.09999974568684 767.0710678118655,84.09999974568684L776,84.09999974568684" id="mm18346a116af1-L_b_r_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 62.07172393798828 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_b_r_0" data-points="W3sieCI6NzQwLCJ5IjoxMTkuNX0seyJ4Ijo3NjAsInkiOjExOS41fSx7IngiOjc2MCwieSI6ODQuMDk5OTk5NzQ1Njg2ODR9LHsieCI6NzgwLCJ5Ijo4NC4wOTk5OTk3NDU2ODY4NH1d" data-look="neo" marker-end="url(#mm18346a116af1_flowchart-v2-pointEnd-margin)"></path><path d="M932,77L968,77" id="mm18346a116af1-L_r_p_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_r_p_0" data-points="W3sieCI6OTMyLCJ5Ijo3N30seyJ4Ijo5NzIsInkiOjc3fV0=" data-look="neo" marker-end="url(#mm18346a116af1_flowchart-v2-pointEnd-margin)"></path><path d="M1124,77L1160,77" id="mm18346a116af1-L_p_t_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_p_t_0" data-points="W3sieCI6MTEyNCwieSI6Nzd9LHsieCI6MTE2NCwieSI6Nzd9XQ==" data-look="neo" marker-end="url(#mm18346a116af1_flowchart-v2-pointEnd-margin)"></path></g><g class="edgeLabels"></g><g class="nodes"><g class="node default" id="mm18346a116af1-flowchart-g-0" data-look="neo" transform="translate(88, 77)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Golden</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> set</tspan></tspan></text></g></g></g><g class="node default" id="mm18346a116af1-flowchart-j-1" data-look="neo" transform="translate(280, 77)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Job</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> list:</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> case,</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">arm,</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> repeat</tspan></tspan></text></g></g></g><g class="node default" id="mm18346a116af1-flowchart-s-3" data-look="neo" transform="translate(472, 77)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Shuffle</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> the</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> order</tspan></tspan></text></g></g></g><g class="node default info" id="mm18346a116af1-flowchart-a-5" data-look="neo" transform="translate(664, 34.5)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Run</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> arm</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> A</tspan></tspan></text></g></g></g><g class="node default alt" id="mm18346a116af1-flowchart-b-7" data-look="neo" transform="translate(664, 119.5)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Run</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> arm</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> B</tspan></tspan></text></g></g></g><g class="node default" id="mm18346a116af1-flowchart-r-9" data-look="neo" transform="translate(856, 77)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Grade</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> each</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">answer</tspan></tspan></text></g></g></g><g class="node default" id="mm18346a116af1-flowchart-p-13" data-look="neo" transform="translate(1048, 77)"><rect class="basic label-container" style="" x="-76" y="-40.099998474121094" width="152" height="80.19999694824219"></rect><g class="label" style="" transform="translate(0, -28.099998474121094)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">One</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> line</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> per</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">case:</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> A</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> runs,</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> B</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="2.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">runs</tspan></tspan></text></g></g></g><g class="node default hot" id="mm18346a116af1-flowchart-t-15" data-look="neo" transform="translate(1240, 77)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Sign</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> test</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> on</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> the</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">pairs</tspan></tspan></text></g></g></g></g></g></g><defs><filter id="mm18346a116af1-drop-shadow" height="130%" width="130%"><feDropShadow dx="4" dy="4" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><defs><filter id="mm18346a116af1-drop-shadow-small" height="150%" width="150%"><feDropShadow dx="2" dy="2" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><linearGradient id="mm18346a116af1-gradient" gradientUnits="objectBoundingBox" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="hsl(0, 0%, 83.3333333333%)" stop-opacity="1"></stop><stop offset="100%" stop-color="hsl(0, 0%, 88.9215686275%)" stop-opacity="1"></stop></linearGradient></svg>
+      <figcaption>Both arms run every case, in shuffled order, and the comparison is made per case.</figcaption>
+    </figure>
+    <aside class="rule">Change one thing, run every case under both arms several times in shuffled order, and record the model id with every row.</aside>
+    <aside class="trap">An alias such as <code>haiku</code> in a saved eval means the baseline changes under you when the alias moves. Two results on different dates may not be comparable.</aside>
+  </div>
+
+  <div class="lesson" id="m11-l4" data-title="Reading the result" data-minutes="25">
+    <h3>Wins, losses and ties</h3>
+    <p>For each case, subtract A's score from B's. Positive is a win for B, negative a loss, zero a tie. Ties carry no information about which arm is better; the evidence is in the cases that moved. In lab 2, prompt B added two label rules to prompt A. A scored 11 of 12 on both repeats, B scored 12 of 12 on both. Per case, 11 cases were 2 and 2 and case 9 was 0 and 2. That is 1 win, 0 losses, 11 ties.</p>
+    <h3>Exact sign test</h3>
+    <p>The sign test asks: if the arms were equal, how often would the wins and losses split this unevenly? With n untied cases and the smaller side k, the two-sided p-value is twice the probability of k or fewer successes in a fair coin flipped n times, capped at 1. With 1 win and 0 losses, n is 1, and p is 1.000. A single win cannot be told from luck.</p>
+    <h3>Bootstrap interval</h3>
+    <p>The paired bootstrap resamples the per-case differences with replacement many times and reports the middle 95 percent of the resampled means. Lab 2 gave a mean B minus A of 0.167 correct runs per case (of 2) with an interval of [0.000, 0.500]. The interval touches zero, which agrees with the sign test: the data are compatible with no improvement.</p>
+    <h3>The instrument</h3>
+    <p>Paste your paired scores into the readout below, one line per case, the A score then the B score separated by a comma, for example <code>2,2</code> or <code>0,2</code>. It returns the wins, losses and ties, the exact sign test, and the bootstrap interval. Try the lab 2 values (eleven lines of <code>2,2</code> and one <code>0,2</code>), then change them to see how many clean wins it takes.</p>
+    <div class="tool" data-tool="ab"></div>
+    <h3>How many wins are enough</h3>
+    <p>Exact two-sided sign test, p below 0.05:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Losses</th><th class="num">Wins needed</th></tr>
+      <tr><td>0</td><td class="num">6</td></tr>
+      <tr><td>1</td><td class="num">8</td></tr>
+      <tr><td>2</td><td class="num">10</td></tr>
+    </table></div>
+    <p>A check on the arithmetic: 9 wins, 1 loss and 2 ties gives p about 0.021 and a bootstrap interval of [0.250, 1.000]; 0 wins and 2 losses gives p 0.500.</p>
+    <h3>Power: how big a set you need</h3>
+    <p>Power is the chance the test detects a real improvement. These figures are computed exactly for the sign test, for an arm that fixes some share of cases and breaks another share:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Fixes / breaks</th><th class="num">12 cases</th><th class="num">30</th><th class="num">60</th><th class="num">100</th><th class="num">200</th></tr>
+      <tr><td>10% / 0%</td><td class="num">0.00</td><td class="num">0.07</td><td class="num">0.56</td><td class="num">0.94</td><td class="num">1.00</td></tr>
+      <tr><td>10% / 3%</td><td class="num">0.00</td><td class="num">0.04</td><td class="num">0.19</td><td class="num">0.40</td><td class="num">0.75</td></tr>
+      <tr><td>20% / 5%</td><td class="num">0.01</td><td class="num">0.24</td><td class="num">0.58</td><td class="num">0.84</td><td class="num">0.99</td></tr>
+      <tr><td>30% / 5%</td><td class="num">0.08</td><td class="num">0.57</td><td class="num">0.92</td><td class="num">0.99</td><td class="num">1.00</td></tr>
+    </table></div>
+    <p>A 12-case set can only show a very large change; the 12-case lab detects almost nothing, by design. For a 10 percent fix with no breaks you need about 100 cases to be 94 percent likely to see it. A change that also breaks 3 percent of cases needs far more.</p>
+    <h3>Practical versus statistical</h3>
+    <p>A result can be significant and still not worth shipping, or not significant and still worth a larger run. Put cost and latency next to the score. In lab 2 arm B cost about $0.00285 against $0.00098 for A at list price (about 2.9 times), with mean latency 1,113 ms against 973 ms. A follow-up check of 12 extra runs showed why: B's output tokens ranged from 3 to 91 per run, because Haiku 5.5 spends output tokens on thinking, while A's were about 4. A longer prompt did not cost three times as much because of its length; it changed how much the model thought. The JSON result carries this in <code>usage.output_tokens_details.thinking_tokens</code>.</p>
+    <aside class="rule">Report wins, losses and ties with the p-value and interval, and put cost and latency beside them.</aside>
+    <aside class="trap">A p-value of 1.000 on 12 cases is not evidence that the prompts are equal. It is evidence that 12 cases cannot tell.</aside>
+  </div>
+
+  <div class="lesson" id="m11-l5" data-title="Catching confident wrong answers" data-minutes="20">
+    <h3>Accuracy hides the dangerous error</h3>
+    <p>A wrong answer that looks like a right one is more costly than a refusal. Accuracy lumps the two together. Split the failures by type: wrong answer given, answer declined, format broken. The cases to build for it are ones where the right answer is "the input does not say".</p>
+    <h3>The abstention test</h3>
+    <p>Lab 4 uses eight change notes asking for a TCP port. Four state the port. Four do not (a service restarted, an API moved, a mail relay that came back after a certificate renewal, a PostgreSQL server upgrade) and each has a decoy: a well-known default port the model could supply from general knowledge. The correct answer for those four is NONE.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Arm</th><th>Exact match</th><th>Fabricated a port</th><th>Declined in prose</th></tr>
+      <tr><td>A: "Reply with the port number only."</td><td>4 of 8</td><td>0 of 4</td><td>4 of 4</td></tr>
+      <tr><td>B: A plus "If the note does not state the port, reply NONE; a default port is a guess, not a statement."</td><td>8 of 8</td><td>0 of 4</td><td>0 of 4</td></tr>
+    </table></div>
+    <p>Neither arm fabricated a port on this model. The difference is format. Arm A declined in sentences ("the PostgreSQL default is 5432 but db-01 may be configured differently"), which an exact-match grader scores as wrong and which a downstream script cannot parse. Arm B returned the single token NONE. The prose answer for the PostgreSQL note named the default port while declining, which is the shape of a fabrication waiting to happen if the next model is less careful. Count it separately: grade "stated a port", "declined", and "wrong port".</p>
+    <h3>Techniques that move the rate</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Technique</th><th>What you add</th><th>How you test it</th></tr>
+      <tr><td>Explicit abstention</td><td>A defined token for "not stated", and a rule that a default is a guess</td><td>Cases with no answer; count fabrications and prose declines</td></tr>
+      <tr><td>Grounding</td><td>Answer only from the supplied text; quote the evidence</td><td>Grade the quote with a code check (is it a substring of the input)</td></tr>
+      <tr><td>Verifier</td><td>A second call checks the first answer against the source</td><td>Audit the verifier against hand labels as in lesson 2</td></tr>
+      <tr><td>Regression set</td><td>Every confident wrong answer from real use becomes a case</td><td>Rerun the set on each change</td></tr>
+    </table></div>
+    <p>The code check for evidence is the cheapest: ask for the sentence the answer came from, then test in code that the sentence appears in the input. An answer with no matching evidence is scored as a failure, whatever the answer was.</p>
+    <aside class="rule">Grade fabrications as their own column, and give the model a defined way to say "not stated".</aside>
+    <aside class="trap">Zero fabrications on eight cases says little. The abstention rate needs the same sample-size thinking as accuracy; a rare failure needs many no-answer cases to show up.</aside>
+  </div>
+
+  <div class="lesson" id="m11-l6" data-title="What an eval costs" data-minutes="15">
+    <h3>Count the calls</h3>
+    <p>An eval is cases times arms times repeats, plus judge calls. Lab 2 was 12 cases, 2 arms and 2 repeats: 48 runs. Add a judge pass and it doubles. Change one factor and the cost multiplies, so size the set from the power table before adding repeats.</p>
+    <h3>Subscription plan</h3>
+    <p>On a subscription the fee is flat and the eval draws down your 5-hour window and the weekly limit, which span all models. <code>total_cost_usd</code> in the JSON result is a client-side estimate from a bundled price table, not billing data, and on a subscription it is notional. Use it to compare arms by relative cost; it is not what you pay. The lever on a plan is share of the window: Haiku uses less than Sonnet or Opus for the same call, and a 12-case, 48-run eval on Haiku is a small bite. Run large evals when you are not about to need the window for real work, and do not leave an eval looping against a limit.</p>
+    <h3>API key</h3>
+    <p>With an API key the cost is dollars at list price: input, output, cache write and cache read at the rates for the model. Lab 1's 36 runs cost about $0.0029 at the Haiku 5.5 rate. Two levers exist that a plan does not give you:</p>
+    <ul>
+      <li><code>--max-budget-usd</code> caps spend for a headless run.</li>
+      <li>The Batch API is 50 percent off input and output, up to 100,000 requests or 256 MB per batch, with results available within 24 hours. It suits a large nightly regression set that nobody is waiting for. Whether Claude Code itself submits batches is not documented on the pages read for this module; the batch route means calling the API directly.</li>
+    </ul>
+    <h3>Cost per decision</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Question</th><th>Plan</th><th>API key</th></tr>
+      <tr><td>What does a run cost?</td><td>A share of the window; <code>total_cost_usd</code> is notional</td><td><code>total_cost_usd</code> approximates the bill</td></tr>
+      <tr><td>Can I cap it?</td><td>Stop the loop yourself; the limit is the cap</td><td><code>--max-budget-usd</code></td></tr>
+      <tr><td>Can I halve it?</td><td>Use a smaller model for the grader</td><td>Smaller model, or batch for 50 percent off</td></tr>
+    </table></div>
+    <h3>Spend where the variance is</h3>
+    <p>Run the cheap model for the wide first pass, and spend on a stronger model or more repeats only on the cases that flip. A grader that is exact match costs nothing; reach for a judge only after a code check cannot do the job.</p>
+    <aside class="rule">Size the set from the power table, price it as cases times arms times repeats, and use the cheapest grader that scores the task.</aside>
+    <aside class="trap">Do not read a small <code>total_cost_usd</code> on a subscription as free. It still draws down the window, and a large looping eval can hit the limit and stop your real work.</aside>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m11-lab1" data-title="Golden set, grader and baseline" data-minutes="25">
+      <p class="goal">You build a 12-case golden set and an eval harness, run a baseline three times, and end up holding a baseline score and the list of systematic misses.</p>
+      <ol class="steps">
+        <li><p>Create the lab folder and the cases. Run all labs from this folder.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m11 | Out-Null
+Set-Location ~/bootcamp-labs/m11
+Set-Content -Encoding utf8 tickets.csv @'
+id,text,expected
+1,"Disk C: on web-01 is at 98 percent and the app log is still growing.",disk
+2,"Users in the east office cannot reach any internal site since the switch was replaced this morning.",network
+3,"My password expired and the reset page says my account is locked.",auth
+4,"The second-floor printer prints every page with a grey streak.",printer
+5,"It is broken again. Please fix it today.",unclear
+6,"Backup job failed: target volume has no free space left.",disk
+7,"VPN connects but then drops every five minutes.",network
+8,"New hire cannot log in; the MFA prompt never arrives on her phone.",auth
+9,"Scan-to-email on the copier stopped sending since we changed the mail account password.",printer
+10,"Same problem as yesterday on the thing in room 4.",unclear
+11,"The file server is slow and keeps logging SMART warnings for drive 3.",disk
+12,"Cannot open the payroll folder: access denied, but my colleague can.",auth
+'@
+Set-Content -Encoding utf8 prompt-a.txt 'Classify the IT ticket on stdin as one of: disk, network, auth, printer, unclear. Reply with the label only.'</code></pre>
+          <p class="expect"><b>Expected:</b> No output. <code>tickets.csv</code> has 13 lines.</p></li>
+        <li><p>Write the harness. Every run uses <code>--setting-sources project</code> and <code>--strict-mcp-config</code>: those two flags keep your personal settings, hooks and MCP servers out of the measurement. <code>--tools ""</code> removes tools, and the case text goes in on stdin.</p>
+          <pre><code>Set-Content -Encoding utf8 eval.ps1 @'
+param([string]$Cases = 'tickets.csv', [string[]]$Arms = @('prompt-a.txt'), [int]$Repeat = 1, [string]$Out = 'results.csv', [string]$Model = 'haiku')
+$list = Import-Csv $Cases
+$jobs = @(foreach ($c in $list) { foreach ($a in $Arms) { foreach ($r in 1..$Repeat) { [pscustomobject]@{ case = $c; arm = $a; rep = $r } } } })
+$jobs = $jobs | Get-Random -Count $jobs.Count
+$rows = foreach ($j in $jobs) {
+  $prompt = (Get-Content $j.arm -Raw).Trim()
+  $raw = $j.case.text | claude -p $prompt --model $Model --setting-sources project --strict-mcp-config --tools "" --max-turns 1 --no-session-persistence --output-format json
+  $res = ($raw -join "`n") | ConvertFrom-Json
+  $got = ([string]$res.result -replace '[^\w ]', '').Trim().ToLower()
+  [pscustomobject]@{ id = $j.case.id; arm = $j.arm; rep = $j.rep; expected = $j.case.expected; got = $got
+    score = [int]($got -eq $j.case.expected); out = $res.usage.output_tokens; cost = $res.total_cost_usd; ms = $res.duration_ms
+    model = ($res.modelUsage.PSObject.Properties.Name -join '+') }
+}
+$rows | Export-Csv $Out -NoTypeInformation
+$rows | Group-Object arm, rep | Sort-Object Name | ForEach-Object { '{0}  score {1}/{2}' -f $_.Name, ($_.Group | Measure-Object score -Sum).Sum, $_.Count }
+'{0} runs, {1:N4} USD, median {2} ms, model {3}' -f $rows.Count, ($rows | Measure-Object cost -Sum).Sum, (@($rows.ms | Sort-Object { [int]$_ }))[[int]($rows.Count / 2)], (@($rows.model | Sort-Object -Unique) -join ',')
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> No output. Note the loop variable is <code>$list</code>, not <code>$cases</code>: PowerShell variable names are case-insensitive, so <code>$cases</code> would collide with the typed <code>$Cases</code> parameter and give you one empty case.</p></li>
+        <li><p>Run the baseline: 12 cases, one arm, three repeats, shuffled. It makes 36 calls and takes a few minutes.</p>
+          <pre><code>.\eval.ps1 -Arms prompt-a.txt -Repeat 3 -Out baseline.csv</code></pre>
+          <p class="expect"><b>Expected:</b> Three score lines, each about <code>11/12</code>, then a line like <code>36 runs, 0.0029 USD, median 1019 ms, model claude-haiku-5-5</code>. Your cost and median vary; the model id should be a full id even though you passed the alias.</p></li>
+        <li><p>List the cases that changed between runs, then the cases wrong in any run.</p>
+          <pre><code>$r = Import-Csv baseline.csv
+$r | Group-Object id | Where-Object { @($_.Group.got | Sort-Object -Unique).Count -gt 1 } | ForEach-Object { 'case {0}: {1}' -f $_.Name, ($_.Group.got -join ' / ') }
+'--- wrong in any run'
+$r | Where-Object score -eq 0 | Sort-Object { [int]$_.id } | ForEach-Object { 'case {0} rep {1}: expected {2}, got {3}' -f $_.id, $_.rep, $_.expected, $_.got }</code></pre>
+          <p class="expect"><b>Expected:</b> No case flipped (nothing before the separator). Case 9 is wrong in all three reps: expected <code>printer</code>, got <code>auth</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>What is your noise floor on this task? Zero flipped cases in 36 runs, so a one-case difference between arms is a real difference here. Is the case 9 miss noise? No: it failed 3 of 3, so it is systematic and a prompt change can address it. Why random order? So drift over the run does not land on one arm. Why does the harness record the model id? So you can tell later whether a result was measured on the model you think it was.</p></details>
+    </article>
+
+    <article class="lab" id="m11-lab2" data-title="A paired, repeated A/B of two prompts" data-minutes="25">
+      <p class="goal">You run prompt A against prompt B on the same 12 cases, two repeats each, and end up holding wins, losses and ties, a sign-test p-value, a bootstrap interval, and the cost and latency of each arm.</p>
+      <ol class="steps">
+        <li><p>Write prompt B: prompt A plus two label rules.</p>
+          <pre><code>Set-Content -Encoding utf8 prompt-b.txt 'Classify the IT ticket on stdin as one of: disk, network, auth, printer, unclear. Label the device or service that is failing, not what triggered it; copiers and scanners count as printer. Use unclear when the ticket does not say what is broken. Reply with the label only.'</code></pre>
+          <p class="expect"><b>Expected:</b> No output.</p></li>
+        <li><p>Write the pairing script and the readout script. The readout computes the exact sign test and a paired bootstrap with a fixed seed. Note <code>[math]::Min(1.0, ...)</code>: with the integer 1, PowerShell picks the Int32 overload and truncates a p-value of 0.5 to 0.</p>
+          <pre><code>Set-Content -Encoding utf8 pairs.ps1 @'
+param([string]$Path = 'ab.csv', [string]$A = 'prompt-a.txt', [string]$B = 'prompt-b.txt', [string]$Out = 'pairs.txt')
+$rows = Import-Csv $Path
+$lines = $rows | Group-Object id | Sort-Object { [int]$_.Name } | ForEach-Object {
+  $sa = ($_.Group | Where-Object arm -eq $A | Measure-Object score -Sum).Sum
+  $sb = ($_.Group | Where-Object arm -eq $B | Measure-Object score -Sum).Sum
+  '{0},{1}' -f $sa, $sb }
+$lines | Set-Content -Encoding ascii $Out
+$lines
+'@
+Set-Content -Encoding utf8 abstat.ps1 @'
+param([string]$Path = 'pairs.txt', [int]$Resamples = 5000)
+$d = @(Get-Content $Path | Where-Object { $_ -match ',' } | ForEach-Object { $x = $_ -split ','; [double]$x[1] - [double]$x[0] })
+$w = @($d | Where-Object { $_ -gt 0 }).Count; $l = @($d | Where-Object { $_ -lt 0 }).Count; $t = $d.Count - $w - $l
+$n = $w + $l; $k = [math]::Min($w, $l); $tail = 0.0; $c = 1.0
+for ($i = 0; $i -le $k; $i++) { $tail += $c; $c = $c * ($n - $i) / ($i + 1) }
+$p = if ($n -eq 0) { 1.0 } else { [math]::Min(1.0, 2 * $tail / [math]::Pow(2, $n)) }
+$mean = ($d | Measure-Object -Average).Average
+$rng = [Random]::new(1)
+$means = @(for ($j = 0; $j -lt $Resamples; $j++) { $s = 0.0; for ($i = 0; $i -lt $d.Count; $i++) { $s += $d[$rng.Next($d.Count)] }; $s / $d.Count }) | Sort-Object
+'cases {0}: wins {1}, losses {2}, ties {3}; sign test p = {4:N3}' -f $d.Count, $w, $l, $t, $p
+'mean B-A = {0:N3}; 95% paired bootstrap interval [{1:N3}, {2:N3}]' -f $mean, $means[[int](0.025 * $Resamples)], $means[[int](0.975 * $Resamples) - 1]
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> No output.</p></li>
+        <li><p>Run both arms, two repeats each: 48 calls.</p>
+          <pre><code>.\eval.ps1 -Arms prompt-a.txt, prompt-b.txt -Repeat 2 -Out ab.csv</code></pre>
+          <p class="expect"><b>Expected:</b> Four score lines: A about <code>11/12</code> twice, B about <code>12/12</code> twice, then <code>48 runs, 0.0038 USD, median 971 ms, model claude-haiku-5-5</code>.</p></li>
+        <li><p>Pair the scores and read the result.</p>
+          <pre><code>.\pairs.ps1
+.\abstat.ps1</code></pre>
+          <p class="expect"><b>Expected:</b> Twelve lines, eleven of them <code>2,2</code> and one <code>0,2</code> (case 9). Then <code>cases 12: wins 1, losses 0, ties 11; sign test p = 1.000</code> and <code>mean B-A = 0.167; 95% paired bootstrap interval [0.000, 0.500]</code>. You can also paste the twelve lines into the readout in lesson 4.</p></li>
+        <li><p>Compare cost and latency per arm.</p>
+          <pre><code>Import-Csv ab.csv | Group-Object arm | ForEach-Object { '{0}: {1:N5} USD, mean {2:N0} ms' -f $_.Name, ($_.Group | Measure-Object cost -Sum).Sum, ($_.Group | Measure-Object ms -Average).Average }</code></pre>
+          <p class="expect"><b>Expected:</b> About <code>prompt-a.txt: 0.00098 USD, mean 973 ms</code> and <code>prompt-b.txt: 0.00285 USD, mean 1,113 ms</code>: B costs about three times as much per 24 runs.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Is B better? B scored higher, but with one win and no loss p is 1.000 and the interval touches zero, so 12 cases cannot show it. Why does B cost three times as much with a prompt about twice as long? Output tokens: B's runs used 3 to 91 output tokens each (the model thinks more when given rules), while A's were about 4. Add <code>out</code> to a <code>Group-Object arm</code> summary to see it in your own <code>ab.csv</code>. What would it take to be convinced? See the power table: more cases, not more repeats of the same 12.</p></details>
+    </article>
+
+    <article class="lab" id="m11-lab3" data-title="Audit a model judge" data-minutes="20">
+      <p class="goal">You judge six hand-labelled summaries with a model, then judge three pairs in both orders, and end up holding an agreement count and a position-consistency count.</p>
+      <ol class="steps">
+        <li><p>Create the six hand-labelled summaries (two invent a cause, one is vague) and the judge prompt.</p>
+          <pre><code>Set-Content -Encoding utf8 judge.csv @'
+id,text,expected
+1,"Ticket: Since 08:10 the payroll app on app-02 returns error 500 for all users in finance. Restarting the app pool did not help. | Summary: Payroll app on app-02 returns error 500 for all finance users since 08:10; an app pool restart did not help.",pass
+2,"Ticket: Since 08:10 the payroll app on app-02 returns error 500 for all users in finance. Restarting the app pool did not help. | Summary: Payroll app on app-02 is down for finance because its database ran out of disk space.",fail
+3,"Ticket: The nightly backup of db-01 failed twice this week with a timeout; the last good backup is from Monday. | Summary: Backups are having some issues.",fail
+4,"Ticket: The nightly backup of db-01 failed twice this week with a timeout; the last good backup is from Monday. | Summary: db-01 nightly backup failed twice this week (timeout); last good backup is Monday.",pass
+5,"Ticket: Badge readers on the north door reject all cards since the power cut; the south door works. | Summary: North door badge readers reject all cards since the power cut; south door unaffected.",pass
+6,"Ticket: Badge readers on the north door reject all cards since the power cut; the south door works. | Summary: North door badge readers reject all cards after the power cut; facilities already replaced the controller.",fail
+'@
+Set-Content -Encoding utf8 judge.txt 'Stdin holds a ticket and a one-line on-call summary of it. Reply PASS only if the summary names the affected system, states the impact, and makes no claim that is not in the ticket. Otherwise reply FAIL. Reply PASS or FAIL only.'</code></pre>
+          <p class="expect"><b>Expected:</b> No output. This lab reuses <code>eval.ps1</code> from lab 1.</p></li>
+        <li><p>Run the judge and compare it with your labels.</p>
+          <pre><code>.\eval.ps1 -Cases judge.csv -Arms judge.txt -Out judged.csv
+$j = Import-Csv judged.csv | Sort-Object { [int]$_.id }
+$j | Format-Table id, expected, got, score -AutoSize | Out-String
+'agreement {0}/6; judge passed what you failed: {1}; judge failed what you passed: {2}' -f ($j | Measure-Object score -Sum).Sum, @($j | Where-Object { $_.expected -eq 'fail' -and $_.got -eq 'pass' }).Count, @($j | Where-Object { $_.expected -eq 'pass' -and $_.got -eq 'fail' }).Count</code></pre>
+          <p class="expect"><b>Expected:</b> <code>judge.txt, 1  score 6/6</code>, a table where every row scores 1, and <code>agreement 6/6; judge passed what you failed: 0; judge failed what you passed: 0</code>. Six runs cost about $0.0012.</p></li>
+        <li><p>Create the pairwise cases. Each pair appears twice with the summaries swapped; <code>expected</code> is the slot of the better summary. The expected slot is 1 for the first pair and 2 for the swapped copy.</p>
+          <pre><code>Set-Content -Encoding utf8 pos.csv @'
+id,text,expected
+1,"Ticket: Since 08:10 the payroll app on app-02 returns error 500 for all users in finance. Restarting the app pool did not help. | Summary 1: Payroll app on app-02 returns error 500 for all finance users since 08:10; an app pool restart did not help. | Summary 2: Payroll app on app-02 is down for finance because its database ran out of disk space.",1
+2,"Ticket: Since 08:10 the payroll app on app-02 returns error 500 for all users in finance. Restarting the app pool did not help. | Summary 1: Payroll app on app-02 is down for finance because its database ran out of disk space. | Summary 2: Payroll app on app-02 returns error 500 for all finance users since 08:10; an app pool restart did not help.",2
+3,"Ticket: The nightly backup of db-01 failed twice this week with a timeout; the last good backup is from Monday. | Summary 1: Backups are having some issues. | Summary 2: db-01 nightly backup failed twice this week (timeout); last good backup is Monday.",2
+4,"Ticket: The nightly backup of db-01 failed twice this week with a timeout; the last good backup is from Monday. | Summary 1: db-01 nightly backup failed twice this week (timeout); last good backup is Monday. | Summary 2: Backups are having some issues.",1
+5,"Ticket: Badge readers on the north door reject all cards since the power cut; the south door works. | Summary 1: North door badge readers reject all cards since the power cut; south door unaffected. | Summary 2: North door badge readers reject all cards after the power cut; facilities already replaced the controller.",1
+6,"Ticket: Badge readers on the north door reject all cards since the power cut; the south door works. | Summary 1: North door badge readers reject all cards after the power cut; facilities already replaced the controller. | Summary 2: North door badge readers reject all cards since the power cut; south door unaffected.",2
+'@
+Set-Content -Encoding utf8 pos.txt 'Stdin holds a ticket and two one-line summaries of it. Which summary is better for an on-call handover? Reply 1 or 2 only.'</code></pre>
+          <p class="expect"><b>Expected:</b> No output.</p></li>
+        <li><p>Run the pairwise judge and count the pairs judged the same both ways round.</p>
+          <pre><code>.\eval.ps1 -Cases pos.csv -Arms pos.txt -Out pos-out.csv
+$p = Import-Csv pos-out.csv | Sort-Object { [int]$_.id }
+$p | Format-Table id, expected, got, score -AutoSize | Out-String
+'pairs judged the same both ways round: {0}/3' -f @(1, 3, 5 | Where-Object { $a = $_; ($p | Where-Object id -eq $a).score -eq ($p | Where-Object id -eq ($a + 1)).score }).Count</code></pre>
+          <p class="expect"><b>Expected:</b> <code>pos.txt, 1  score 5/6</code>. The miss was case 5 (expected 1, got 2): the badge-reader pair, where the judge chose slot 2 in both orders. Last line about <code>pairs judged the same both ways round: 2/3</code>. A model can vary run to run; if yours scores 6/6, the point stands that a swap is how you would have seen a failure.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Which judge error type matters most for a quality gate? Passing what you failed (leniency), because bad output goes through; count it separately from the other error. What does the 2 of 3 consistency mean? One pair's verdict followed the slot instead of the content, so that single-order verdict could not be trusted. Is six labels enough to trust this judge? No; it shows the method, and a real audit uses 20 to 50 labels.</p></details>
+    </article>
+
+    <article class="lab" id="m11-lab4" data-title="Abstention and confident wrong answers" data-minutes="20">
+      <p class="goal">You test two prompts on eight change notes, four of which do not state the answer, and end up holding exact-match scores plus separate counts of fabricated answers and prose declines.</p>
+      <ol class="steps">
+        <li><p>Create the notes and the two prompts.</p>
+          <pre><code>Set-Content -Encoding utf8 notes.csv @'
+id,text,expected
+1,"The metrics agent on web-01 now listens on port 9102 after the upgrade.",9102
+2,"Moved the admin console of acme-cms to port 8443 and closed 8080.",8443
+3,"Restarted the deploy service on build-03; it is listening again.",none
+4,"The reporting API was moved to the new cluster last night.",none
+5,"Grafana on mon-01 answers on 3000 as before; only the theme changed.",3000
+6,"The mail relay came back after the certificate renewal; clients connect as usual.",none
+7,"Configured the syslog collector on log-02 to accept TLS on 6514.",6514
+8,"The PostgreSQL server on db-01 was upgraded to the new major version.",none
+'@
+Set-Content -Encoding utf8 port-a.txt 'Which TCP port does the service in the change note on stdin listen on? Reply with the port number only.'
+Set-Content -Encoding utf8 port-b.txt 'Which TCP port does the service in the change note on stdin listen on? Reply with the port number only. If the note does not state the port, reply NONE; a default port is a guess, not a statement.'</code></pre>
+          <p class="expect"><b>Expected:</b> No output.</p></li>
+        <li><p>Run both arms once (16 calls) and count the failure types separately.</p>
+          <pre><code>.\eval.ps1 -Cases notes.csv -Arms port-a.txt, port-b.txt -Out ports.csv
+$r = Import-Csv ports.csv
+$r | Sort-Object arm, { [int]$_.id } | Format-Table arm, id, expected, got, score -AutoSize | Out-String
+$r | Group-Object arm | Sort-Object Name | ForEach-Object { $g = $_.Group
+  '{0}: exact {1}/8; fabricated a port {2}; declined in prose {3}; wrong port {4}' -f $_.Name, ($g | Measure-Object score -Sum).Sum,
+    @($g | Where-Object { $_.expected -eq 'none' -and $_.got -match '^\d+$' }).Count,
+    @($g | Where-Object { $_.expected -eq 'none' -and $_.score -eq '0' -and $_.got -notmatch '^\d+$' }).Count,
+    @($g | Where-Object { $_.expected -ne 'none' -and $_.score -eq '0' }).Count }</code></pre>
+          <p class="expect"><b>Expected:</b> <code>port-a.txt, 1  score 4/8</code> and <code>port-b.txt, 1  score 8/8</code>. In the table, arm A's no-answer rows are sentences such as "the note doesnt specify a port"; arm B's are <code>none</code>. The summary lines read about <code>port-a.txt: exact 4/8; fabricated a port 0; declined in prose 4; wrong port 0</code> and <code>port-b.txt: exact 8/8; fabricated a port 0; declined in prose 0; wrong port 0</code>.</p></li>
+        <li><p>Look at arm A's answer for note 8 in full.</p>
+          <pre><code>($r | Where-Object { $_.arm -eq 'port-a.txt' -and $_.id -eq '8' }).got</code></pre>
+          <p class="expect"><b>Expected:</b> A sentence that declines but names the default, along the lines of "the note doesnt specify a port postgresqls default is 5432 but db01 may be configured differently".</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Did either arm fabricate a port? No, on this model and these cases. Then why did arm A score half? It declined in prose, which exact match cannot score, and a script reading the answer would choke on it. What does that tell you about the grader? Exact match measures format discipline as well as correctness, so separate the counts. Why is the PostgreSQL answer a risk even though it declined? It names a default port next to the refusal; a parser or a reader can lift the number out.</p></details>
+    </article>
+
+    <article class="lab" id="m11-lab5" data-title="Evaluate your own change" data-minutes="40">
+      <p class="goal">You pick a real change to a prompt you use, build at least 20 cases of your own, run a paired A/B, and end up holding a pairs file and a written decision.</p>
+      <ol class="steps">
+        <li><p>Make a subfolder and copy the three scripts from the earlier labs. Write the shape of the run on a two-case stand-in first so you can see the harness work on your own files.</p>
+          <pre><code>New-Item -ItemType Directory -Force own | Out-Null
+Copy-Item eval.ps1, pairs.ps1, abstat.ps1 own
+Set-Location own
+Set-Content -Encoding utf8 cases.csv @'
+id,text,expected
+1,"Job deploy-web failed: npm ERR! code ENOSPC while writing to /var/cache.",disk
+2,"Login to the wiki loops back to the sign-in page after MFA.",auth
+'@
+Set-Content -Encoding utf8 mine-a.txt 'Classify the IT ticket on stdin as one of: disk, network, auth, printer, unclear. Reply with the label only.'
+Set-Content -Encoding utf8 mine-b.txt 'Classify the IT ticket on stdin as one of: disk, network, auth, printer, unclear. Label the failing device or service. Reply with the label only.'
+.\eval.ps1 -Cases cases.csv -Arms mine-a.txt, mine-b.txt -Repeat 1 -Out mine.csv
+.\pairs.ps1 -Path mine.csv -A mine-a.txt -B mine-b.txt
+.\abstat.ps1</code></pre>
+          <p class="expect"><b>Expected:</b> Two score lines: A about <code>2/2</code>, B about <code>0/2</code>. Pairs <code>1,0</code> twice. The readout reads <code>cases 2: wins 0, losses 2, ties 0; sign test p = 0.500</code> and a bootstrap interval of [-1.000, -1.000]. With two cases the smallest possible p is 0.500, so nothing here can be significant.</p></li>
+        <li><p>Look at why B lost both cases.</p>
+          <pre><code>Import-Csv mine.csv | Where-Object arm -eq 'mine-b.txt' | Format-Table id, expected, got -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> Answers that are longer than a label, such as <code>disk varcache deployweb job</code>. Prompt B's wording ("label the failing device or service") made the model name the device instead of choosing a category. That is format drift: the exact-match grader scored it wrong, and the answer is not necessarily wrong in substance.</p></li>
+        <li><p>Now do it for real. Replace <code>cases.csv</code> with at least 20 cases from your own work with expected answers, including at least four where the right answer is "unclear" or "not stated". Write a prompt A (what you use today) and a prompt B (one change). Keep <code>--tools ""</code> and the pinned flags. Use the full model id in <code>-Model</code> if you plan to keep the eval. Run with <code>-Repeat 2</code>, then run <code>pairs.ps1</code> and <code>abstat.ps1</code>.</p>
+          <pre><code>.\eval.ps1 -Cases cases.csv -Arms mine-a.txt, mine-b.txt -Repeat 2 -Out mine.csv -Model claude-haiku-5-5
+.\pairs.ps1 -Path mine.csv -A mine-a.txt -B mine-b.txt
+.\abstat.ps1</code></pre>
+          <p class="expect"><b>Expected:</b> Your own numbers. Done-test: you can state wins, losses, ties, the p-value, the interval, and the cost per arm.</p></li>
+        <li><p>Write the decision down, including what the result cannot show.</p>
+          <pre><code>Set-Content -Encoding utf8 decision.md @'
+Change tested: <what prompt B changes>.
+Cases: <n>. Result: <wins> wins, <losses> losses, <ties> ties; p = <p>; interval <lo> to <hi>.
+Cost per arm: <a> vs <b>. Decision: <keep A | ship B | run more cases>, because <reason>.
+'@
+'pairs lines: {0}; decision.md exists: {1}' -f @(Get-Content pairs.txt).Count, (Test-Path decision.md)</code></pre>
+          <p class="expect"><b>Expected:</b> The line <code>pairs lines: N; decision.md exists: True</code> where N is your case count.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>Done-test: the pairs file has one line per case, the decision names a result and a reason, and the reason would still hold if you ran it again. Check you did the following: pinned model, tools off, random order, at least two repeats, a no-answer group, and the grader's format drift counted separately from wrong answers. If your result is not significant, the decision is "run more cases" or "keep A", never "B is better".</p></details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Cheat sheet</h3>
+    <h4>Headless flags used in the harness</h4>
+    <div class="tablewrap"><table>
+      <tr><th>Flag</th><th>Role in an eval</th></tr>
+      <tr><td><code>claude -p "prompt"</code></td><td>One non-interactive run; input text on stdin</td></tr>
+      <tr><td><code>--model</code></td><td>Alias or full id; pin the full id (for example <code>claude-haiku-5-5</code>) to keep results comparable</td></tr>
+      <tr><td><code>--setting-sources project</code></td><td>Leave user and local settings out of the run</td></tr>
+      <tr><td><code>--strict-mcp-config</code></td><td>Use only MCP servers named by <code>--mcp-config</code> (none), so none load</td></tr>
+      <tr><td><code>--tools ""</code></td><td>No tools; cut the fixed prompt to about 3,760 tokens in the probe</td></tr>
+      <tr><td><code>--max-turns 1</code></td><td>One turn only</td></tr>
+      <tr><td><code>--no-session-persistence</code></td><td>Do not write the session to disk</td></tr>
+      <tr><td><code>--output-format json</code></td><td>Result object for scoring and costing</td></tr>
+      <tr><td><code>--max-budget-usd</code></td><td>Spend cap on a headless run (API key)</td></tr>
+    </table></div>
+    <h4>JSON result fields used</h4>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Use</th></tr>
+      <tr><td><code>result</code></td><td>The text you grade</td></tr>
+      <tr><td><code>total_cost_usd</code></td><td>List-price estimate; notional on a subscription</td></tr>
+      <tr><td><code>duration_ms</code></td><td>Latency per run</td></tr>
+      <tr><td><code>usage.output_tokens</code>, <code>usage.output_tokens_details.thinking_tokens</code></td><td>Output volume, and how much of it was thinking</td></tr>
+      <tr><td><code>modelUsage.&lt;id&gt;</code></td><td>Which model ran; <code>costBasis</code> reads "list"</td></tr>
+    </table></div>
+    <h4>Decision rules</h4>
+    <div class="tablewrap"><table>
+      <tr><th>Result</th><th>Reading</th></tr>
+      <tr><td>Baseline flips cases between repeats</td><td>Noise floor is the flip count; smaller arm gaps are not evidence</td></tr>
+      <tr><td>Wins needed for p below 0.05</td><td>6 with 0 losses, 8 with 1, 10 with 2</td></tr>
+      <tr><td>Interval includes 0</td><td>Compatible with no change</td></tr>
+      <tr><td>Set size for a 10% fix, no breaks</td><td>About 100 cases for power 0.94</td></tr>
+    </table></div>
+    <h4>Failure modes</h4>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>Harness runs one empty case</td><td><code>$cases</code> and the typed <code>[string]$Cases</code> parameter are the same variable (names are case-insensitive)</td><td>Name the loop variable <code>$list</code></td></tr>
+      <tr><td>Sign test p of 0.000 for 0 wins and 2 losses</td><td><code>[math]::Min(1, 0.5)</code> uses the Int32 overload and returns 0</td><td>Write <code>[math]::Min(1.0, ...)</code></td></tr>
+      <tr><td>Arm scores low but answers look right</td><td>Format drift against an exact-match grader</td><td>Constrain the answer form, or add a code check that normalises</td></tr>
+      <tr><td>Judge agrees with everything</td><td>Leniency, or rubric too loose</td><td>Audit against hand labels; count judge-passed-your-fail</td></tr>
+      <tr><td>Pairwise verdict flips when order flips</td><td>Position bias</td><td>Run both orders; flag the pair</td></tr>
+      <tr><td>Result will not reproduce next month</td><td>Alias moved to a newer model</td><td>Pin the full model id; log it per row</td></tr>
+      <tr><td>One arm costs far more with a similar prompt length</td><td>More thinking tokens</td><td>Read <code>thinking_tokens</code>; consider effort</td></tr>
+      <tr><td>Significant on 12 cases never happens</td><td>Too few cases for the effect size</td><td>Use the power table to size the set</td></tr>
+    </table></div>
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+        <li>Claude Code docs, "Model configuration": <a href="https://code.claude.com/docs/en/model-config" target="_blank" rel="noopener">code.claude.com/docs/en/model-config</a></li>
+        <li>Claude Code docs, "CLI reference": <a href="https://code.claude.com/docs/en/cli-reference" target="_blank" rel="noopener">code.claude.com/docs/en/cli-reference</a></li>
+        <li>Claude Code docs, "Run Claude Code programmatically": <a href="https://code.claude.com/docs/en/headless" target="_blank" rel="noopener">code.claude.com/docs/en/headless</a></li>
+        <li>Claude Code docs, "Track cost and usage": <a href="https://code.claude.com/docs/en/agent-sdk/cost-tracking" target="_blank" rel="noopener">code.claude.com/docs/en/agent-sdk/cost-tracking</a></li>
+        <li>Claude Code docs, "Manage costs effectively": <a href="https://code.claude.com/docs/en/costs" target="_blank" rel="noopener">code.claude.com/docs/en/costs</a></li>
+        <li>Claude API docs, "Batch processing": <a href="https://platform.claude.com/docs/en/build-with-claude/batch-processing" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/batch-processing</a></li>
+        <li>Measured: every score, cost, latency, token count and power-table figure comes from the lab runs and a local computation of 2026-11-11 on Haiku 5.5 (claude-haiku-5-5); they will vary on your runs. The sign test and paired bootstrap are standard methods, computed exactly in the lab scripts.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "You change a classifier prompt and test it on 12 cases: the old prompt scored 11, the new one 12. The sign test gives p = 1.000. A colleague says the prompts are equal. What is the right reading?", "o": ["They are equal, since p is 1.000", "The new prompt is better, since it scored higher", "Twelve cases cannot tell; the single win is compatible with luck, so run a larger set before deciding", "Repeat the same 12 cases ten more times until p drops below 0.05"], "a": 2, "why": "One win and no loss cannot be told from chance, so p of 1.000 means the set is too small to show a difference, not that none exists. Repeating the same 12 cases does not add independent cases; the power table says you need on the order of 100 cases to see a 10 percent improvement reliably."},
+    {"q": "Your baseline prompt, run three times on the same set, scores 11 of 12 each time and misses the same case every time. What does that tell you?", "o": ["The noise floor is high and no comparison is possible", "The miss is systematic, so a prompt change can address it, and a one-case difference between arms is real on this task", "The grader is broken", "The model is nondeterministic, so ignore that case"], "a": 1, "why": "No case flipped between repeats, so noise is low on this task. A case that fails every time is a property of the prompt and model, which a prompt change can fix. A baseline that flips cases would be the high-noise case."},
+    {"q": "A model judge scores summaries and passes 40 of 40 candidates. You have not checked it against anything. What do you do before trusting it?", "o": ["Trust it, since a model judge is more consistent than a person", "Hand-label 20 to 50 outputs including known-bad ones, then count how many bad ones the judge passed", "Switch to a bigger judge model and stop checking", "Ask the judge to explain each verdict"], "a": 1, "why": "A judge is a measuring instrument that needs calibration. Leniency, passing what you would fail, is the dangerous error and only shows up against hand labels. A bigger model or an explanation does not replace the audit."},
+    {"q": "Two prompts are tested on a task where some inputs do not contain the answer. Arm A answers those with sentences; arm B answers with the token NONE. Exact match scores A at 4 of 8 and B at 8 of 8, with no fabricated answers in either. What is the sound conclusion?", "o": ["A fabricates answers half the time", "B is more accurate in substance", "The difference is mostly output format; report fabrications, prose declines and wrong answers as separate counts, and note that A's prose can still carry a guessed value", "Scores cannot be compared across prompts"], "a": 2, "why": "Exact match measured format discipline as much as correctness here. Splitting the counts shows A did not fabricate but declined in sentences a script cannot parse, and one of them named a default port next to the refusal."},
+    {"q": "You will run a 200-case, two-arm, three-repeat eval nightly, with no one waiting on the results, using an API key. Which choice cuts cost without changing the measurement?", "o": ["Use the Batch API, which is 50 percent off input and output, accepting a delay of up to 24 hours", "Drop to one repeat and no randomisation", "Use an alias so the model updates automatically", "Remove the pinned settings to shorten the command line"], "a": 0, "why": "Batch pricing halves cost for work that can wait. Dropping repeats or randomisation weakens the design, an alias lets the baseline drift, and unpinning settings adds uncontrolled variables."}
+  ]</script>
+</section>
+
+    <section class="view" id="view-share" hidden>
+      <div>
+        <div class="kicker">Export and share</div>
+        <h2>Hand this module on</h2>
+        <p class="lede">This module is a complete page on its own: briefing, labs, judgment calls and cheat sheet. It names no organization, host, account or internal tool, and every lab runs on plain Claude Code in a scratch folder.</p>
+      </div>
+      <div class="panel">
+        <h3>1. The link</h3>
+        <p>When you are reading this on claude.ai, use Share on this page. A viewer needs only the link. Each module has its own link, so you can send one module to one person. Their progress stays in their own browser and is never visible to you.</p>
+        <h3>2. One HTML file</h3>
+        <p>This module is also the single self-contained file <code>m11-ab-testing.html</code>. It needs no server and no network: mail it, put it on a file share, or open it from a USB stick. Offline it falls back to system fonts; everything else is identical, diagrams and instruments included.</p>
+        <div class="row"><button class="btn" type="button" data-save="m11-ab-testing.html">Save this module as a file</button><span class="note"></span></div>
+        <h3>3. The whole set</h3>
+        <p>All modules plus the catalogue page (<code>index.html</code>) form one folder of files that link to each other. Keep them together and the links between modules work offline. The same folder works behind any static web server with nothing to configure.</p>
+        <h3>Moving progress between copies</h3>
+        <p>The link, the file and a hosted copy each keep their own progress. Use the progress code on this module's overview to carry it across.</p>
+        
+      </div>
+    </section>
+    <div class="pager" id="pager"></div>
+  </main>
+</div>
+
+<script type="application/json" id="manifest">{"edition":"portable","kind":"file","self":"m11","catalogue":"index.html","modules":[{"id":"m1","title":"Context","sub":"What the model sees, and what it costs to show it","level":"foundation","prereq":[],"minutes":240,"lessons":6,"labs":5,"calls":5,"href":"m01-context.html"},{"id":"m2","title":"Tokens and their price","sub":"Input, output, cache write, cache read","level":"foundation","prereq":[],"minutes":220,"lessons":6,"labs":5,"calls":5,"href":"m02-tokens.html"},{"id":"m3","title":"Skills","sub":"Instructions that load only when needed","level":"practitioner","prereq":["m1"],"minutes":230,"lessons":6,"labs":5,"calls":5,"href":"m03-skills.html"},{"id":"m4","title":"Commands","sub":"Built-in and your own","level":"practitioner","prereq":["m1"],"minutes":245,"lessons":6,"labs":5,"calls":5,"href":"m04-commands.html"},{"id":"m5","title":"Hooks","sub":"Rules the model cannot talk its way past","level":"practitioner","prereq":[],"minutes":200,"lessons":6,"labs":5,"calls":5,"href":"m05-hooks.html"},{"id":"m6","title":"Plugins and marketplaces","sub":"Package it, publish it, control it","level":"advanced","prereq":["m3","m5"],"minutes":255,"lessons":5,"labs":5,"calls":5,"href":"m06-marketplaces.html"},{"id":"m7","title":"Headless runs and subagents","sub":"Claude Code as a program, and as a team","level":"practitioner","prereq":["m1","m2"],"minutes":220,"lessons":6,"labs":5,"calls":5,"href":"m07-agents.html"},{"id":"m8","title":"Orchestration","sub":"Briefs, handoffs, queues and the ways they fail","level":"advanced","prereq":["m7"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m08-orchestration.html"},{"id":"m9","title":"Telemetry","sub":"See tokens, cache and cost as they happen","level":"practitioner","prereq":["m2"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m09-telemetry.html"},{"id":"m10","title":"Cutting cost","sub":"The levers, and proof that each one worked","level":"advanced","prereq":["m2","m9"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m10-cost.html"},{"id":"m11","title":"Evals and A/B testing","sub":"Compare prompts, models and setups without fooling yourself","level":"advanced","prereq":["m2","m7"],"minutes":250,"lessons":6,"labs":5,"calls":5,"href":"m11-ab-testing.html"},{"id":"m12","title":"Session transcripts","sub":"The anatomy of the JSONL behind every session","level":"practitioner","prereq":["m1","m2"],"minutes":215,"lessons":6,"labs":5,"calls":5,"href":"m12-transcripts.html"},{"id":"m13","title":"Models and ways to teach them","sub":"Model tiers, retrieval, ingestion, fine-tuning and what you will actually use","level":"foundation","prereq":[],"minutes":230,"lessons":6,"labs":5,"calls":5,"href":"m13-models.html"},{"id":"m14","title":"Agent SDK and agent teams","sub":"Your own agent loop, and sessions that message each other","level":"advanced","prereq":["m7"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m14-agent-sdk.html"},{"id":"m15","title":"The wider ecosystem","sub":"Multiplexers, community skills and how to vet them","level":"practitioner","prereq":["m3"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m15-ecosystem.html"},{"id":"m16","title":"Security","sub":"Permissions, sandboxing, prompt injection and what you install","level":"practitioner","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m16-security.html"},{"id":"m17","title":"Daily workflow","sub":"Plan mode, rewind, worktrees, effort and git habits","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m17-workflow.html"},{"id":"m18","title":"Unattended and CI","sub":"GitHub Actions, review in the pipeline, scheduled runs","level":"advanced","prereq":["m7","m16"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m18-ci.html"},{"id":"m19","title":"Claude API building blocks","sub":"Tool use, structured outputs, vision, citations, batch, computer use","level":"practitioner","prereq":["m2"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m19-api.html"},{"id":"m20","title":"Writing for agents","sub":"Briefs, specs, handoffs and CLAUDE.md design","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m20-writing.html"},{"id":"m21","title":"Where Claude Code runs","sub":"Terminal, VS Code, JetBrains, desktop and web compared","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m21-surfaces.html"},{"id":"m22","title":"Sensitive data","sub":"PHI, PII and secrets: what leaves the machine and how to stop it","level":"practitioner","prereq":["m5","m16"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m22-sensitive-data.html"},{"id":"m23","title":"MCP: anatomy of the protocol","sub":"JSON-RPC, capabilities, transports, auth, and a server you build","level":"practitioner","prereq":["m1"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m23-mcp.html"},{"id":"m24","title":"MCP server or CLI tool","sub":"The same job both ways, measured in tokens and turns","level":"advanced","prereq":["m2","m23"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m24-mcp-or-cli.html"}]}</script>
+<script>
+/* AI/LLM Bootcamp page script. One file for the catalogue page and every module page.
+   Reads the manifest (module list, links, edition) that the build embeds, then:
+   - theme: a "Theme:" dropdown at the top right, remembered per viewer; light or dark follows the host page or the system
+   - module page: part navigation on the hash (#overview, #l1.., #labs, #calls, #ref, #share), lab step ticks, lab done,
+     drill answers, progress code. State is kept per module in localStorage, so each module page stands alone.
+   - catalogue page: module cards with level, time and prerequisites, a level filter, and progress where it can be read. */
+(function () {
+  'use strict';
+  var PRISTINE = ''; try { PRISTINE = '<!doctype html>\n' + document.documentElement.outerHTML; } catch (e) {}
+  var root = document.documentElement;
+  var MAN = { modules: [] }; try { MAN = JSON.parse(document.getElementById('manifest').textContent); } catch (e) {}
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function put(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function modById(id) { return MAN.modules.filter(function (x) { return x.id === id; })[0]; }
+  function num(id) { return +id.slice(1); }
+  function mins(n) { n = +n || 0; return n >= 60 ? (Math.round(n / 6) / 10) + ' h' : n + ' min'; }
+  function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+  function link(a, href) { if (href) a.href = href; return a; }
+
+  /* ---- theme ---- */
+  var THEMES = [['a', 'Meter'], ['b', 'Workbench'], ['c', 'Blueprint'], ['d', 'Classroom'], ['e', 'Console']];
+  var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null, forced = null;
+  function mode() { var t = forced || root.getAttribute('data-theme'); root.setAttribute('data-mode', t === 'dark' || (t !== 'light' && mq && mq.matches) ? 'dark' : 'light'); }
+  var sel = document.getElementById('theme');
+  function pick(s, keep) { if (!/^[a-e]$/.test(s)) s = 'a'; root.setAttribute('data-style', s); if (sel) sel.value = s; if (keep) put('ai-bootcamp-theme', s); }
+  if (sel) {
+    THEMES.forEach(function (t) { var o = el('option', '', t[1]); o.value = t[0]; sel.appendChild(o); });
+    sel.addEventListener('change', function () { pick(sel.value, true); });
+  }
+  var qs = /[?&]style=([1-5a-e])/.exec(location.search), qm = /[?&]mode=(light|dark)/.exec(location.search);
+  if (qm) forced = qm[1];
+  pick(qs ? (/\d/.test(qs[1]) ? 'abcde'.charAt(+qs[1] - 1) : qs[1]) : (get('ai-bootcamp-theme') || 'a'), false);
+  mode();
+  if (mq && mq.addEventListener) mq.addEventListener('change', mode);
+  try { new MutationObserver(mode).observe(root, { attributes: true, attributeFilter: ['data-theme'] }); } catch (e) {}
+
+  /* ---- code blocks: caption with a file name or "shell", plus a copy button ---- */
+  [].forEach.call(document.querySelectorAll('pre'), function (pre) {
+    var box = el('div', 'codebox'), c = el('div', 'cap');
+    c.appendChild(el('span', '', pre.getAttribute('data-file') ? 'file  ' + pre.getAttribute('data-file') : (pre.getAttribute('data-cap') || 'shell')));
+    var b = el('button', 'copy', 'Copy'); b.type = 'button';
+    b.addEventListener('click', function () {
+      var t = pre.textContent;
+      function pickText() { try { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = 'Selected'; } catch (e) {} }
+      try { navigator.clipboard.writeText(t).then(function () { b.textContent = 'Copied'; }, pickText); } catch (e) { pickText(); }
+      setTimeout(function () { b.textContent = 'Copy'; }, 1600);
+    });
+    c.appendChild(b); pre.parentNode.insertBefore(box, pre); box.appendChild(c); box.appendChild(pre);
+  });
+
+  function levelChip(lv) { return el('span', 'chip lv-' + lv, lv); }
+  function readState(id) { var S = { labs: {}, steps: {}, drill: [], seen: {} }; try { var r = JSON.parse(get('ai-bootcamp-v2-' + id) || 'null'); if (r && typeof r === 'object') { ['labs', 'steps', 'seen'].forEach(function (k) { if (r[k] && typeof r[k] === 'object') S[k] = r[k]; }); if (r.drill && r.drill.length != null) S.drill = r.drill; } } catch (e) {} return S; }
+  function doneCount(S) { var n = 0, k; for (k in S.labs) if (S.labs[k]) n++; (S.drill || []).forEach(function (x) { if (x != null) n++; }); return n; }
+
+  var hn = document.getElementById('home-notes');
+  function homeNotes() { var off = get('ai-bootcamp-home') === '0'; if (hn) hn.checked = !off; document.body.classList.toggle('hide-home', off); }
+  if (hn) hn.addEventListener('change', function () { put('ai-bootcamp-home', hn.checked ? '1' : '0'); homeNotes(); });
+  homeNotes();
+
+  /* ---- save a copy of this page as one file ---- */
+  /* Inside a hosted viewer the page may be given a save function; it is asked for once, at load. Everywhere else
+     (a file on disk, a plain web server) it stays null and the button uses an ordinary download link. */
+  var DL = null;
+  try {
+    if (window.claude && typeof window.claude.use === 'function') {
+      Promise.resolve(window.claude.use('downloads')).then(function (d) { DL = d || null; }, function () { DL = null; });
+    }
+  } catch (e) { DL = null; }
+  [].forEach.call(document.querySelectorAll('[data-save]'), function (b) {
+    b.addEventListener('click', function () {
+      var msg = b.parentNode.querySelector('.note') || b;
+      var name = b.getAttribute('data-save');
+      function say(t) { if (msg !== b) msg.textContent = t; }
+      function viaLink() {
+        try {
+          var a = el('a'); a.href = URL.createObjectURL(new Blob([PRISTINE], { type: 'text/html' })); a.download = name;
+          document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+          say('Saved as ' + name + ' if your browser allows downloads from this page. If nothing happened, use the file from the export set instead.');
+        } catch (e) { say('This page cannot start a download here. Use the file from the export set instead.'); }
+      }
+      if (DL && typeof DL.save === 'function') {
+        DL.save({ filename: name, data: PRISTINE }).then(function () { say('Saved as ' + name + '.'); }, function (err) {
+          var code = err && err.code;
+          if (code === 'declined') return;
+          if (code === 'rate_limited') { say('A save is already waiting for your answer. Wait a moment, then try again.'); return; }
+          viaLink();
+        });
+      } else { viaLink(); }
+    });
+  });
+
+  /* ================= catalogue page ================= */
+  var cards = document.getElementById('cards');
+  if (cards) {
+    var filter = get('ai-bootcamp-level') || 'all', fbar = document.getElementById('levels');
+    var draw = function () {
+      cards.textContent = '';
+      MAN.modules.forEach(function (m) {
+        if (filter !== 'all' && m.level !== filter) return;
+        var c = link(el(m.href ? 'a' : 'div', 'mcard'), m.href);
+        var top = el('div', 'chips'); top.appendChild(el('span', 'n', 'MODULE ' + num(m.id))); top.appendChild(levelChip(m.level)); top.appendChild(el('span', 'chip', mins(m.minutes))); c.appendChild(top);
+        c.appendChild(el('span', 't', m.title)); c.appendChild(el('span', 's', m.sub));
+        c.appendChild(el('span', 'pre', (m.lessons || 0) + ' lessons · ' + (m.labs || 0) + ' labs · ' + (m.prereq.length ? 'after ' + m.prereq.map(function (p) { var x = modById(p); return x ? num(p) + ' ' + x.title : p; }).join(', ') : 'no prerequisites')));
+        if (!m.href) c.appendChild(el('span', 'pre', 'Published as its own page; ask for the link or use the file set.'));
+        var S = readState(m.id), d = doneCount(S), total = (m.labs || 0) + (m.calls || 0);
+        if (d && total) { var mt = el('div', 'meter'), sp = el('span'); sp.style.width = Math.min(100, Math.round(100 * d / total)) + '%'; mt.appendChild(sp); c.appendChild(mt); }
+        cards.appendChild(c);
+      });
+      if (fbar) [].forEach.call(fbar.children, function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-level') === filter ? 'true' : 'false'); });
+    };
+    if (fbar) ['all', 'foundation', 'practitioner', 'advanced'].forEach(function (lv) {
+      var b = el('button', 'btn', lv === 'all' ? 'All levels' : cap(lv)); b.type = 'button'; b.setAttribute('data-level', lv);
+      b.addEventListener('click', function () { filter = lv; put('ai-bootcamp-level', lv); draw(); }); fbar.appendChild(b);
+    });
+    draw();
+    [].forEach.call(document.querySelectorAll('[data-mod]'), function (a) { var m = modById(a.getAttribute('data-mod')); if (m) { if (!a.textContent) a.textContent = num(m.id) + '. ' + m.title; link(a, m.href); } });
+    var tot = document.getElementById('totals');
+    if (tot) { var tl = 0, tm = 0; MAN.modules.forEach(function (m) { tl += m.labs || 0; tm += +m.minutes || 0; }); tot.textContent = MAN.modules.length + ' modules, ' + tl + ' labs, about ' + Math.round(tm / 60) + ' hours in all'; }
+    return;
+  }
+
+  /* ================= module page ================= */
+  var m = document.querySelector('section.module'); if (!m) return;
+  var id = m.id, me = modById(id) || { prereq: [], level: m.getAttribute('data-level') || '', minutes: m.getAttribute('data-minutes') }, KEY = 'ai-bootcamp-v2-' + id;
+  var S = readState(id);
+  function save() { put(KEY, JSON.stringify(S)); }
+  var nav = document.getElementById('nav'), pager = document.getElementById('pager'), crumb = document.getElementById('crumb'), share = document.getElementById('view-share');
+  var overview = m.querySelector('.overview'), labsEl = m.querySelector('.labs'), ref = m.querySelector('.reference');
+  var lessons = [].slice.call(m.querySelectorAll('.lesson')), labEls = [].slice.call(m.querySelectorAll('article.lab'));
+  var drill = el('div', 'drill'); m.appendChild(drill);
+  var qsn = []; try { qsn = JSON.parse(m.querySelector('script.drill').textContent); } catch (e) {}
+
+  var parts = [];
+  if (overview) parts.push({ key: 'overview', n: '', title: 'Overview', el: overview });
+  lessons.forEach(function (l, i) { parts.push({ key: 'l' + (i + 1), n: String(i + 1), title: l.getAttribute('data-title') || 'Lesson ' + (i + 1), el: l, kind: 'Lesson ' + (i + 1) + ' of ' + lessons.length, min: l.getAttribute('data-minutes') }); });
+  if (labsEl && labEls.length) parts.push({ key: 'labs', n: 'L', title: 'Labs', el: labsEl, kind: labEls.length + ' labs' });
+  if (qsn.length) parts.push({ key: 'calls', n: '?', title: 'Calls', el: drill, kind: qsn.length + ' judgment calls' });
+  if (ref && ref.children.length) parts.push({ key: 'ref', n: '#', title: 'Cheat sheet', el: ref, kind: 'Reference' });
+
+  /* header: full on the overview, slim on the other parts */
+  var head = el('div', 'mhead'), kick = el('div', 'kicker'), h = el('h1', '', m.getAttribute('data-title')), meta = el('div', 'meta'), chips = el('div', 'chips');
+  head.appendChild(kick); head.appendChild(h); head.appendChild(meta); head.appendChild(chips); m.insertBefore(head, m.firstChild);
+  chips.appendChild(levelChip(me.level || 'practitioner')); chips.appendChild(el('span', 'chip', mins(m.getAttribute('data-minutes'))));
+  chips.appendChild(el('span', 'chip', lessons.length + ' lessons')); chips.appendChild(el('span', 'chip', labEls.length + ' labs'));
+  (me.prereq || []).forEach(function (p) { var x = modById(p); if (x) chips.appendChild(link(el(x.href ? 'a' : 'span', 'chip'), x.href)).textContent = 'after ' + num(p) + ' ' + x.title; });
+  if (!(me.prereq || []).length) chips.appendChild(el('span', 'chip', 'no prerequisites'));
+
+  /* overview extras: the parts of this module, what to take next, the progress code */
+  if (overview) {
+    var pl = el('div', 'panel'); pl.appendChild(el('div', 'kicker', 'In this module')); var ul = el('ol', 'partlist');
+    parts.forEach(function (p) { if (p.key === 'overview') return; var li = el('li'), a = el('a'); a.href = '#' + p.key; a.appendChild(el('span', 'n', p.n)); a.appendChild(el('span', '', p.title)); a.appendChild(el('span', 'm', p.min ? p.min + ' min' : (p.kind || ''))); li.appendChild(a); ul.appendChild(li); });
+    pl.appendChild(ul); overview.appendChild(pl);
+    var nexts = MAN.modules.filter(function (x) { return x.prereq.indexOf(id) >= 0; });
+    if (nexts.length || MAN.catalogue) {
+      var nx = el('div', 'panel'); nx.appendChild(el('div', 'kicker', 'Where to go from here')); var row = el('div', 'chips'); row.style.marginTop = '8px';
+      nexts.forEach(function (x) { var a = link(el(x.href ? 'a' : 'span', 'chip'), x.href); a.textContent = num(x.id) + ' ' + x.title; row.appendChild(a); });
+      if (MAN.catalogue) { var ca = link(el('a', 'chip'), MAN.catalogue); ca.textContent = 'All modules'; row.appendChild(ca); }
+      nx.appendChild(row); overview.appendChild(nx);
+    }
+    var pp = el('div', 'panel'); pp.appendChild(el('div', 'kicker', 'Progress code'));
+    var pd = el('p', 'muted', 'Progress for this module lives in this browser only. To move it to another device or another copy of this page, copy the code here and load it there.'); pd.style.marginTop = '6px'; pp.appendChild(pd);
+    var pr = el('div', 'row'), pc = el('input'); pc.type = 'text'; pc.setAttribute('aria-label', 'Progress code'); pc.style.cssText = 'flex:1;min-width:200px;font-family:var(--font-mono);font-size:0.8rem';
+    var b1 = el('button', 'btn', 'Copy mine'), b2 = el('button', 'btn', 'Load'), pm = el('p', 'note'); b1.type = b2.type = 'button'; pm.style.marginBottom = '0';
+    pr.appendChild(pc); pr.appendChild(b1); pr.appendChild(b2); pp.appendChild(pr); pp.appendChild(pm); overview.appendChild(pp);
+    b1.addEventListener('click', function () {
+      try { pc.value = 'AIB2.' + id + '.' + btoa(unescape(encodeURIComponent(JSON.stringify(S)))); } catch (e) { pm.textContent = 'Could not build the code.'; return; }
+      pc.select(); try { navigator.clipboard.writeText(pc.value).then(function () { pm.textContent = 'Copied.'; }, function () { pm.textContent = 'Selected. Copy it with Ctrl+C.'; }); } catch (e) { pm.textContent = 'Selected. Copy it with Ctrl+C.'; }
+    });
+    b2.addEventListener('click', function () {
+      try { var v = pc.value.trim(), pre = 'AIB2.' + id + '.'; if (v.indexOf(pre) !== 0) throw 0; var o = JSON.parse(decodeURIComponent(escape(atob(v.slice(pre.length))))); if (!o || typeof o !== 'object') throw 0; put(KEY, JSON.stringify(o)); location.reload(); }
+      catch (e) { pm.textContent = 'That is not a progress code for this module. It starts with AIB2.' + id + '.'; }
+    });
+  }
+
+  /* labs */
+  labEls.forEach(function (lab, li) {
+    var lh = el('div', 'labhead'); lh.appendChild(el('h3', '', 'Lab ' + (li + 1) + '  ' + lab.getAttribute('data-title'))); lh.appendChild(el('span', 'meta', lab.getAttribute('data-minutes') + ' min')); lab.insertBefore(lh, lab.firstChild);
+    [].forEach.call(lab.querySelectorAll('ol.steps > li'), function (step, si) {
+      var c = el('input', 'tick'); c.type = 'checkbox'; c.setAttribute('aria-label', 'Step ' + (si + 1) + ' done'); c.checked = (S.steps[lab.id] || []).indexOf(si) >= 0;
+      c.addEventListener('change', function () { var a = (S.steps[lab.id] || []).filter(function (x) { return x !== si; }); if (c.checked) a.push(si); S.steps[lab.id] = a; save(); });
+      step.insertBefore(c, step.firstChild);
+    });
+    var foot = el('div', 'labfoot'), btn = el('button', 'btn'); btn.type = 'button';
+    function paint() { var d = !!S.labs[lab.id]; lab.classList.toggle('done', d); btn.textContent = d ? 'Done. Undo' : 'Mark lab done'; }
+    btn.addEventListener('click', function () { if (S.labs[lab.id]) delete S.labs[lab.id]; else S.labs[lab.id] = 1; save(); paint(); progress(); });
+    foot.appendChild(btn); lab.appendChild(foot); paint();
+  });
+
+  /* calls */
+  qsn.forEach(function (q, qi) {
+    var box = el('div', 'q'); box.appendChild(el('div', 'qt', (qi + 1) + '. ' + q.q));
+    var opts = el('div', 'opts'), why = el('div', 'why', q.why); why.hidden = true;
+    var btns = q.o.map(function (o, oi) {
+      var b = el('button', 'opt'); b.type = 'button'; b.appendChild(el('span', 'k', 'ABCD'.charAt(oi))); b.appendChild(el('span', '', o));
+      b.addEventListener('click', function () { S.drill[qi] = oi; save(); mark(); progress(); }); opts.appendChild(b); return b;
+    });
+    function mark() { var a = S.drill[qi]; btns.forEach(function (b, oi) { b.classList.toggle('right', a != null && oi === q.a); b.classList.toggle('wrong', a === oi && oi !== q.a); }); why.hidden = a == null; }
+    box.appendChild(opts); box.appendChild(why); drill.appendChild(box); mark();
+  });
+  if (qsn.length) { var reset = el('button', 'btn', 'Clear my answers'); reset.type = 'button'; reset.style.justifySelf = 'start'; reset.addEventListener('click', function () { S.drill = []; save(); location.reload(); }); drill.appendChild(reset); }
+
+  /* navigation */
+  parts.forEach(function (p) {
+    var a = el('a', 'navlink'); a.href = '#' + p.key; a.appendChild(el('span', 'n', p.n || '·')); a.appendChild(el('span', '', p.title)); a.appendChild(el('span', 'p')); nav.appendChild(a); p.nav = a;
+  });
+  var shareNav = null;
+  if (share) { shareNav = el('a', 'navlink'); shareNav.href = '#share'; shareNav.appendChild(el('span', 'n', '\u2197')); shareNav.appendChild(el('span', '', 'Export and share')); shareNav.appendChild(el('span', 'p')); nav.appendChild(shareNav); }
+  function progress() {
+    parts.forEach(function (p) {
+      var t = p.nav.querySelector('.p'), txt = '', full = false;
+      if (p.key === 'labs') { var d = labEls.filter(function (l) { return S.labs[l.id]; }).length; txt = d ? d + '/' + labEls.length : ''; full = d === labEls.length; }
+      else if (p.key === 'calls') { var a = S.drill.filter(function (x) { return x != null; }).length; txt = a ? a + '/' + qsn.length : ''; full = a === qsn.length; }
+      else if (S.seen[p.key]) { txt = '✓'; full = true; }
+      t.textContent = txt; t.classList.toggle('full', full);
+    });
+  }
+  function route() {
+    var key = (location.hash || '#overview').slice(1), isShare = key === 'share' && share;
+    var cur = parts.filter(function (p) { return p.key === key; })[0]; if (!cur && !isShare) cur = parts[0];
+    m.hidden = !!isShare; if (share) share.hidden = !isShare;
+    if (shareNav) shareNav.classList.toggle('active', !!isShare);
+    parts.forEach(function (p) { p.el.hidden = p !== cur; p.nav.classList.toggle('active', p === cur); });
+    if (cur) {
+      var first = cur.key === 'overview';
+      kick.textContent = 'Module ' + num(id) + (first ? ' · ' + cap(me.level || '') : ' · ' + m.getAttribute('data-title'));
+      h.textContent = first ? m.getAttribute('data-title') : cur.title;
+      meta.textContent = first ? m.getAttribute('data-sub') : (cur.kind || '') + (cur.min ? ' · about ' + cur.min + ' min' : '');
+      chips.hidden = !first;
+      if (/^l\d+$/.test(cur.key) && !S.seen[cur.key]) { S.seen[cur.key] = 1; save(); }
+      if (crumb) crumb.textContent = 'Module ' + num(id) + ' · ' + m.getAttribute('data-title') + (first ? '' : ' · ' + cur.title);
+      var i = parts.indexOf(cur); pager.textContent = '';
+      if (i > 0) { var pv = el('a', 'btn', '← ' + parts[i - 1].title); pv.href = '#' + parts[i - 1].key; pager.appendChild(pv); }
+      if (i < parts.length - 1) { var nx2 = el('a', 'btn primary next', parts[i + 1].title + ' →'); nx2.href = '#' + parts[i + 1].key; pager.appendChild(nx2); }
+      try { cur.nav.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {}
+    } else { pager.textContent = ''; if (crumb) crumb.textContent = 'Export and share'; }
+    progress(); window.scrollTo(0, 0);
+  }
+  route(); window.addEventListener('hashchange', route);
+})();
+
+</script>
+<script>
+/* Instruments: cost meter, session cost model, A/B readout.
+   Mounted into every div.tool[data-tool] on the page. Prices from reference/facts-2026-11-11.md.
+   Pure functions are exported for node tests; mounting is skipped without a DOM. */
+(function () {
+  'use strict';
+
+  /* ---------- prices (USD per million tokens) ---------- */
+  var MODELS = {
+    opus: { label: 'Opus 5.5', inp: 4, out: 20, cr: 0.05 },
+    sonnet: { label: 'Sonnet 5.5', inp: 2, out: 10, cr: 0.05 },
+    haiku: { label: 'Haiku 5.5', inp: 0.1, out: 0.5, cr: 0.1, stepAt: 100000, inpHi: 0.5, outHi: 2.5 },
+    fable: { label: 'Fable 5.2', inp: 8, out: 40, cr: 0.025 }
+  };
+  var ORDER = ['opus', 'sonnet', 'haiku', 'fable'];
+  var CW5 = 1.25, CW1 = 2;
+
+  /* per-token rates for a model at a given prompt length (input + cache read + cache write) */
+  function rates(model, prompt) {
+    var m = MODELS[model] || MODELS.sonnet;
+    var hi = m.stepAt != null && prompt > m.stepAt;
+    var inp = (hi ? m.inpHi : m.inp) / 1e6, out = (hi ? m.outHi : m.out) / 1e6;
+    return { inp: inp, out: out, cr: inp * m.cr, cw5: inp * CW5, cw1: inp * CW1, hi: hi };
+  }
+
+  function num(x) { x = Number(x); return isFinite(x) && x > 0 ? x : 0; }
+
+  /* ---------- formatting ---------- */
+  function sep(s) { return s.replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  function fmtInt(n) { n = Math.round(Number(n) || 0); return (n < 0 ? '-' : '') + sep(String(Math.abs(n))); }
+  function fmtUSD(x) {
+    x = Number(x) || 0;
+    var a = Math.abs(x), s = a < 1 ? a.toFixed(4) : a.toFixed(2), p = s.split('.');
+    return (x < 0 ? '-$' : '$') + sep(p[0]) + '.' + p[1];
+  }
+  function fmtPct(f) { return (Math.round((Number(f) || 0) * 1000) / 10).toFixed(1) + '%'; }
+  function fmtNum(x, d) { x = Number(x) || 0; var s = Math.abs(x).toFixed(d), p = s.split('.'); return (x < 0 ? '-' : '') + sep(p[0]) + (p[1] ? '.' + p[1] : ''); }
+
+  /* ---------- 1. cost meter ---------- */
+  var USAGE_FIELDS = ['input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens', 'output_tokens'];
+  function hasUsageFields(o) {
+    if (!o || typeof o !== 'object') return false;
+    for (var i = 0; i < USAGE_FIELDS.length; i++) if (o[USAGE_FIELDS[i]] != null) return true;
+    return false;
+  }
+
+  /* model id or alias to a priced model key, or null when it is not one of the four current ones */
+  function mapModel(id) {
+    var s = String(id || '').toLowerCase();
+    if (/^(opus|sonnet|haiku|fable)$/.test(s)) return s;
+    var m = /(opus|sonnet|haiku)[-_ .]?5[-_.]5(?!\d)/.exec(s);
+    if (m) return m[1];
+    if (/(fable|mythos)[-_ .]?5[-_.]2(?!\d)/.test(s)) return 'fable';
+    return null;
+  }
+
+  function pickUsage(o) {
+    if (!o || typeof o !== 'object') return null;
+    if (o.usage && typeof o.usage === 'object') return o.usage;
+    if (o.message && o.message.usage && typeof o.message.usage === 'object') return o.message.usage;
+    if (hasUsageFields(o)) return o;
+    return null;
+  }
+
+  /* lenient parse: a full result object, a bare usage object, an array or stream-json lines */
+  function parseInput(text) {
+    var s = String(text == null ? '' : text).trim();
+    if (!s) return { error: 'Paste a JSON result or a usage object.' };
+    var obj = null, cands = [], i;
+    try { obj = JSON.parse(s); } catch (e) {
+      var a = s.indexOf('{'), b = s.lastIndexOf('}');
+      if (a >= 0 && b > a) { try { obj = JSON.parse(s.slice(a, b + 1)); } catch (e2) { obj = null; } }
+      if (obj == null) {
+        var lines = s.split(/\r?\n/);
+        for (i = 0; i < lines.length; i++) { try { var l = JSON.parse(lines[i]); if (l && typeof l === 'object') cands.push(l); } catch (e3) { /* skip */ } }
+      }
+    }
+    if (obj != null) cands = Object.prototype.toString.call(obj) === '[object Array]' ? obj : [obj];
+    var src = null;
+    for (i = cands.length - 1; i >= 0; i--) if (cands[i] && cands[i].type === 'result' && pickUsage(cands[i])) { src = cands[i]; break; }
+    if (!src) for (i = cands.length - 1; i >= 0; i--) if (pickUsage(cands[i])) { src = cands[i]; break; }
+    if (!src) return { error: obj == null && !cands.length ? 'That is not valid JSON.' : 'No usage object found (expected input_tokens, output_tokens and the cache fields).' };
+    var res = { usage: pickUsage(src), totalCost: null, model: null, models: 0 };
+    if (typeof src.total_cost_usd === 'number' && isFinite(src.total_cost_usd)) res.totalCost = src.total_cost_usd;
+    if (src.modelUsage && typeof src.modelUsage === 'object') {
+      var best = -1;
+      for (var k in src.modelUsage) {
+        if (!Object.prototype.hasOwnProperty.call(src.modelUsage, k)) continue;
+        res.models++;
+        var mk = mapModel(k), mu = src.modelUsage[k] || {}, c = num(mu.costUSD);
+        if (mk && c > best) { best = c; res.model = mk; }
+      }
+    }
+    if (!res.model) res.model = mapModel(src.model || (src.message && src.message.model));
+    return res;
+  }
+
+  /* token counts with the cache write split into 5-minute and 1-hour parts; ttl decides only when the split is absent */
+  function normUsage(u, ttl) {
+    u = u || {};
+    var c = (u.cache_creation && typeof u.cache_creation === 'object') ? u.cache_creation : {};
+    var s5 = num(c.ephemeral_5m_input_tokens), s1 = num(c.ephemeral_1h_input_tokens), split = s5 + s1 > 0;
+    var cw = num(u.cache_creation_input_tokens) || (s5 + s1), cw5, cw1;
+    if (split) { var rest = Math.max(0, cw - s5 - s1); cw5 = s5 + (ttl === '1h' ? 0 : rest); cw1 = s1 + (ttl === '1h' ? rest : 0); }
+    else if (ttl === '1h') { cw5 = 0; cw1 = cw; } else { cw5 = cw; cw1 = 0; }
+    return { input: num(u.input_tokens), cw: cw5 + cw1, cw5: cw5, cw1: cw1, cr: num(u.cache_read_input_tokens), output: num(u.output_tokens), split: split };
+  }
+
+  function costUsage(u, model, ttl) {
+    var n = normUsage(u, ttl), prompt = n.input + n.cw + n.cr, r = rates(model, prompt);
+    var c = { input: n.input * r.inp, cw: n.cw5 * r.cw5 + n.cw1 * r.cw1, cr: n.cr * r.cr, output: n.output * r.out };
+    c.total = c.input + c.cw + c.cr + c.output;
+    var noCache = prompt * r.inp + n.output * r.out;
+    return { tokens: n, cost: c, total: c.total, noCache: noCache, saving: noCache > 0 ? (noCache - c.total) / noCache : 0, prompt: prompt, rates: r, hi: r.hi };
+  }
+
+  /* ---------- 2. session cost model ---------- */
+  /* k cold restarts spread evenly over turns 2..T */
+  function restartTurns(T, k) {
+    T = Math.max(1, Math.floor(T)); k = Math.max(0, Math.min(Math.floor(k) || 0, T - 1));
+    var out = [];
+    for (var j = 1; j <= k; j++) out.push(1 + Math.round(j * T / (k + 1)));
+    return out;
+  }
+
+  function sessionRun(p, k) {
+    var T = Math.max(1, Math.floor(num(p.turns)) || 1), prefix = num(p.prefix), add = num(p.added), outT = num(p.output);
+    var caching = p.caching !== false, ttl = p.ttl === '1h' ? '1h' : '5m';
+    var cold = {}, rt = restartTurns(T, k);
+    for (var i = 0; i < rt.length; i++) cold[rt[i]] = 1;
+    var tk = { input: 0, cw: 0, cr: 0, output: 0 }, cs = { input: 0, cw: 0, cr: 0, output: 0 }, noCache = 0, first = 0, last = 0;
+    for (var t = 1; t <= T; t++) {
+      var H = prefix + (t - 1) * (add + outT), prompt = H + add, r = rates(p.model, prompt), cwr = ttl === '1h' ? r.cw1 : r.cw5, turn;
+      noCache += prompt * r.inp + outT * r.out;
+      if (!caching) { tk.input += prompt; cs.input += prompt * r.inp; turn = prompt * r.inp; }
+      else if (t === 1 || cold[t]) { tk.cw += prompt; cs.cw += prompt * cwr; turn = prompt * cwr; }
+      else { var rd = H - outT, wr = add + outT; tk.cr += rd; tk.cw += wr; cs.cr += rd * r.cr; cs.cw += wr * cwr; turn = rd * r.cr + wr * cwr; } // the previous answer is new to the cache, so it is written along with this turn's input
+      tk.output += outT; cs.output += outT * r.out; turn += outT * r.out;
+      if (t === 1) first = turn;
+      if (t === T) last = turn;
+    }
+    var total = cs.input + cs.cw + cs.cr + cs.output;
+    return { turns: T, tokens: tk, cost: cs, total: total, noCache: noCache, saving: noCache > 0 ? (noCache - total) / noCache : 0, first: first, last: last, restartTurns: caching ? rt : [] };
+  }
+
+  function sessionModel(p) {
+    var k = p.caching === false ? 0 : num(p.restarts);
+    var r = sessionRun(p, k);
+    r.restartExtra = r.restartTurns.length ? r.total - sessionRun(p, 0).total : 0;
+    return r;
+  }
+
+  /* ---------- 3. A/B readout ---------- */
+  function parseAB(text) {
+    var lines = String(text == null ? '' : text).split(/\r?\n/), pairs = [], bad = [], seen = false, header = false;
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i].trim();
+      if (!l) continue;
+      var f = l.split(/[\s,;]+/).filter(function (x) { return x !== ''; });
+      var ok = f.length === 2 && /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(f[0]) && /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(f[1]);
+      if (ok) pairs.push([Number(f[0]), Number(f[1])]);
+      else if (!seen) header = true;
+      else bad.push(i + 1);
+      seen = true;
+    }
+    return { pairs: pairs, bad: bad, header: header };
+  }
+
+  /* exact two-sided sign test: k wins of n non-tied pairs, p = 0.5 */
+  function signTest(k, n) {
+    n = Math.floor(n); k = Math.floor(k);
+    if (n <= 0) return 1;
+    var lo = Math.min(k, n - k), sum = 0, j;
+    if (n <= 1000) {
+      var term = Math.pow(2, -n);
+      for (j = 0; j <= lo; j++) { sum += term; term = term * (n - j) / (j + 1); }
+    } else {
+      var lt = -n * Math.LN2;
+      for (j = 0; j <= lo; j++) { sum += Math.exp(lt); lt += Math.log(n - j) - Math.log(j + 1); }
+    }
+    return Math.min(1, 2 * sum);
+  }
+
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  /* 95% paired bootstrap percentile interval of the mean difference */
+  function bootstrapCI(diffs, B, seed) {
+    var n = diffs.length; B = B || 10000;
+    if (!n) return [0, 0];
+    var rnd = mulberry32(seed == null ? 20261111 : seed), means = new Array(B);
+    for (var b = 0; b < B; b++) {
+      var s = 0;
+      for (var i = 0; i < n; i++) s += diffs[Math.floor(rnd() * n)];
+      means[b] = s / n;
+    }
+    means.sort(function (x, y) { return x - y; });
+    return [means[Math.floor(0.025 * B)], means[Math.ceil(0.975 * B) - 1]];
+  }
+
+  function abAnalyze(pairs) {
+    var n = pairs.length, sa = 0, sb = 0, wa = 0, wb = 0, ties = 0, diffs = [];
+    for (var i = 0; i < n; i++) {
+      var a = pairs[i][0], b = pairs[i][1];
+      sa += a; sb += b; diffs.push(b - a);
+      if (b > a) wb++; else if (a > b) wa++; else ties++;
+    }
+    var r = { n: n, meanA: n ? sa / n : 0, meanB: n ? sb / n : 0, winsA: wa, winsB: wb, ties: ties };
+    r.meanDiff = r.meanB - r.meanA;
+    r.p = signTest(wb, wa + wb);
+    r.ci = bootstrapCI(diffs, 10000, 20261111);
+    var excl = r.ci[0] > 0 || r.ci[1] < 0;
+    r.clear = n >= 2 && excl && r.p < 0.05;
+    r.verdict = !r.clear ? 'No clear difference' : (r.meanDiff > 0 ? 'B is better' : 'A is better');
+    r.more = r.clear ? 0 : moreNeeded(r);
+    return r;
+  }
+
+  /* rough extra cases needed for both tests to pass if the effect holds; null when it cannot be estimated */
+  function moreNeeded(r) {
+    if (r.n < 2 || r.meanDiff === 0) return null;
+    var m = r.winsA + r.winsB, need = r.n;
+    if (!m) return null;
+    var lead = r.meanDiff > 0 ? r.winsB : r.winsA, q = lead / m;
+    if (q <= 0.5) return null;
+    need = Math.max(need, Math.ceil(Math.pow(1.96 / (2 * q - 1), 2) * r.n / m));
+    var half = (r.ci[1] - r.ci[0]) / 2;
+    if (half > 0) need = Math.max(need, Math.ceil(r.n * Math.pow(half / Math.abs(r.meanDiff), 2)));
+    var more = Math.max(need - r.n, 5);
+    return more > 100000 ? null : more;
+  }
+
+  var api = {
+    MODELS: MODELS, rates: rates, mapModel: mapModel, parseInput: parseInput, normUsage: normUsage, costUsage: costUsage,
+    restartTurns: restartTurns, sessionModel: sessionModel, parseAB: parseAB, signTest: signTest, mulberry32: mulberry32,
+    bootstrapCI: bootstrapCI, abAnalyze: abAnalyze, fmtInt: fmtInt, fmtUSD: fmtUSD, fmtPct: fmtPct
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof document === 'undefined') return;
+
+  /* ---------- DOM helpers ---------- */
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  /* space-between keeps controls in one grid row level when a label wraps to two lines */
+  function labelled(text, control) { var l = el('label'); l.style.alignContent = 'space-between'; l.appendChild(el('span', '', text)); l.appendChild(control); return l; }
+  function para(cls, text) { var p = el('p', cls, text); p.style.margin = '0'; return p; }
+  function select(opts, val) {
+    var s = el('select');
+    opts.forEach(function (o) { var op = el('option', '', o[1]); op.value = o[0]; s.appendChild(op); });
+    s.value = val; return s;
+  }
+  function modelSelect(val) { return select(ORDER.map(function (k) { return [k, MODELS[k].label]; }), val || 'sonnet'); }
+  function numInput(val, min, max, step) {
+    var i = el('input'); i.type = 'number'; i.value = String(val); i.min = String(min); if (max != null) i.max = String(max); i.step = String(step || 1); i.inputMode = 'numeric'; return i;
+  }
+  function readNum(i, def, min, max) {
+    var v = Number(i.value);
+    if (i.value === '' || !isFinite(v)) v = def;
+    return Math.min(max, Math.max(min, Math.floor(v)));
+  }
+  function button(text) { var b = el('button', 'btn', text); b.type = 'button'; return b; }
+  function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+  var TYPES = [['input', 'in', 'Input'], ['cw', 'cw', 'Cache write'], ['cr', 'cr', 'Cache read'], ['output', 'out', 'Output']];
+  function legend() { var l = el('div', 'legend'); TYPES.forEach(function (t) { l.appendChild(el('span', 'tok ' + t[1], t[2])); }); return l; }
+  function bar(vals, caption, fmt) {
+    var wrap = el('div'), sum = 0, desc = [];
+    wrap.style.display = 'grid'; wrap.style.gap = '4px';
+    TYPES.forEach(function (t) { sum += vals[t[0]] || 0; });
+    var b = el('div', 'bar');
+    TYPES.forEach(function (t) {
+      var v = vals[t[0]] || 0;
+      if (sum > 0 && v > 0) {
+        var s = el('span', t[1]); s.style.width = (100 * v / sum) + '%'; s.title = t[2] + ': ' + fmt(v) + ' (' + fmtPct(v / sum) + ')';
+        b.appendChild(s);
+      }
+      desc.push(t[2] + ' ' + (sum > 0 ? fmtPct(v / sum) : '0%'));
+    });
+    b.setAttribute('role', 'img'); b.setAttribute('aria-label', caption + ': ' + desc.join(', '));
+    wrap.appendChild(el('div', 'note', caption)); wrap.appendChild(b);
+    return wrap;
+  }
+  function typeTable(tokens, costs, rateCol) {
+    var w = el('div', 'tablewrap'), t = el('table'), th = el('thead'), hr = el('tr'), tb = el('tbody'), st = 0, sc = 0;
+    var heads = ['Type', 'Tokens'].concat(rateCol ? ['Per million'] : []).concat(['Cost']);
+    heads.forEach(function (h, i) { hr.appendChild(el('th', i ? 'num' : '', h)); });
+    th.appendChild(hr); t.appendChild(th);
+    TYPES.forEach(function (ty) {
+      var r = el('tr'), c0 = el('td');
+      c0.appendChild(el('span', 'tok ' + ty[1], ty[2])); r.appendChild(c0);
+      r.appendChild(el('td', 'num', fmtInt(tokens[ty[0]])));
+      if (rateCol) r.appendChild(el('td', 'num', rateCol[ty[0]]));
+      r.appendChild(el('td', 'num', fmtUSD(costs[ty[0]])));
+      st += tokens[ty[0]]; sc += costs[ty[0]];
+      tb.appendChild(r);
+    });
+    var tr = el('tr'); tr.appendChild(el('td', '', 'Total')); tr.appendChild(el('td', 'num', fmtInt(st)));
+    if (rateCol) tr.appendChild(el('td', 'num', ''));
+    tr.appendChild(el('td', 'num', fmtUSD(sc))); tr.style.fontWeight = '600'; tb.appendChild(tr);
+    t.appendChild(tb); w.appendChild(t); return w;
+  }
+  function liveBox() { var o = el('div'); o.setAttribute('aria-live', 'polite'); o.style.display = 'grid'; o.style.gap = '10px'; o.style.minWidth = '0'; return o; }
+  function perM(x) { var v = x * 1e6; return '$' + (v < 0.01 ? v.toFixed(4) : v < 1 ? v.toFixed(3) : v.toFixed(2)); }
+
+  /* ---------- mount: cost meter ---------- */
+  var COST_SAMPLE = JSON.stringify({
+    type: 'result', subtype: 'success', is_error: false, duration_ms: 2310, num_turns: 1, result: '4',
+    session_id: '00000000-0000-4000-8000-000000000000', total_cost_usd: 0.00158877,
+    usage: { input_tokens: 2, cache_creation_input_tokens: 7207, cache_read_input_tokens: 14517, output_tokens: 4,
+      cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 7207 } },
+    modelUsage: { 'claude-haiku-5-5': { inputTokens: 2, outputTokens: 4, cacheReadInputTokens: 14517, cacheCreationInputTokens: 7207, costUSD: 0.00158877 } }
+  }, null, 2);
+
+  function mountCost(root) {
+    root.appendChild(el('h4', '', 'Cost meter'));
+    var ta = el('textarea'); ta.spellcheck = false; ta.rows = 6;
+    ta.placeholder = '{"type":"result", ... "usage":{...}}  or just  {"input_tokens":..., ...}';
+    root.appendChild(labelled('Paste the JSON from claude -p --output-format json, or only its usage object', ta));
+    var g = el('div', 'grid'), ms = modelSelect('sonnet'), ttl = select([['5m', '5-minute (1.25x input)'], ['1h', '1-hour (2x input)']], '5m');
+    var ttlL = labelled('Cache write lifetime', ttl);
+    g.appendChild(labelled('Model', ms)); g.appendChild(ttlL); root.appendChild(g);
+    var row = el('div', 'row'), sample = button('Load sample'), clr = button('Clear');
+    row.appendChild(sample); row.appendChild(clr); root.appendChild(row);
+    var out = liveBox(); root.appendChild(out);
+    var lastText = null;
+
+    function render() {
+      clear(out);
+      var p = parseInput(ta.value);
+      if (ta.value !== lastText) { lastText = ta.value; if (!p.error && p.model) ms.value = p.model; }
+      if (p.error) { out.appendChild(para('note', ta.value.trim() ? p.error : 'Paste a result above, or load the sample.')); return; }
+      var r = costUsage(p.usage, ms.value, ttl.value), t = r.tokens;
+      ttlL.style.opacity = t.split ? '0.6' : '';
+      ttl.disabled = t.split;
+      ttl.title = t.split ? 'The pasted usage has the 5-minute / 1-hour split, so it is used instead.' : '';
+      var cwRate = t.cw1 && t.cw5 ? perM(r.rates.cw5) + ' / ' + perM(r.rates.cw1) : perM(t.cw1 ? r.rates.cw1 : r.rates.cw5);
+      out.appendChild(typeTable(t, r.cost));
+      out.appendChild(para('note', 'Per million tokens: input ' + perM(r.rates.inp) + ', cache write ' + cwRate + (t.cw1 && t.cw5 ? ' (5-minute / 1-hour)' : '') +
+        ', cache read ' + perM(r.rates.cr) + ', output ' + perM(r.rates.out) + '.'));
+      if (t.split) out.appendChild(para('note', 'Cache write split from the paste: ' + fmtInt(t.cw5) + ' 5-minute, ' + fmtInt(t.cw1) + ' 1-hour.'));
+      out.appendChild(bar(t, 'Share by tokens', fmtInt));
+      out.appendChild(bar(r.cost, 'Share by cost', fmtUSD));
+      out.appendChild(legend());
+      var tot = el('div'); tot.appendChild(el('div', 'note', 'Total at list price, ' + MODELS[ms.value].label + (r.hi ? ' (prompt over 100,000 tokens: higher price step)' : '')));
+      tot.appendChild(el('div', 'big', fmtUSD(r.total))); out.appendChild(tot);
+      out.appendChild(para('', 'Without caching (all ' + fmtInt(r.prompt) + ' prompt tokens at the input price): ' + fmtUSD(r.noCache) + '. Caching saves ' + fmtPct(r.saving) + '.'));
+      if (p.totalCost != null) {
+        var d = r.total - p.totalCost;
+        out.appendChild(para('', 'Reported total_cost_usd: ' + fmtUSD(p.totalCost) + ' (' + String(p.totalCost) + '). Computed minus reported: ' + fmtUSD(d) +
+          (p.totalCost > 0 ? ' (' + fmtPct(d / p.totalCost) + ')' : '') + '.'));
+      }
+      if (p.models > 1) out.appendChild(para('note', 'This run used ' + p.models + ' models; every token above is priced at the selected one.'));
+      out.appendChild(para('note', 'On a subscription plan this is the list-price equivalent, not a charge.'));
+    }
+    ta.addEventListener('input', render); ms.addEventListener('change', render); ttl.addEventListener('change', render);
+    sample.addEventListener('click', function () { ta.value = COST_SAMPLE; render(); });
+    clr.addEventListener('click', function () { ta.value = ''; render(); ta.focus(); });
+    render();
+  }
+
+  /* ---------- mount: session cost model ---------- */
+  function mountSession(root) {
+    root.appendChild(el('h4', '', 'Session cost model'));
+    var g = el('div', 'grid');
+    var f = {
+      model: modelSelect('sonnet'),
+      turns: numInput(40, 1, 2000),
+      prefix: numInput(20000, 0, 1000000, 1000),
+      added: numInput(3000, 0, 1000000, 500),
+      output: numInput(500, 0, 128000, 100),
+      caching: select([['on', 'On'], ['off', 'Off']], 'on'),
+      ttl: select([['5m', '5-minute'], ['1h', '1-hour']], '5m'),
+      restarts: numInput(0, 0, 1999)
+    };
+    g.appendChild(labelled('Model', f.model));
+    g.appendChild(labelled('Turns', f.turns));
+    g.appendChild(labelled('Fixed prefix tokens (system, tools, instruction files)', f.prefix));
+    g.appendChild(labelled('Tokens added per turn', f.added));
+    g.appendChild(labelled('Output tokens per turn', f.output));
+    g.appendChild(labelled('Prompt caching', f.caching));
+    g.appendChild(labelled('Cache lifetime', f.ttl));
+    g.appendChild(labelled('Cold restarts (cache expired)', f.restarts));
+    root.appendChild(g);
+    var out = liveBox(); root.appendChild(out);
+
+    function params(caching) {
+      var T = readNum(f.turns, 40, 1, 2000);
+      return {
+        model: f.model.value, turns: T, prefix: readNum(f.prefix, 20000, 0, 1e7), added: readNum(f.added, 3000, 0, 1e7),
+        output: readNum(f.output, 500, 0, 1e6), caching: caching, ttl: f.ttl.value, restarts: readNum(f.restarts, 0, 0, T - 1)
+      };
+    }
+    function render() {
+      clear(out);
+      var on = f.caching.value === 'on', p = params(on), r = sessionModel(p), off = sessionModel(params(false));
+      f.ttl.disabled = !on; f.restarts.disabled = !on;
+      out.appendChild(typeTable(r.tokens, r.cost));
+      out.appendChild(bar(r.tokens, 'Share by tokens', fmtInt));
+      out.appendChild(bar(r.cost, 'Share by cost', fmtUSD));
+      out.appendChild(legend());
+      var tot = el('div'); tot.appendChild(el('div', 'note', 'Session total, ' + r.turns + ' turns, ' + MODELS[p.model].label));
+      tot.appendChild(el('div', 'big', fmtUSD(r.total))); out.appendChild(tot);
+      if (on) out.appendChild(para('', 'With caching off: ' + fmtUSD(off.total) + '. Caching saves ' + fmtPct(off.total > 0 ? (off.total - r.total) / off.total : 0) + '.'));
+      else out.appendChild(para('', 'Caching is off, so every prompt token is billed at the input price.'));
+      out.appendChild(para('', 'Cost per turn: ' + fmtUSD(r.first) + ' on turn 1, ' + fmtUSD(r.last) + ' on turn ' + r.turns + '.'));
+      if (on && r.restartTurns.length) {
+        out.appendChild(para('', 'Cold restarts on turn' + (r.restartTurns.length > 1 ? 's ' : ' ') + r.restartTurns.join(', ') + ' add ' + fmtUSD(r.restartExtra) +
+          ' (' + fmtPct(r.total > 0 ? r.restartExtra / r.total : 0) + ' of the total).'));
+      } else if (on) out.appendChild(para('note', 'No cold restarts: every turn after the first reads the earlier context from cache.'));
+      out.appendChild(para('note', 'Model: turn t sends prefix + (t-1) x (added + output) + this turn\'s added tokens. With caching, what is already cached is a cache read; the previous answer and the new input are a cache write; a cold restart writes it all again.'));
+    }
+    Object.keys(f).forEach(function (k) { f[k].addEventListener('input', render); f[k].addEventListener('change', render); });
+    render();
+  }
+
+  /* ---------- mount: A/B readout ---------- */
+  var AB_SAMPLE = 'A,B\n6,8\n5,7\n7,7\n4,6\n8,9\n6,5\n5,8\n7,9\n3,5\n6,7\n8,8\n5,6\n6,9\n7,6\n4,7\n5,7\n6,8\n7,8\n5,5\n6,7';
+
+  function mountAB(root) {
+    root.appendChild(el('h4', '', 'A/B readout'));
+    var ta = el('textarea'); ta.spellcheck = false; ta.rows = 6; ta.placeholder = 'A,B\n6,8\n5,7\n...';
+    root.appendChild(labelled('One case per line: score for A, then score for B (comma, tab or space). Higher is better.', ta));
+    var row = el('div', 'row'), sample = button('Load sample'), clr = button('Clear');
+    row.appendChild(sample); row.appendChild(clr); root.appendChild(row);
+    var out = liveBox(); root.appendChild(out);
+    var timer = null;
+
+    function statTable(rows) {
+      var w = el('div', 'tablewrap'), t = el('table'), tb = el('tbody');
+      rows.forEach(function (r) { var tr = el('tr'); tr.appendChild(el('td', '', r[0])); tr.appendChild(el('td', 'num', r[1])); tb.appendChild(tr); });
+      t.appendChild(tb); w.appendChild(t); return w;
+    }
+    function render() {
+      clear(out);
+      var pr = parseAB(ta.value);
+      if (pr.bad.length) out.appendChild(para('note', 'Could not read ' + pr.bad.length + ' line' + (pr.bad.length > 1 ? 's' : '') + ' (line ' + pr.bad.slice(0, 8).join(', ') + (pr.bad.length > 8 ? ', ...' : '') + ').'));
+      if (pr.pairs.length < 2) { out.appendChild(para('note', 'Paste at least two cases, or load the sample.')); return; }
+      var r = abAnalyze(pr.pairs), d = 3;
+      out.appendChild(statTable([
+        ['Cases (n)', fmtInt(r.n)], ['Mean of A', fmtNum(r.meanA, d)], ['Mean of B', fmtNum(r.meanB, d)],
+        ['Mean difference (B minus A)', fmtNum(r.meanDiff, d)], ['Wins for B', fmtInt(r.winsB)], ['Wins for A', fmtInt(r.winsA)], ['Ties', fmtInt(r.ties)],
+        ['Sign test p (two-sided, ' + fmtInt(r.winsA + r.winsB) + ' non-tied)', r.p < 0.0001 ? r.p.toExponential(2) : r.p.toFixed(4)],
+        ['95% bootstrap interval of the difference', fmtNum(r.ci[0], d) + ' to ' + fmtNum(r.ci[1], d)]
+      ]));
+      var v = para('verdict', r.verdict + '.');
+      v.style.color = r.clear ? 'var(--good)' : 'var(--fg)';
+      out.appendChild(v);
+      if (!r.clear) {
+        out.appendChild(para('', r.more != null
+          ? 'Roughly ' + fmtInt(r.more) + ' more cases of this kind would be needed to tell, if the difference holds.'
+          : 'Collect more cases.'));
+      }
+      out.appendChild(para('note', 'Clear means the interval excludes 0 and the sign test p is below 0.05. Bootstrap: 10,000 resamples, fixed seed. Check cost and latency before you switch.'));
+    }
+    function later() { if (timer) clearTimeout(timer); timer = setTimeout(render, 150); }
+    ta.addEventListener('input', later);
+    sample.addEventListener('click', function () { ta.value = AB_SAMPLE; render(); });
+    clr.addEventListener('click', function () { ta.value = ''; render(); ta.focus(); });
+    render();
+  }
+
+  var MOUNT = { cost: mountCost, session: mountSession, ab: mountAB };
+  [].forEach.call(document.querySelectorAll('div.tool[data-tool]'), function (root) {
+    var fn = MOUNT[root.getAttribute('data-tool')];
+    if (!fn || root.getAttribute('data-mounted')) return;
+    root.setAttribute('data-mounted', '1');
+    try { fn(root); } catch (e) { root.appendChild(para('note', 'This instrument could not start.')); }
+  });
+})();
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,121 @@
+<div class="app solo">
+  <main>
+    <section class="view wide" id="view-home">
+      <div>
+        <div class="kicker" id="totals">Thirteen modules</div>
+        <h1>Run it, read the meter, then change one thing.</h1>
+        <p class="lede">A bootcamp on using Claude Code and LLMs well, for people who already run systems for a living. It is a set of separate modules. Take one, take a path, or take them all: each module is its own page with a briefing in several lessons, hands-on labs you run in a scratch folder, judgment calls, and a cheat sheet. Every lab ends in a number or a file you can check, because the habits that matter here are measuring and verifying.</p>
+      </div>
+      <div class="howto">
+        <div><b>Pick by level</b>Foundation modules assume nothing but a working install. Practitioner modules build things. Advanced modules run them at scale and prove what changed.</div>
+        <div><b>Take them a la carte</b>Each module lists its prerequisites and opens with a recap of what it needs from them, so you can start anywhere.</div>
+        <div><b>Lessons, labs, calls</b>Lessons give the mechanism with real field names and flags. Labs are numbered steps with the expected result and a self-check. Calls are scenario questions where the explanation is the point.</div>
+        <div><b>Plan or API key</b>Wherever a subscription plan and pay-per-token differ, the module says what is true for each.</div>
+      </div>
+
+      <div>
+        <div class="row" style="justify-content:space-between">
+          <div class="kicker">Modules</div>
+          <div class="row" id="levels" role="group" aria-label="Filter by level"></div>
+        </div>
+        <div class="cards" id="cards" style="margin-top:10px"></div>
+      </div>
+
+      <div>
+        <div class="kicker">What builds on what</div>
+        <figure class="diagram map">
+<pre class="mermaid">flowchart LR
+  m1["1 Context"]:::found
+  m2["2 Tokens and their price"]:::found
+  m13["13 Models and ways to teach them"]:::found
+  m17["17 Daily workflow"]:::found
+  m20["20 Writing for agents"]:::found
+  m21["21 Where Claude Code runs"]:::found
+  m3["3 Skills"]:::prac
+  m4["4 Commands"]:::prac
+  m5["5 Hooks"]:::prac
+  m7["7 Headless runs and subagents"]:::prac
+  m9["9 Telemetry"]:::prac
+  m12["12 Session transcripts"]:::prac
+  m15["15 The wider ecosystem"]:::prac
+  m16["16 Security"]:::prac
+  m19["19 Claude API building blocks"]:::prac
+  m22["22 Sensitive data"]:::prac
+  m23["23 MCP: anatomy of the protocol"]:::prac
+  m6["6 Plugins and marketplaces"]:::adv
+  m8["8 Orchestration"]:::adv
+  m10["10 Cutting cost"]:::adv
+  m11["11 Evals and A/B testing"]:::adv
+  m14["14 Agent SDK and agent teams"]:::adv
+  m18["18 Unattended and CI"]:::adv
+  m24["24 MCP server or CLI tool"]:::adv
+  m7 --> m14
+  m3 --> m15
+  m7 --> m18
+  m16 --> m18
+  m2 --> m19
+  m5 --> m22
+  m16 --> m22
+  m1 --> m23
+  m2 --> m24
+  m23 --> m24
+  m1 --> m3
+  m1 --> m4
+  m1 --> m7
+  m2 --> m7
+  m2 --> m9
+  m3 --> m6
+  m5 --> m6
+  m7 --> m8
+  m2 --> m10
+  m9 --> m10
+  m2 --> m11
+  m7 --> m11
+  m1 --> m12
+  m2 --> m12
+</pre>
+          <figcaption>An arrow means "is a prerequisite of". Green is foundation, blue is practitioner, purple is advanced. Every module recaps what it needs, so the arrows are advice, not gates.</figcaption>
+        </figure>
+      </div>
+
+      <div>
+        <div class="kicker">Suggested paths</div>
+        <div class="paths" style="margin-top:10px">
+          <div class="panel"><b>The meter reader</b><div class="note">You pay the bill or watch the limit.</div><ol><li><a data-mod="m2"></a></li><li><a data-mod="m9"></a></li><li><a data-mod="m12"></a></li><li><a data-mod="m10"></a></li></ol></div>
+          <div class="panel"><b>The toolsmith</b><div class="note">You shape how a team's sessions behave.</div><ol><li><a data-mod="m1"></a></li><li><a data-mod="m3"></a></li><li><a data-mod="m4"></a></li><li><a data-mod="m5"></a></li><li><a data-mod="m6"></a></li></ol></div>
+          <div class="panel"><b>The fleet operator</b><div class="note">You run agents unattended.</div><ol><li><a data-mod="m7"></a></li><li><a data-mod="m8"></a></li><li><a data-mod="m14"></a></li><li><a data-mod="m18"></a></li><li><a data-mod="m11"></a></li><li><a data-mod="m10"></a></li></ol></div>
+          <div class="panel"><b>The first week</b><div class="note">You are new to Claude Code and want good habits early.</div><ol><li><a data-mod="m21"></a></li><li><a data-mod="m17"></a></li><li><a data-mod="m20"></a></li><li><a data-mod="m1"></a></li></ol></div>
+          <div class="panel"><b>The risk owner</b><div class="note">You answer for what an agent can read, run and send.</div><ol><li><a data-mod="m16"></a></li><li><a data-mod="m22"></a></li><li><a data-mod="m5"></a></li><li><a data-mod="m15"></a></li><li><a data-mod="m18"></a></li></ol></div>
+          <div class="panel"><b>The integrator</b><div class="note">You connect Claude to your own systems.</div><ol><li><a data-mod="m23"></a></li><li><a data-mod="m24"></a></li><li><a data-mod="m19"></a></li><li><a data-mod="m14"></a></li></ol></div>
+          <div class="panel"><b>One afternoon</b><div class="note">The shortest useful set.</div><ol><li><a data-mod="m13"></a></li><li><a data-mod="m2"></a></li><li><a data-mod="m5"></a></li></ol></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="kicker">Before the first lab</div>
+        <ul style="margin:8px 0 0; padding-left:1.2em">
+          <li>Claude Code 2.1 or later, signed in with a plan or an API key. Check with <code>claude --version</code>.</li>
+          <li>One scratch folder for all labs. The labs call it <code>{{LAB}}</code>, with a subfolder per module. Nothing is written outside it unless a step says so, and every lab that installs something ends with its removal.</li>
+          <li>Commands are written for PowerShell. Every <code>claude</code> command is the same in any shell; only the file-creation lines differ.</li>
+          <li>Headless labs pass <code>--setting-sources project --strict-mcp-config</code> so your personal settings, hooks and MCP servers stay out of the measurement. Small runs use the cheapest model tier.</li>
+          <li>Numbers in the Expected lines were measured on real runs in November 2026. Yours will differ a little; the shape should not.</li>
+        </ul>
+        
+      </div>
+
+      <div class="panel">
+        <div class="kicker">Export and share</div>
+        <h3 style="margin-top:8px">Every module travels alone</h3>
+        <p>Each module is its own page with its own link, and also its own self-contained HTML file. Send one module to one person, or the whole set to a team. This edition names no organization, host, account or internal tool.</p>
+        <ul style="padding-left:1.2em">
+          <li><b>A link.</b> On claude.ai, open the module and use Share. A viewer needs only the link.</li>
+          <li><b>A file.</b> Each module page has "Save this module as a file" under Export and share. The file needs no server and no network.</li>
+          <li><b>The folder.</b> This catalogue (<code>index.html</code>) and the module files in one folder link to each other offline, and work unchanged behind any static web server.</li>
+        </ul>
+        <div class="row"><button class="btn" type="button" data-save="index.html">Save this catalogue as a file</button><span class="note"></span></div>
+        <p class="note" style="margin-bottom:0">Progress is kept per module in the browser that opened it. Each module's overview has a progress code to carry it to another device or copy.</p>
+        
+      </div>
+    </section>
+  </main>
+</div>

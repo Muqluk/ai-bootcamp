@@ -1,0 +1,675 @@
+<section class="module" id="m9" data-title="Telemetry" data-sub="See tokens, cache and cost as they happen" data-level="practitioner" data-prereq="m2" data-minutes="255">
+  <div class="overview">
+    <p class="lede">Claude Code already counts every token it sends and receives. This module shows you the four places those counts surface, how to switch on OpenTelemetry export and send it somewhere you control, and which handful of ratios tell you that a session, a team or a pipeline has started to waste money or plan allowance.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Pick the right source for a question: the <code>-p</code> result JSON, the stream-json event stream, OpenTelemetry export, or <code>/usage</code>.</li>
+      <li>Turn on OpenTelemetry with the console, OTLP or Prometheus exporter, tag the data with team and cost-centre attributes, and say exactly what leaves the machine by default.</li>
+      <li>Name the metrics and events that carry tokens and cost, with their attributes, and sum them correctly.</li>
+      <li>Compute cache hit ratio, cost per session, output share, subagent share, error rate and tokens per request, and set an alert threshold for each.</li>
+      <li>Explain what a cost figure means on a subscription plan and on an API key, and what a plan user watches instead.</li>
+      <li>Take one expensive session apart request by request and say where the money went.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key). Labs were verified on 2.1.322.</li>
+      <li>Windows PowerShell 5.1 or PowerShell 7. No collector, container or backend is needed: the labs build a 25-line receiver.</li>
+      <li>A free local port, 4318, bound to 127.0.0.1 only.</li>
+      <li>About 20 small Haiku runs. On an API key the whole module costs well under a cent; on a plan it uses a sliver of your 5-hour window.</li>
+    </ul>
+    <div class="recap"><h3>If you skipped the prerequisites</h3>
+      <p>From <i>Tokens and their price</i>: every API response reports four token counts. <span class="tok in">input</span> (<code>input_tokens</code>) is only the part after the last cache breakpoint; <span class="tok cw">cache write</span> (<code>cache_creation_input_tokens</code>) is prefix written to the prompt cache; <span class="tok cr">cache read</span> (<code>cache_read_input_tokens</code>) is prefix served from it; <span class="tok out">output</span> (<code>output_tokens</code>) is what the model generated, thinking included. Total input is read plus write plus input. On the API a cache write costs 1.25 times the base input price with the 5-minute lifetime or 2 times with the 1-hour lifetime, a cache read costs 0.1 times (0.05 on Opus 5.5 and Sonnet 5.5), and output costs 5 times input on every current model. Haiku 5.5 is $0.10 in and $0.50 out per million tokens for prompts up to 100k tokens, and $0.50 and $2.50 above that. Claude Code re-sends the whole conversation on every request, so a healthy session is mostly cache reads. A subscription plan charges a flat fee and meters usage against a 5-hour window and weekly limits; an API key pays per token.</p>
+    </div>
+  </div>
+
+  <div class="lesson" id="m9-l1" data-title="Four places the numbers come from" data-minutes="20">
+    <h3>The same counts, four views</h3>
+    <p>Every number in this module starts as the <code>usage</code> block on an API response. Claude Code adds them up and exposes them in four places. They differ in grain (per request, per run, per session, per fleet), in who can see them, and in whether they survive after the process exits.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Source</th><th>How you get it</th><th>Grain</th><th>Good for</th></tr>
+      <tr><td>Result JSON</td><td><code>claude -p "…" --output-format json</code></td><td>One run, summed</td><td>Scripts and CI: one object with <code>total_cost_usd</code>, <code>usage</code>, <code>modelUsage</code>, <code>num_turns</code>, <code>duration_ms</code>. Store it next to the job log.</td></tr>
+      <tr><td>stream-json</td><td><code>--output-format stream-json --verbose</code></td><td>Each API response, as it happens</td><td>Explaining one run: per-request cache reads and writes, tool results, the <code>rate_limit_event</code> on a plan.</td></tr>
+      <tr><td>OpenTelemetry</td><td><code>CLAUDE_CODE_ENABLE_TELEMETRY=1</code> plus exporters</td><td>Per request (events) and per export interval (metrics), every session</td><td>Dashboards, alerts and chargeback across people, teams and machines, interactive sessions included.</td></tr>
+      <tr><td><code>/usage</code></td><td>Typed in a session, or <code>claude -p "/usage"</code></td><td>Current session plus recent local history</td><td>A person checking their own session cost, cache line and plan windows.</td></tr>
+    </table></div>
+    <figure class="diagram">
+<pre class="mermaid">flowchart LR
+  q1["What did this script run cost?"] --> s1["Result JSON"]:::good
+  q2["Why was this run expensive?"] --> s2["stream-json"]:::good
+  q3["What happens over time?"] --> s3["OpenTelemetry"]:::good
+  q4["What is my session at now?"] --> s4["/usage"]:::good
+</pre>
+      <figcaption>Pick the source by the question: one run, one run explained, everything over time, or yourself right now.</figcaption>
+    </figure>
+
+    <h3>Result JSON</h3>
+    <p>A one-word Haiku run on a plan login returned this (trimmed):</p>
+    <pre data-cap="output"><code>{"type":"result","subtype":"success","is_error":false,"num_turns":1,
+ "duration_ms":1583,"duration_api_ms":1369,"total_cost_usd":0.00158857,
+ "usage":{"input_tokens":2,"cache_creation_input_tokens":7206,
+          "cache_read_input_tokens":14517,"output_tokens":4,
+          "cache_creation":{"ephemeral_1h_input_tokens":7206,"ephemeral_5m_input_tokens":0},
+          "service_tier":"standard"},
+ "modelUsage":{"claude-haiku-5-5":{"inputTokens":2,"outputTokens":4,
+          "cacheReadInputTokens":14517,"cacheCreationInputTokens":7206,
+          "costUSD":0.00158857,"costBasis":"list"}},
+ "subagent_stats":{"spawned":0, …},"result":"ready"}</code></pre>
+    <p>Check the arithmetic once so you trust it: 2 × $0.10 + 4 × $0.50 + 14,517 × $0.01 + 7,206 × $0.20 (the 1-hour write rate), all per million, is $0.00158857. The figure is computed locally from a bundled price table. <code>costBasis</code> says <code>list</code>: list price, not your bill. <code>modelUsage</code> splits the run by model, which matters as soon as a subagent runs on a different model from the main loop.</p>
+    <h3>stream-json</h3>
+    <p>The stream emits one JSON object per line: a <code>system</code>/<code>init</code> line with the tools, model and <code>apiKeySource</code>, then <code>assistant</code> and <code>user</code> lines as the loop runs, and a final <code>result</code> line identical to the JSON above. Each <code>assistant</code> line carries <code>message.id</code>, <code>request_id</code> and <code>message.usage</code>. One API response can arrive as several lines (one per content block) with the same <code>message.id</code>, so you count usage once per id. On a plan login the stream also carries a <code>rate_limit_event</code> line; Lesson 5 reads it.</p>
+    <h3>OpenTelemetry</h3>
+    <p>This is the only source that covers interactive sessions without anyone pasting anything, and the only one that aggregates across machines. Lessons 2 and 3 cover it.</p>
+    <h3><code>/usage</code></h3>
+    <p><code>/usage</code> (aliases <code>/cost</code> and <code>/stats</code>) shows a Session block with total cost, API and wall duration, code changes, tokens by model, and a <code>Prompt cache (main)</code> line with the request count, the share of input served from cache, misses and whether the cache is warm. On a Pro, Max, Ultra, Team or Enterprise plan it adds usage bars and a breakdown of what drew on your limits over the last 24 hours or 7 days, computed from this machine's local history only. It runs headless: <code>claude -p "/usage"</code> returned this on a plan login, with no API call and <code>total_cost_usd</code> 0:</p>
+    <pre data-cap="output"><code>You are currently using your subscription to power your Claude Code usage
+
+Current session: 35% used · resets Nov 11, 6:30pm
+Current week (all models): 79% used · resets Nov 12, 1am
+
+What's contributing to your usage?
+Approximate · sessions on this machine only · shares overlap
+
+Last 24h · 4499 requests · 113 sessions
+  59%  Run fewer sessions at once · up to 23 at once
+  30%  See what fills your context · run /context
+  20%  Give simple subagents a cheaper model</code></pre>
+    <aside class="rule">Use the result JSON for one run, stream-json to explain one run, OpenTelemetry for everything over time, and <code>/usage</code> for yourself right now.</aside>
+    <aside class="trap">Every dollar figure in all four sources is an estimate at list price unless an administrator set <code>modelPricing</code> in managed settings. On a plan it is notional: nobody bills you that amount.</aside>
+  </div>
+
+  <div class="lesson" id="m9-l2" data-title="Turning on OpenTelemetry" data-minutes="25">
+    <h3>The switches</h3>
+    <p>Export is off until <code>CLAUDE_CODE_ENABLE_TELEMETRY=1</code>. Then you pick an exporter per signal. Metrics are counters exported on an interval; events (OpenTelemetry calls them logs) are one record per prompt, API request, tool call and so on.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Variable</th><th>Values</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>CLAUDE_CODE_ENABLE_TELEMETRY</code></td><td><code>1</code></td><td>off</td><td>Required for anything below to happen.</td></tr>
+      <tr><td><code>OTEL_METRICS_EXPORTER</code></td><td><code>console</code>, <code>otlp</code>, <code>prometheus</code>, <code>none</code></td><td>none set</td><td>Comma-separated for several, e.g. <code>console,otlp</code>.</td></tr>
+      <tr><td><code>OTEL_LOGS_EXPORTER</code></td><td><code>console</code>, <code>otlp</code>, <code>none</code></td><td>none set</td><td>Carries the events, including <code>api_request</code>.</td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_PROTOCOL</code></td><td><code>grpc</code>, <code>http/json</code>, <code>http/protobuf</code></td><td>no default</td><td>You must set it (or the per-signal variant) for every <code>otlp</code> exporter.</td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_ENDPOINT</code></td><td>URL</td><td>none</td><td>Conventionally port 4317 for gRPC, 4318 for HTTP. With HTTP the SDK appends <code>/v1/metrics</code> and <code>/v1/logs</code>.</td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_HEADERS</code></td><td><code>Authorization=Bearer …</code></td><td>none</td><td>Collector credential.</td></tr>
+      <tr><td><code>OTEL_METRIC_EXPORT_INTERVAL</code></td><td>ms</td><td>60000</td><td>Shorten to 1000 to 10000 for debugging only.</td></tr>
+      <tr><td><code>OTEL_LOGS_EXPORT_INTERVAL</code></td><td>ms</td><td>5000</td><td></td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE</code></td><td><code>delta</code>, <code>cumulative</code></td><td>delta</td><td>Set <code>cumulative</code> if your backend expects it.</td></tr>
+      <tr><td><code>OTEL_RESOURCE_ATTRIBUTES</code></td><td><code>k=v,k=v</code></td><td>none</td><td>Your own tags. See below.</td></tr>
+    </table></div>
+    <p>Per-signal variants exist for endpoint, protocol and headers (<code>OTEL_EXPORTER_OTLP_METRICS_ENDPOINT</code>, <code>OTEL_EXPORTER_OTLP_LOGS_PROTOCOL</code> and so on), so metrics can go to a time-series store and events to a log store. A Prometheus exporter serves a scrape endpoint at <code>http://localhost:9464/metrics</code> instead of pushing.</p>
+    <figure class="diagram">
+<pre class="mermaid">flowchart LR
+  cc["Claude Code session"]:::hot
+  sw{"Telemetry switch on?"}
+  none["Nothing is exported"]:::ghost
+  ex["OTLP exporter"]:::info
+  co["Collector"]:::info
+  st["Metric and log stores"]
+  qu["Your query or dashboard"]:::good
+  cc --> sw
+  sw -- no --> none
+  sw -- yes --> ex
+  ex --> co
+  co --> st
+  st --> qu
+</pre>
+      <figcaption>Nothing leaves the machine until the switch is on, and then only to the endpoint you configured.</figcaption>
+    </figure>
+
+    <h3>Will it flush before a short run exits</h3>
+    <p>Yes, in 2.1.322. A headless run that lasted under two seconds exported its metrics at exit even with the default 60-second interval left alone. The short interval matters for long interactive sessions, where you want to see numbers before the session ends. What did stop output was <code>--output-format json</code>: with the console exporter, the JSON run printed only its result object and no telemetry, while the same run in text mode printed about 600 lines of metric and event records to stdout. OTLP export is not affected, because it goes over the network.</p>
+    <h3>Tagging: team and cost centre</h3>
+    <pre><code>$env:OTEL_RESOURCE_ATTRIBUTES = 'department=engineering,team.id=platform,cost_center=eng-123'</code></pre>
+    <p>The keys go into the OTLP resource block and onto every metric datapoint and event, so a backend can group by them as ordinary labels. Format is strict: comma-separated <code>key=value</code>, no spaces, no quotes, commas, semicolons or backslashes in values. Percent-encode anything else. A value with a space silently drops every key and raises no error. Each key becomes a label on every series; if a value is high-cardinality, set <code>OTEL_METRICS_INCLUDE_RESOURCE_ATTRIBUTES=false</code> to keep it in the resource block only.</p>
+    <h3>What leaves the machine by default</h3>
+    <p>Export goes only to the endpoint you configure. It is separate from Anthropic's own operational telemetry.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Data</th><th>Default</th><th>Switch</th></tr>
+      <tr><td>Token counts, cost, durations, model, tool names (built-in), success flags, sizes</td><td>Sent</td><td>Exporter selectors</td></tr>
+      <tr><td><code>session.id</code>, <code>user.account_uuid</code>, <code>user.account_id</code>, <code>organization.id</code></td><td>Sent</td><td><code>OTEL_METRICS_INCLUDE_SESSION_ID</code>, <code>OTEL_METRICS_INCLUDE_ACCOUNT_UUID</code></td></tr>
+      <tr><td><code>user.email</code> (on an OAuth login)</td><td>Sent</td><td>No switch: filter it in your collector</td></tr>
+      <tr><td>Prompt text</td><td>Not sent; only <code>prompt_length</code>, value shows <code>&lt;REDACTED&gt;</code></td><td><code>OTEL_LOG_USER_PROMPTS=1</code></td></tr>
+      <tr><td>Assistant response text</td><td>Not sent; only length</td><td><code>OTEL_LOG_ASSISTANT_RESPONSES=1</code> (falls back to the prompt switch when unset)</td></tr>
+      <tr><td>Bash commands, file paths, tool arguments, MCP server and tool names, custom skill and agent names</td><td>Not sent; MCP tools show as <code>mcp_tool</code>, custom names as <code>custom</code></td><td><code>OTEL_LOG_TOOL_DETAILS=1</code></td></tr>
+      <tr><td>Full API request and response bodies</td><td>Not sent</td><td><code>OTEL_LOG_RAW_API_BODIES=1</code> or <code>file:&lt;dir&gt;</code>; implies everything above</td></tr>
+    </table></div>
+    <h3>Who can turn it on</h3>
+    <p>Claude Code ignores the OTel exporter variables in a repository's <code>.claude/settings.json</code> and <code>.claude/settings.local.json</code>, so a cloned repo cannot start exporting your work or capture content. A repository can only turn a signal off. Set the variables in your shell, in your user settings <code>env</code> block, or, for a team, in managed settings (next lessons). Claude Code also does not pass <code>OTEL_*</code> to the Bash tool, hooks or MCP servers.</p>
+    <aside class="rule">Leave the content switches off unless the collector is approved to hold source code and prompts; the counters answer every cost question without them.</aside>
+    <aside class="trap">Setting <code>OTEL_EXPORTER_OTLP_PROTOCOL</code> is easy to forget because most SDKs default it. Claude Code has no default, so an <code>otlp</code> exporter without it sends nothing. Run with <code>--debug-file &lt;path&gt;</code> and look for <code>[3P telemetry]</code> lines; a good setup logs <code>First metrics export: SUCCESS</code>.</aside>
+  </div>
+
+  <div class="lesson" id="m9-l3" data-title="Metrics and events" data-minutes="25">
+    <h3>Metrics</h3>
+    <p>Metrics are counters. Every one carries the standard attributes (<code>session.id</code>, <code>user.id</code>, <code>organization.id</code>, <code>user.account_uuid</code>, <code>terminal.type</code>, your resource attributes) plus its own.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Metric</th><th>Unit</th><th>Own attributes</th><th>Incremented</th></tr>
+      <tr><td><code>claude_code.token.usage</code></td><td>tokens</td><td><code>type</code> = <code>input</code> | <code>output</code> | <code>cacheRead</code> | <code>cacheCreation</code>; <code>model</code>; <code>query_source</code> = <code>main</code> | <code>subagent</code> | <code>auxiliary</code>; <code>effort</code>; <code>speed</code>; <code>agent.name</code>, <code>skill.name</code>, <code>plugin.name</code>, <code>mcp_server.name</code></td><td>After each API request</td></tr>
+      <tr><td><code>claude_code.cost.usage</code></td><td>USD</td><td>Same as token usage, without <code>type</code></td><td>After each API request</td></tr>
+      <tr><td><code>claude_code.session.count</code></td><td></td><td><code>start_type</code> = <code>fresh</code> | <code>resume</code> | <code>continue</code> | <code>agents_view</code></td><td>Session start</td></tr>
+      <tr><td><code>claude_code.lines_of_code.count</code></td><td></td><td><code>type</code> = <code>added</code> | <code>removed</code>; <code>model</code></td><td>Code edits</td></tr>
+      <tr><td><code>claude_code.active_time.total</code></td><td>s</td><td><code>type</code> = <code>user</code> | <code>cli</code></td><td>While typing or while the CLI works; idle excluded</td></tr>
+      <tr><td><code>claude_code.commit.count</code>, <code>.pull_request.count</code>, <code>.code_edit_tool.decision</code></td><td></td><td>Decision counter: <code>tool_name</code>, <code>decision</code>, <code>source</code>, <code>language</code></td><td>Commits, PRs, Edit/Write accept or reject</td></tr>
+    </table></div>
+    <p><code>cacheCreation</code> lumps the 5-minute and 1-hour writes together. <code>input</code> excludes cache reads and writes, as in the API usage block; add the three to get total input. Custom agent, skill and MCP names are replaced with <code>custom</code> or <code>third-party</code> unless <code>OTEL_LOG_TOOL_DETAILS=1</code>.</p>
+    <h3>Delta, not running totals</h3>
+    <p>The default temporality is delta: each export carries only what happened since the last one. The OTLP payload shows <code>"aggregationTemporality":1</code> (delta). To get a run's total you sum every datapoint across every export. If you switch to <code>cumulative</code>, you take the last value per series instead. Summing cumulative points is the commonest way to report a cost ten times too high.</p>
+    <p>One token datapoint from the console exporter, trimmed:</p>
+    <pre data-cap="output"><code>descriptor: { name: "claude_code.token.usage", type: "COUNTER", unit: "tokens" },
+dataPoints: [ {
+  attributes: { "session.id": "1250…", "organization.id": "…",
+                model: "claude-haiku-5-5", query_source: "main",
+                effort: "medium", type: "cacheRead" },
+  value: 17191 }, … ]</code></pre>
+    <h3>Events</h3>
+    <p>Events need <code>OTEL_LOGS_EXPORTER</code>. Each has <code>event.name</code>, <code>event.timestamp</code>, <code>event.sequence</code> and <code>prompt.id</code>, which ties every event caused by one prompt together.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Event</th><th>Key attributes</th><th>Use</th></tr>
+      <tr><td><code>claude_code.api_request</code></td><td><code>model</code>, <code>cost_usd</code>, <code>cost_usd_micros</code>, <code>duration_ms</code>, <code>input_tokens</code>, <code>output_tokens</code>, <code>cache_read_tokens</code>, <code>cache_creation_tokens</code>, <code>cache_creation_5m_tokens</code>, <code>cache_creation_1h_tokens</code>, <code>request_id</code>, <code>query_source</code>, <code>effort</code></td><td>Per-request cost and cache; the richest single record</td></tr>
+      <tr><td><code>claude_code.api_error</code></td><td><code>model</code>, <code>error</code>, <code>status_code</code>, <code>attempt</code>, <code>duration_ms</code></td><td>Emitted once, after retries give up; <code>attempt</code> counts tries (default retry limit 10)</td></tr>
+      <tr><td><code>claude_code.tool_result</code></td><td><code>tool_name</code>, <code>tool_use_id</code>, <code>success</code>, <code>duration_ms</code>, <code>error_type</code>, <code>decision_source</code>, <code>tool_input_size_bytes</code>, <code>tool_result_size_bytes</code></td><td>Which tools feed the context and how much</td></tr>
+      <tr><td><code>claude_code.tool_decision</code></td><td><code>tool_name</code>, <code>decision</code> (accept/reject), <code>source</code> (config, hook, user_…), <code>tool_source</code></td><td>Permission audit</td></tr>
+      <tr><td><code>claude_code.user_prompt</code></td><td><code>prompt_length</code>, <code>prompt</code> (redacted by default), <code>command_name</code></td><td>Turns per session; prompts only if you opt in</td></tr>
+    </table></div>
+    <p>Others appear too: <code>assistant_response</code>, <code>api_retries_exhausted</code>, <code>plugin_loaded</code>, <code>managed_settings_resolved</code>, <code>compaction</code>, <code>subagent_completed</code>. A one-word headless run produced <code>managed_settings_resolved</code>, four <code>plugin_loaded</code>, then <code>user_prompt</code>, <code>api_request</code> and <code>assistant_response</code>.</p>
+    <h3>Two spellings of <code>query_source</code></h3>
+    <p>On the two counters it is a bounded category: <code>main</code>, <code>subagent</code> or <code>auxiliary</code>. On events it is the raw subsystem name: the same headless run showed <code>main</code> on its metrics and <code>sdk</code> on its <code>api_request</code> event; interactive sessions report names such as <code>repl_main_thread</code> or <code>compact</code>. Build subagent share from the metric, and use the event value to drill in.</p>
+    <p>Version 2.1.322 also attached <code>anthropic.plan</code> (<code>pro</code> on the test login) and <code>anthropic.provider</code> to every record. They are not in the documented attribute list, so treat them as handy but unstable.</p>
+    <aside class="rule">Totals come from the counters, explanations come from the events; join the two on <code>session.id</code>.</aside>
+    <aside class="trap"><code>request_id</code> on <code>api_request</code> matches <code>request_id</code> on stream-json <code>assistant</code> lines and <code>requestId</code> in the local transcript. The transcript format is internal and changes between versions, so a pipeline that joins on it breaks without warning.</aside>
+  </div>
+
+  <div class="lesson" id="m9-l4" data-title="Ratios worth a dashboard" data-minutes="25">
+    <h3>Why ratios</h3>
+    <p>Raw token totals grow with adoption and tell you nothing. A ratio stays flat while usage is healthy and moves when someone's habits or a pipeline's design change. Six cover almost every cost incident.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Ratio</th><th>Formula</th><th>Source</th><th>Healthy looks like</th><th>Starting alert</th></tr>
+      <tr><td>Cache hit ratio</td><td>cacheRead ÷ (input + cacheRead + cacheCreation)</td><td><code>token.usage</code> by <code>type</code>, per session</td><td>Labs: 79% on a cold first request, 98 to 100% after</td><td>Below 70% for a session with more than 5 requests</td></tr>
+      <tr><td>Cost per session</td><td>sum <code>cost.usage</code> by <code>session.id</code></td><td><code>cost.usage</code></td><td>Your own baseline</td><td>Above 2 × your 95th percentile</td></tr>
+      <tr><td>Cost per task</td><td>sum <code>cost_usd</code> by <code>prompt.id</code>, or per pipeline run by a resource attribute</td><td><code>api_request</code></td><td>Stable per task type</td><td>Above 2 × the median for that task type</td></tr>
+      <tr><td>Output share</td><td>output cost ÷ total cost</td><td><code>token.usage</code> priced, or <code>cost.usage</code> with output tokens × output price</td><td>Labs: 1% (one word) to 11% (a short list)</td><td>Above 40%: long generations or high effort</td></tr>
+      <tr><td>Subagent share</td><td>cost where <code>query_source</code>=<code>subagent</code> ÷ total</td><td><code>cost.usage</code></td><td>0 unless you use subagents on purpose</td><td>Above 50%, or any rise after a config change</td></tr>
+      <tr><td>Error and retry rate</td><td><code>api_error</code> ÷ (<code>api_request</code> + <code>api_error</code>)</td><td>events</td><td>Near 0</td><td>Above 2% over an hour, or any <code>api_retries_exhausted</code></td></tr>
+      <tr><td>Tokens per request growth</td><td>total input of request n ÷ request 1, per session</td><td><code>api_request</code> ordered by <code>event.timestamp</code></td><td>Grows slowly; a fresh headless run starts near 22k</td><td>Above 5 × the first request, or any Haiku 5.5 request over 100k (price step)</td></tr>
+    </table></div>
+    <h3>Reading each one</h3>
+    <h4>Cache hit ratio</h4>
+    <p>Claude Code re-sends the whole conversation, so after the first request almost everything should be a <span class="tok cr">cache read</span>. A low ratio means the prefix keeps changing (tool definitions, MCP servers connecting late, a model or effort switch) or the cache expired between turns. On a plan within its usage the main conversation gets a 1-hour cache lifetime; on an API key, usage credits or a cloud provider it gets 5 minutes. A person who pauses 10 minutes between prompts on an API key pays a <span class="tok cw">cache write</span> on every prompt.</p>
+    <h4>Cost per session and per task</h4>
+    <p>Sessions are the unit people control (<code>/clear</code> starts a new <code>session.id</code>). Tasks are the unit your business cares about. For pipelines, put a run id or job name in <code>OTEL_RESOURCE_ATTRIBUTES</code> so cost per run is a single group-by. Do not use a per-run id as a metric label on a busy system; keep it on events, or set <code>OTEL_METRICS_INCLUDE_RESOURCE_ATTRIBUTES=false</code>.</p>
+    <h4>Output share</h4>
+    <p>Output is 5 times input on every current model and includes thinking. Output share climbs when effort is raised, when a prompt asks for full files back instead of edits, or when a loop writes long reports nobody reads.</p>
+    <h4>Subagent share</h4>
+    <p>Each subagent starts a fresh context and pays its own cache write. A rising subagent share with flat task counts usually means a skill or agent definition started fanning out. <code>agent.name</code> tells you which one (real names need <code>OTEL_LOG_TOOL_DETAILS=1</code>).</p>
+    <h4>Error and retry rate</h4>
+    <p>Claude Code retries internally and logs <code>api_error</code> only when it gives up, so every error event is a request that failed for good. Group by <code>status_code</code>: 429 points at rate limits, 5xx at the service, connection errors at your proxy.</p>
+    <h4>Tokens per request growth</h4>
+    <p>The context only grows until compaction. Watch the ratio, not the absolute value: a session at 5 times its starting size is paying for history it probably no longer needs, and the person should <code>/clear</code> or <code>/compact</code>.</p>
+    <aside class="rule">Set each threshold from two weeks of your own data, then alert on change against that baseline, not on a number from a slide.</aside>
+    <aside class="trap">Averages hide the problem. One runaway loop at $40 disappears in a team average of $3 per session; alert on per-session maxima and percentiles.</aside>
+  </div>
+
+  <div class="lesson" id="m9-l5" data-title="Where to send it, and what the numbers mean on a plan" data-minutes="20">
+    <h3>Three destinations</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Setup</th><th>Variables</th><th>When</th></tr>
+      <tr><td>Plain file, one machine</td><td><code>console</code> exporter redirected to a file, or OTLP <code>http/json</code> to a tiny local receiver that appends each POST (Lab 2)</td><td>You, a build agent, a short study</td></tr>
+      <tr><td>Prometheus scrape</td><td><code>OTEL_METRICS_EXPORTER=prometheus</code>, scrape <code>:9464/metrics</code></td><td>One long-lived host you already scrape; metrics only</td></tr>
+      <tr><td>Collector, any backend</td><td><code>otlp</code> for both signals, protocol, endpoint, headers</td><td>A team: the collector filters <code>user.email</code>, drops content attributes, and fans out to a metrics store and a log store</td></tr>
+    </table></div>
+    <h3>Turning it on for a team</h3>
+    <p>Put the variables in the <code>env</code> block of managed settings, delivered through a <code>managed-settings.json</code> file in the system directory, MDM, or server-managed settings from the admin console:</p>
+    <pre data-file="managed-settings.json"><code>{
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_LOGS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector.example.com:4317",
+    "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer example-token",
+    "OTEL_RESOURCE_ATTRIBUTES": "department=engineering,team.id=platform"
+  }
+}</code></pre>
+    <p>When managed settings set the endpoint, protocol or headers, Claude Code removes conflicting developer-set per-signal variables at startup, so nobody can point one signal elsewhere. The exporter selectors follow normal precedence: a developer can still set <code>OTEL_LOGS_EXPORTER=none</code> unless managed settings set it too. For API-key logins there is no account identity on the records (only <code>user.id</code> and <code>session.id</code>), so set an identity attribute per user in the managed file or a launch wrapper.</p>
+    <h3>Subscription versus API key</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Question</th><th>Subscription plan</th><th>API key</th></tr>
+      <tr><td>What does <code>cost.usage</code> / <code>total_cost_usd</code> mean</td><td>A notional list-price estimate. You pay the flat fee whatever it says</td><td>An estimate of what you will be billed at list price; contracted rates differ unless <code>modelPricing</code> is set</td></tr>
+      <tr><td>The number that limits you</td><td>Share of the 5-hour window and the weekly limits</td><td>Dollars, workspace spend limits, and per-minute rate limits</td></tr>
+      <tr><td>Where you see it</td><td><code>/usage</code> bars, status line <code>rate_limits.five_hour.used_percentage</code> and <code>seven_day</code>, the stream-json <code>rate_limit_event</code></td><td>Console Cost page, workspace limits, Claude Code dashboard and Analytics API</td></tr>
+      <tr><td>Cache lifetime Claude Code asks for</td><td>1 hour on the main conversation within plan usage</td><td>5 minutes unless overridden</td></tr>
+      <tr><td>Use for the cost metrics</td><td>Relative comparison: which sessions, skills and habits draw most</td><td>Budget, chargeback and alerting in dollars</td></tr>
+    </table></div>
+    <p>A plan user watches window share. The stream-json <code>rate_limit_event</code> on a plan login looked like this in 2.1.322 (the field layout is not documented, so read it defensively):</p>
+    <pre data-cap="output"><code>{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning",
+ "rateLimitType":"seven_day","utilization":0.79,"surpassedThreshold":0.75,
+ "unifiedWindows":{"five_hour":{"utilization":0.42,"status":"allowed"},
+                   "seven_day":{"utilization":0.79,"status":"allowed_warning"}}}}</code></pre>
+    <p>The cost metrics still help a plan user: cached tokens count less against limits, and the plan breakdown in <code>/usage</code> flags the same patterns (cache misses, long context, subagents) that the ratios in Lesson 4 catch.</p>
+    <h3>What the admin consoles add</h3>
+    <p>OpenTelemetry gives you raw counts as they happen. The consoles give you the billing view and data you cannot compute locally.</p>
+    <ul>
+      <li><b>Team and Enterprise plans</b> (claude.ai admin): a Claude Code analytics dashboard with lines accepted, suggestion accept rate, daily active users and sessions, contribution metrics from merged PRs through a GitHub integration, a leaderboard, and a spend report CSV for usage-credit spend. Enterprise adds an Analytics API.</li>
+      <li><b>API organizations</b> (Claude Console): the Cost page, a dedicated workspace for Claude Code with spend and rate limits, a per-member dashboard of spend and lines accepted, and the Claude Code Analytics API for daily per-user metrics with an Admin API key.</li>
+    </ul>
+    <aside class="rule">Reconcile against the console monthly; run dashboards and alerts off OpenTelemetry daily.</aside>
+    <aside class="trap">An <code>ANTHROPIC_API_KEY</code> left in the environment makes <code>-p</code> runs bill the API even on a plan login. The <code>system</code>/<code>init</code> line shows <code>apiKeySource</code>; on a plan login it reads <code>none</code>.</aside>
+  </div>
+
+  <div class="lesson" id="m9-l6" data-title="Explaining one expensive session" data-minutes="20">
+    <h3>The method</h3>
+    <p>A dashboard tells you a session cost five times the norm. To say why, you need it request by request. For a headless run, capture stream-json. For an interactive session, use the <code>api_request</code> events filtered by its <code>session.id</code> (Claude Code also keeps a local transcript per session, but its format is internal). Then build one row per API request.</p>
+    <ol>
+      <li><b>One row per response.</b> Keep the last <code>assistant</code> line per <code>message.id</code>; take <code>input_tokens</code>, <code>cache_creation_input_tokens</code>, <code>cache_read_input_tokens</code>.</li>
+      <li><b>Price each row</b> with the model's rates, or take <code>cost_usd</code> from the matching <code>api_request</code> event via <code>request_id</code>.</li>
+      <li><b>Look at the shape</b>, not the total. Four shapes explain most expensive sessions.</li>
+    </ol>
+    <div class="tablewrap"><table>
+      <tr><th>Shape in the rows</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>Large <span class="tok cw">cache write</span> on many rows, not just the first</td><td>Cache misses: prefix changed or the cache expired between turns</td><td>Stop switching model or tools mid-session; on an API key keep turns inside 5 minutes or ask for the 1-hour lifetime</td></tr>
+      <tr><td><span class="tok cr">Cache read</span> climbing steadily into the hundreds of thousands</td><td>Context growth: big tool results kept in history</td><td><code>/compact</code> or <code>/clear</code>; narrower reads; check <code>tool_result_size_bytes</code></td></tr>
+      <tr><td>Many rows, small growth each</td><td>A tool loop: retries, polling, one-file-at-a-time edits</td><td>Lower <code>--max-turns</code>, better instructions, batch the work</td></tr>
+      <tr><td>Few rows, high output</td><td>Long generations or high effort</td><td>Ask for diffs, lower <code>/effort</code></td></tr>
+    </table></div>
+    <h3>A real two-request run</h3>
+    <p>A Haiku run that read a 30-line CSV and answered one question made two API requests. Lab 3's script printed:</p>
+    <pre data-cap="output"><code>req input cacheWrite cacheRead output hitPct  costUsd
+--- ----- ---------- --------- ------ ------  -------
+  1     2       4552     17191     16   79.1 0.001091
+  2     2        500     21743      8   97.7 0.000322
+
+requests:            2
+cache hit ratio:     88.5%
+computed cost:       0.001413 USD
+result total_cost:   0.001481 USD
+output, stream lines: 24
+output, result:       161</code></pre>
+    <p>Read it like this. Request 1 paid a 4,552-token <span class="tok cw">cache write</span>: part of the system prompt was not cached yet. Request 2 re-sent everything plus the tool result; only the new 500 tokens were written and the rest was read at a tenth of the price. Three-quarters of the run's cost sat in request 1. A second run minutes later showed 0 cache writes and 100% hit on both requests, at a third of the cost: the cache was warm.</p>
+    <h3>The output gap</h3>
+    <p>The computed total came out about 5% low. The <code>output_tokens</code> on stream-json <code>assistant</code> lines is the count when the message started streaming (16 and 8 here), not the final count; the <code>result</code> line's <code>modelUsage</code> had 161 output tokens, thinking included. Take input and cache figures per request from the stream, and output totals from the result line or from the <code>api_request</code> events.</p>
+    <h3>Other clues in the stream</h3>
+    <ul>
+      <li><code>user</code> lines hold the tool results the model saw; their size explains growth in the next row.</li>
+      <li>The result line's <code>subagent_stats</code> counts subagents spawned, completed and failed; <code>modelUsage</code> splits cost by model.</li>
+      <li><code>system</code> lines with subtype <code>thinking_tokens</code> give a running estimate of thinking.</li>
+    </ul>
+    <aside class="rule">Explain a cost by its worst request and the reason for it, not by the session total.</aside>
+    <aside class="trap">Summing every <code>assistant</code> line double-counts responses that span several content blocks. Deduplicate on <code>message.id</code> first.</aside>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m9-lab1" data-title="Find tokens and cost in the console exporter" data-minutes="15">
+      <p class="goal">Run one headless prompt with the console exporter and pull the four token counts and the cost out of its output, then compare with <code>/usage</code>.</p>
+      <ol class="steps">
+        <li><p>Make the lab folder. Every headless run in this module carries <code>--setting-sources project --strict-mcp-config</code>: the first keeps your user settings and hooks out of the run, the second ignores every MCP server not passed on the command line. Together they make the numbers you measure reproducible and keep your personal tools out of them.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m9 | Out-Null
+Set-Location {{LAB}}/m9</code></pre>
+          <p class="expect"><b>Expected:</b> no output; your prompt is in the lab folder.</p></li>
+        <li><p>Turn telemetry on for this PowerShell window only, with the console exporter and short intervals.</p>
+          <pre><code>$env:CLAUDE_CODE_ENABLE_TELEMETRY = '1'
+$env:OTEL_METRICS_EXPORTER = 'console'
+$env:OTEL_LOGS_EXPORTER = 'console'
+$env:OTEL_METRIC_EXPORT_INTERVAL = '1000'
+$env:OTEL_LOGS_EXPORT_INTERVAL = '1000'</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Run one prompt in text mode and send everything to a file.</p>
+          <pre><code>claude -p "Reply with the single word: ready" --model haiku --setting-sources project --strict-mcp-config --max-turns 1 &gt; console.txt
+(Get-Content console.txt).Count</code></pre>
+          <p class="expect"><b>Expected:</b> about 600 lines. The word <code>ready</code> is in there among JavaScript-style object dumps.</p></li>
+        <li><p>List the metric and event names.</p>
+          <pre><code>Select-String -Path console.txt -Pattern 'name: "claude_code\.', 'body: "claude_code\.' | ForEach-Object { $_.Line.Trim() }</code></pre>
+          <p class="expect"><b>Expected:</b> events <code>managed_settings_resolved</code>, <code>plugin_loaded</code> (several), <code>user_prompt</code>, <code>api_request</code>, <code>assistant_response</code>; metrics <code>session.count</code>, <code>cost.usage</code>, <code>token.usage</code>, <code>active_time.total</code>.</p></li>
+        <li><p>Pull out the four token types and the cost.</p>
+          <pre><code>Select-String -Path console.txt -Pattern 'type: "(input|output|cacheRead|cacheCreation)"' -Context 0,4 |
+  ForEach-Object { '{0,-30} {1}' -f $_.Line.Trim(), ($_.Context.PostContext | Where-Object { $_ -match 'value:' }).Trim() }
+Select-String -Path console.txt -Pattern 'cost_usd:' | ForEach-Object { $_.Line.Trim() }</code></pre>
+          <p class="expect"><b>Expected:</b> <code>input</code> 2, <code>output</code> 4, <code>cacheRead</code> about 17,000 to 22,000, <code>cacheCreation</code> 0 to about 7,000 depending on whether the cache was warm; <code>cost_usd</code> about 0.0002 warm or 0.001 to 0.0016 cold.</p></li>
+        <li><p>Run the same prompt with <code>--output-format json</code> and count the telemetry lines.</p>
+          <pre><code>claude -p "Reply with the single word: ready" --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format json &gt; console-json.txt
+(Get-Content console-json.txt).Count
+(Select-String -Path console-json.txt -Pattern 'claude_code\.').Count</code></pre>
+          <p class="expect"><b>Expected:</b> 1 line, 0 telemetry mentions. The JSON output mode keeps stdout clean and the console exporter prints nothing. Use text mode with the console exporter.</p></li>
+        <li><p>Check <code>/usage</code> headless, then close this PowerShell window to drop the variables (or set each one to <code>$null</code>).</p>
+          <pre><code>claude -p "/usage" --model haiku --setting-sources project --strict-mcp-config --max-turns 1</code></pre>
+          <p class="expect"><b>Expected:</b> on a plan login, <code>You are currently using your subscription…</code>, then <code>Current session: N% used</code> and weekly lines with reset times, then the 24-hour and 7-day breakdown. It makes no API call.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>1. Add your <code>input</code>, <code>cacheRead</code> and <code>cacheCreation</code>. What is the total input of that one request, and what share was cache read? <i>About 22,000 tokens in total; on a warm cache nearly all of it is cache read, on a cold one about two-thirds.</i></p>
+        <p>2. You left <code>OTEL_METRIC_EXPORT_INTERVAL</code> at 1000 ms. Was it what made the metrics appear? <i>No. In 2.1.322 a run with the default 60-second interval also flushed at exit. The interval matters for seeing numbers during a long interactive session.</i></p>
+        <p>3. Price your cold-run figures at Haiku 5.5 rates with a 1-hour write ($0.20 per million) and a read at $0.01 per million. Does it match <code>cost_usd</code>? <i>It should match to the last digit; the figure is list price computed locally.</i></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m9-lab2" data-title="Build a local OTLP receiver and sum tokens by type" data-minutes="30">
+      <p class="goal">Run a 25-line OTLP/HTTP receiver on 127.0.0.1, export one run to it, stop it, and sum <code>claude_code.token.usage</code> by type from the file it wrote.</p>
+      <ol class="steps">
+        <li><p>Write the receiver. It accepts POSTs on <code>/v1/metrics</code> and <code>/v1/logs</code>, appends each body as one line to <code>metrics.jsonl</code> or <code>logs.jsonl</code>, and exits on a request to <code>/stop</code>.</p>
+          <pre data-file="{{LAB}}/m9/otlp-sink.ps1"><code>param([int]$Port = 4318, [string]$OutDir = '.')
+$l = [System.Net.HttpListener]::new()
+$l.Prefixes.Add("http://127.0.0.1:$Port/")
+$l.Start()
+while ($l.IsListening) {
+  $ctx = $l.GetContext()
+  $path = $ctx.Request.Url.AbsolutePath
+  if ($path -eq '/stop') { $ctx.Response.StatusCode = 200; $ctx.Response.Close(); break }
+  $reader = [IO.StreamReader]::new($ctx.Request.InputStream, [Text.Encoding]::UTF8)
+  $body = $reader.ReadToEnd() -replace "`r?`n", ' '
+  $file = switch ($path) { '/v1/metrics' { 'metrics.jsonl' } '/v1/logs' { 'logs.jsonl' } default { 'other.jsonl' } }
+  Add-Content -Path (Join-Path $OutDir $file) -Value $body -Encoding utf8
+  $bytes = [Text.Encoding]::UTF8.GetBytes('{}')
+  $ctx.Response.StatusCode = 200
+  $ctx.Response.ContentType = 'application/json'
+  $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)
+  $ctx.Response.Close()
+}
+$l.Close()</code></pre>
+          <p>Save it with <code>Set-Content -Encoding utf8 otlp-sink.ps1</code> from a here-string, or in your editor.</p>
+          <p class="expect"><b>Expected:</b> the file <code>otlp-sink.ps1</code> in <code>{{LAB}}/m9</code>.</p></li>
+        <li><p>Start it as a background job.</p>
+          <pre><code>Set-Location {{LAB}}/m9
+$sink = Start-Job -FilePath .\otlp-sink.ps1 -ArgumentList 4318, (Get-Location).Path
+Start-Sleep -Seconds 3
+$sink.State</code></pre>
+          <p class="expect"><b>Expected:</b> <code>Running</code>.</p></li>
+        <li><p>Point both signals at it over <code>http/json</code> and run one prompt.</p>
+          <pre><code>$env:CLAUDE_CODE_ENABLE_TELEMETRY = '1'
+$env:OTEL_METRICS_EXPORTER = 'otlp'
+$env:OTEL_LOGS_EXPORTER = 'otlp'
+$env:OTEL_EXPORTER_OTLP_PROTOCOL = 'http/json'
+$env:OTEL_EXPORTER_OTLP_ENDPOINT = 'http://127.0.0.1:4318'
+claude -p "Reply with the single word: ready" --model haiku --setting-sources project --strict-mcp-config --max-turns 1</code></pre>
+          <p class="expect"><b>Expected:</b> <code>ready</code>. Nothing else on screen: the telemetry went to the receiver.</p></li>
+        <li><p>Stop the receiver and confirm the port is free.</p>
+          <pre><code>Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:4318/stop' | Out-Null
+Wait-Job $sink -Timeout 10 | Out-Null; Remove-Job $sink -Force
+Get-ChildItem *.jsonl | ForEach-Object { '{0}: {1} POSTs' -f $_.Name, (Get-Content $_.FullName).Count }
+[bool](Get-NetTCPConnection -LocalPort 4318 -State Listen -ErrorAction SilentlyContinue)</code></pre>
+          <p class="expect"><b>Expected:</b> <code>logs.jsonl: 1 POSTs</code>, <code>metrics.jsonl: 2 POSTs</code>, then <code>False</code>.</p></li>
+        <li><p>Write the summing script and run it. Datapoints are delta, so the script adds every one.</p>
+          <pre data-file="{{LAB}}/m9/sum-tokens.ps1"><code>param([string]$File = 'metrics.jsonl', [string]$GroupBy = 'type')
+$sum = @{}
+foreach ($line in Get-Content $File) {
+  $doc = $line | ConvertFrom-Json
+  foreach ($rm in $doc.resourceMetrics) { foreach ($sm in $rm.scopeMetrics) { foreach ($m in $sm.metrics) {
+    if ($m.name -ne 'claude_code.token.usage') { continue }
+    foreach ($dp in $m.sum.dataPoints) {
+      $key = ($dp.attributes | Where-Object { $_.key -eq $GroupBy }).value.stringValue
+      $v = if ($null -ne $dp.asDouble) { [double]$dp.asDouble } else { [double]$dp.asInt }
+      $sum[$key] = $sum[$key] + $v
+    }
+  } } }
+}
+$sum.GetEnumerator() | Sort-Object Name | ForEach-Object { '{0,-14} {1,10:N0}' -f $_.Name, $_.Value }</code></pre>
+          <pre><code>.\sum-tokens.ps1 -File metrics.jsonl
+Get-Content logs.jsonl | ForEach-Object { ($_ | ConvertFrom-Json).resourceLogs.scopeLogs.logRecords.body.stringValue } | Group-Object | ForEach-Object { '{0} x{1}' -f $_.Name, $_.Count }</code></pre>
+          <p class="expect"><b>Expected:</b> four lines such as <code>cacheCreation 0</code>, <code>cacheRead 21,723</code>, <code>input 2</code>, <code>output 4</code>; then events <code>managed_settings_resolved x1</code>, <code>plugin_loaded x4</code>, <code>user_prompt x1</code>, <code>api_request x1</code>, <code>assistant_response x1</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>1. Run <code>.\sum-tokens.ps1 -GroupBy model</code>. What do you get and why is it one row? <i>One row for <code>claude-haiku-5-5</code> with the four types added together: the run used one model.</i></p>
+        <p>2. Open <code>metrics.jsonl</code> and find <code>aggregationTemporality</code>. What value, and what does it mean for summing? <i><code>1</code>, delta: each export holds only new counts, so you sum them. With cumulative you would take the last value.</i></p>
+        <p>3. Find <code>user.email</code> in the file. What would you do about it before sending this to a shared backend? <i>It is sent on an OAuth login with no switch to turn it off; drop or hash it in a collector processor.</i></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m9-lab3" data-title="Compute cache hit ratio and cost per request from stream-json" data-minutes="25">
+      <p class="goal">Capture a two-request run as stream-json and turn it into a per-request table of cache use and cost, checked against the result line.</p>
+      <ol class="steps">
+        <li><p>Make a small input file.</p>
+          <pre><code>Set-Location {{LAB}}/m9
+1..30 | ForEach-Object { "web-0$($_ % 5 + 1),host-$_,ok" } | Set-Content -Encoding utf8 hosts.csv</code></pre>
+          <p class="expect"><b>Expected:</b> <code>hosts.csv</code> with 30 rows.</p></li>
+        <li><p>Run a prompt that needs one tool call, so the loop makes two API requests.</p>
+          <pre><code>claude -p "Read hosts.csv and tell me how many rows mention web-03. Answer with the number only." --model haiku --setting-sources project --strict-mcp-config --allowedTools Read --max-turns 4 --output-format stream-json --verbose &gt; run.jsonl
+Get-Content run.jsonl | ForEach-Object { ($_ | ConvertFrom-Json).type } | Group-Object | ForEach-Object { "$($_.Name)=$($_.Count)" }</code></pre>
+          <p class="expect"><b>Expected:</b> about 7 to 9 lines: <code>system</code> 1 to 3, <code>assistant</code> 3, <code>user</code> 1, <code>result</code> 1, and on a plan login <code>rate_limit_event</code> 1.</p></li>
+        <li><p>Write the analysis script. Rates default to Haiku 5.5 per million tokens; pass others for another model.</p>
+          <pre data-file="{{LAB}}/m9/stream-stats.ps1"><code>param([string]$File = 'run.jsonl', [double]$In = 0.10, [double]$Out = 0.50, [double]$CacheWrite1h = 0.20, [double]$CacheWrite5m = 0.125, [double]$CacheRead = 0.01)
+$seen = @{}; $rows = @(); $result = $null
+foreach ($line in Get-Content $File) {
+  $e = $line | ConvertFrom-Json
+  if ($e.type -eq 'result') { $result = $e }
+  if ($e.type -ne 'assistant') { continue }
+  $id = $e.message.id
+  if ($seen.ContainsKey($id)) { continue }   # one API response can arrive as several lines
+  $seen[$id] = $true
+  $u = $e.message.usage
+  $cw1h = [double]$u.cache_creation.ephemeral_1h_input_tokens
+  $cw5m = [double]$u.cache_creation.ephemeral_5m_input_tokens
+  $allIn = $u.input_tokens + $u.cache_read_input_tokens + $u.cache_creation_input_tokens
+  $cost = ($u.input_tokens * $In + $u.output_tokens * $Out + $cw1h * $CacheWrite1h + $cw5m * $CacheWrite5m + $u.cache_read_input_tokens * $CacheRead) / 1e6
+  $rows += [pscustomobject]@{
+    req = $rows.Count + 1; input = $u.input_tokens; cacheWrite = $u.cache_creation_input_tokens; cacheRead = $u.cache_read_input_tokens; output = $u.output_tokens
+    hitPct = [math]::Round(100 * $u.cache_read_input_tokens / [math]::Max($allIn, 1), 1); costUsd = [math]::Round($cost, 6)
+  }
+}
+$rows | Format-Table -AutoSize | Out-String -Width 200
+$tin = ($rows | Measure-Object input -Sum).Sum; $tcw = ($rows | Measure-Object cacheWrite -Sum).Sum; $tcr = ($rows | Measure-Object cacheRead -Sum).Sum
+'requests:            {0}' -f $rows.Count
+'cache hit ratio:     {0:P1}' -f ($tcr / ($tin + $tcw + $tcr))
+'computed cost:       {0:N6} USD' -f ($rows | Measure-Object costUsd -Sum).Sum
+'result total_cost:   {0:N6} USD' -f $result.total_cost_usd
+'cost per request:    {0:N6} USD' -f ($result.total_cost_usd / $rows.Count)
+$mu = $result.modelUsage.PSObject.Properties | ForEach-Object { $_.Value }
+'output, stream lines: {0}' -f ($rows | Measure-Object output -Sum).Sum
+'output, result:       {0}' -f ($mu | Measure-Object outputTokens -Sum).Sum
+foreach ($line in Get-Content $File) {
+  $e = $line | ConvertFrom-Json
+  if ($e.type -eq 'rate_limit_event' -and $e.rate_limit_info.unifiedWindows) {
+    $w = $e.rate_limit_info.unifiedWindows
+    '5-hour window used: {0:P0}   7-day window used: {1:P0}' -f $w.five_hour.utilization, $w.seven_day.utilization
+  }
+}</code></pre>
+          <p class="expect"><b>Expected:</b> the file <code>stream-stats.ps1</code>.</p></li>
+        <li><p>Run it.</p>
+          <pre><code>.\stream-stats.ps1 -File run.jsonl</code></pre>
+          <p class="expect"><b>Expected:</b> two rows. Cold cache: request 1 with about 4,500 cache write and 17,000 cache read (about 79% hit), request 2 with about 500 written and 21,700 read (about 98%); about 88% overall and about $0.0015 total. Warm cache: 0 written and 100% on both, about $0.0005. Computed cost comes out a few percent below <code>total_cost_usd</code>, and <code>output, stream lines</code> is about 24 against about 130 to 160 from the result. On a plan login the last line shows your 5-hour and 7-day window use.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>1. Why is the computed cost lower than <code>total_cost_usd</code>? <i>The <code>output_tokens</code> on <code>assistant</code> lines is the count at stream start, not the final one; the result line has the true output, thinking included.</i></p>
+        <p>2. Which request cost more and why? <i>On a cold run request 1, because it wrote several thousand tokens to the cache at 2 times the input price; request 2 read nearly everything at a tenth.</i></p>
+        <p>3. Remove the <code>$seen</code> check and rerun. What changes? <i>Request 2 appears twice (thinking block and text block share one <code>message.id</code>) and its cost is double-counted.</i></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m9-lab4" data-title="Tag two runs and split the totals by tag" data-minutes="20">
+      <p class="goal">Export two runs with different <code>OTEL_RESOURCE_ATTRIBUTES</code> to the receiver from Lab 2 and produce a cost and token table per team and per cost centre.</p>
+      <ol class="steps">
+        <li><p>Start the receiver again with fresh files.</p>
+          <pre><code>Set-Location {{LAB}}/m9
+Remove-Item metrics.jsonl, logs.jsonl -ErrorAction SilentlyContinue
+$sink = Start-Job -FilePath .\otlp-sink.ps1 -ArgumentList 4318, (Get-Location).Path
+Start-Sleep -Seconds 3</code></pre>
+          <p class="expect"><b>Expected:</b> no output; <code>$sink.State</code> is <code>Running</code>.</p></li>
+        <li><p>Run two prompts under two tags.</p>
+          <pre><code>$env:CLAUDE_CODE_ENABLE_TELEMETRY = '1'
+$env:OTEL_METRICS_EXPORTER = 'otlp'
+$env:OTEL_LOGS_EXPORTER = 'otlp'
+$env:OTEL_EXPORTER_OTLP_PROTOCOL = 'http/json'
+$env:OTEL_EXPORTER_OTLP_ENDPOINT = 'http://127.0.0.1:4318'
+$env:OTEL_RESOURCE_ATTRIBUTES = 'team.id=alpha,cost_center=cc-100'
+claude -p "Reply with the single word: ready" --model haiku --setting-sources project --strict-mcp-config --max-turns 1
+$env:OTEL_RESOURCE_ATTRIBUTES = 'team.id=beta,cost_center=cc-200'
+claude -p "List the seven OSI layers, one per line, with a ten-word description each." --model haiku --setting-sources project --strict-mcp-config --max-turns 1 | Out-Null</code></pre>
+          <p class="expect"><b>Expected:</b> <code>ready</code> from the first run; the second prints nothing.</p></li>
+        <li><p>Stop the receiver.</p>
+          <pre><code>Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:4318/stop' | Out-Null
+Wait-Job $sink -Timeout 10 | Out-Null; Remove-Job $sink -Force</code></pre>
+          <p class="expect"><b>Expected:</b> no output; port 4318 is free.</p></li>
+        <li><p>Write the split script and run it for both tags.</p>
+          <pre data-file="{{LAB}}/m9/split-by-tag.ps1"><code>param([string]$File = 'metrics.jsonl', [string]$Tag = 'team.id')
+$rows = @{}
+foreach ($line in Get-Content $File) {
+  $doc = $line | ConvertFrom-Json
+  foreach ($m in $doc.resourceMetrics.scopeMetrics.metrics) {
+    if ($m.name -notin 'claude_code.token.usage', 'claude_code.cost.usage') { continue }
+    foreach ($dp in $m.sum.dataPoints) {
+      $a = @{}; foreach ($kv in $dp.attributes) { $a[$kv.key] = $kv.value.stringValue }
+      $t = $a[$Tag]; if (-not $t) { $t = '(untagged)' }
+      if (-not $rows[$t]) { $rows[$t] = [ordered]@{ tag = $t; input = 0; output = 0; cacheRead = 0; cacheCreation = 0; costUsd = 0 } }
+      $v = if ($null -ne $dp.asDouble) { [double]$dp.asDouble } else { [double]$dp.asInt }
+      if ($m.name -eq 'claude_code.cost.usage') { $rows[$t].costUsd += $v } else { $rows[$t][$a['type']] += $v }
+    }
+  }
+}
+$rows.Values | ForEach-Object { [pscustomobject]$_ } | Sort-Object tag | Format-Table -AutoSize</code></pre>
+          <pre><code>.\split-by-tag.ps1 -Tag team.id
+.\split-by-tag.ps1 -Tag cost_center</code></pre>
+          <p class="expect"><b>Expected:</b> two rows each time, for example <code>alpha</code>: input 2, output 4, cacheRead about 21,700, cacheCreation 0, cost about $0.0002; <code>beta</code>: output about 250, cacheRead about 17,000, cacheCreation about 4,500, cost about $0.0012. The <code>cost_center</code> table has the same numbers under <code>cc-100</code> and <code>cc-200</code>.</p></li>
+        <li><p>Confirm the tags are in the resource block as well as on the datapoints, then close the window to drop the variables.</p>
+          <pre><code>((Get-Content metrics.jsonl -TotalCount 1 | ConvertFrom-Json).resourceMetrics[0].resource.attributes | ForEach-Object { "$($_.key)=$($_.value.stringValue)" }) -join ', '</code></pre>
+          <p class="expect"><b>Expected:</b> <code>team.id=alpha, cost_center=cc-100, host.arch=amd64, os.type=windows, …, service.name=claude-code, service.version=2.1.322</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>1. Why does beta have cache creation and alpha none, though beta ran second? <i>Alpha repeated a prompt already run earlier in the module, so its whole prefix (about 21,700 tokens) was still cached. Beta's prompt was new: the common prefix of about 17,200 tokens was read and the part from the first message on was written. Cache state, not the tag, decides it.</i></p>
+        <p>2. Set <code>OTEL_RESOURCE_ATTRIBUTES</code> to <code>team.id=alpha team</code> (with a space) and repeat one run. What do you expect? <i>No custom keys on the datapoints at all and no error: a value with a space drops every key. The run lands in <code>(untagged)</code>.</i></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m9-lab5" data-title="Write three alert rules from your own measurements" data-minutes="30">
+      <p class="goal">Measure per-session ratios from captured events, choose three thresholds from your own numbers, and end with a checker that exits 1 when any rule fires.</p>
+      <ol class="steps">
+        <li><p>Write a per-session measurement script over the <code>api_request</code> and <code>api_error</code> events in <code>logs.jsonl</code> (from Lab 4, or a capture of your own work with the Lab 2 receiver).</p>
+          <pre data-file="{{LAB}}/m9/session-stats.ps1"><code>param([string]$File = 'logs.jsonl')
+function Get-Attr($rec) { $a = @{}; foreach ($kv in $rec.attributes) { $v = $kv.value; $a[$kv.key] = if ($null -ne $v.stringValue) { $v.stringValue } elseif ($null -ne $v.intValue) { [double]$v.intValue } elseif ($null -ne $v.doubleValue) { [double]$v.doubleValue } else { $v.boolValue } }; $a }
+$s = @{}
+foreach ($line in Get-Content $File) {
+  foreach ($rec in ($line | ConvertFrom-Json).resourceLogs.scopeLogs.logRecords) {
+    $name = $rec.body.stringValue
+    if ($name -notin 'claude_code.api_request', 'claude_code.api_error') { continue }
+    $a = Get-Attr $rec; $id = $a['session.id']
+    if (-not $s[$id]) { $s[$id] = [ordered]@{ session = $id.Substring(0, 8); requests = 0; errors = 0; input = 0; cacheRead = 0; cacheWrite = 0; output = 0; costUsd = 0 } }
+    if ($name -eq 'claude_code.api_error') { $s[$id].errors++ ; continue }
+    $s[$id].requests++; $s[$id].input += $a.input_tokens; $s[$id].cacheRead += $a.cache_read_tokens
+    $s[$id].cacheWrite += $a.cache_creation_tokens; $s[$id].output += $a.output_tokens; $s[$id].costUsd += $a.cost_usd
+  }
+}
+foreach ($x in $s.Values) {
+  $allIn = $x.input + $x.cacheRead + $x.cacheWrite
+  [pscustomobject]@{
+    session = $x.session; requests = $x.requests
+    cacheHitRatio = [math]::Round($x.cacheRead / [math]::Max($allIn, 1), 3)
+    costPerSession = [math]::Round($x.costUsd, 6)
+    inputPerRequest = [math]::Round($allIn / [math]::Max($x.requests, 1))
+    errorRate = [math]::Round($x.errors / [math]::Max($x.requests + $x.errors, 1), 3)
+  }
+}</code></pre>
+          <pre><code>Set-Location {{LAB}}/m9
+.\session-stats.ps1 -File logs.jsonl | Format-Table -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> one row per session. From the Lab 4 capture: one session with <code>cacheHitRatio</code> about 0.79 and <code>costPerSession</code> about 0.0012, the other 1.0 and about 0.0002; <code>inputPerRequest</code> about 21,700 for both; <code>errorRate</code> 0.</p></li>
+        <li><p>Write three rules. The thresholds below were picked to sit between the two lab sessions so one rule fires; replace them with values from your own baseline.</p>
+          <pre data-file="{{LAB}}/m9/alert-rules.json"><code>[
+  { "name": "cache-cold",      "field": "cacheHitRatio",   "op": "lt", "threshold": 0.70 },
+  { "name": "session-costly",  "field": "costPerSession",  "op": "gt", "threshold": 0.001 },
+  { "name": "context-bloated", "field": "inputPerRequest", "op": "gt", "threshold": 60000 }
+]</code></pre>
+          <p class="expect"><b>Expected:</b> the file <code>alert-rules.json</code>.</p></li>
+        <li><p>Write the checker. Note the variable name: a script parameter <code>[string]$Rules</code> and a variable <code>$rules</code> are the same variable in PowerShell, and assigning the parsed array to it turns the array into one string.</p>
+          <pre data-file="{{LAB}}/m9/check-alerts.ps1"><code>param([string]$Rules = 'alert-rules.json', [string]$File = 'logs.jsonl')
+$ruleSet = Get-Content $Rules -Raw | ConvertFrom-Json
+$fired = 0
+foreach ($row in &amp; (Join-Path $PSScriptRoot 'session-stats.ps1') -File $File) {
+  foreach ($r in $ruleSet) {
+    $v = $row.($r.field)
+    $hit = if ($r.op -eq 'lt') { $v -lt $r.threshold } else { $v -gt $r.threshold }
+    if ($hit) { $fired++; 'ALERT {0} session {1}: {2} = {3} ({4} {5})' -f $r.name, $row.session, $r.field, $v, $r.op, $r.threshold }
+  }
+}
+'rules fired: ' + $fired
+if ($fired) { exit 1 } else { exit 0 }</code></pre>
+          <pre><code>.\check-alerts.ps1 -Rules alert-rules.json -File logs.jsonl
+$LASTEXITCODE</code></pre>
+          <p class="expect"><b>Expected:</b> with the Lab 4 data, <code>ALERT session-costly session …: costPerSession = 0.001208 (gt 0.001)</code>, <code>rules fired: 1</code>, exit code <code>1</code>.</p></li>
+        <li><p>Now do it on your own setup. Point the Lab 2 receiver at a day of your real work (set the variables in your user environment or user settings <code>env</code> block, not in a repository). Run <code>session-stats.ps1</code> over the capture, pick each threshold from your own distribution (for example 2 times your worst normal session, or 10 points under your typical hit ratio), and rewrite <code>alert-rules.json</code>. Swap a rule for <code>errorRate</code> if errors matter more to you than context size.</p>
+          <p class="expect"><b>Expected:</b> a rules file whose numbers you can justify from your own table.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check (done-test)</summary>
+        <p>You are done when <code>check-alerts.ps1</code> exits 0 against a normal day of your data and exits 1 against a session you deliberately made expensive (for example, one long session that reads several large files and never clears). If it fires on a normal day, the threshold is too tight; if the bad session passes, it is too loose.</p>
+        <p>Why per-session and not a daily total? <i>A daily total grows with how much you work; a per-session ratio moves only when a session behaves differently.</i></p>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Environment variables</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Variable</th><th>Values</th><th>Default</th></tr>
+      <tr><td><code>CLAUDE_CODE_ENABLE_TELEMETRY</code></td><td><code>1</code></td><td>off</td></tr>
+      <tr><td><code>OTEL_METRICS_EXPORTER</code></td><td><code>console</code>, <code>otlp</code>, <code>prometheus</code>, <code>none</code> (comma-separated)</td><td>unset</td></tr>
+      <tr><td><code>OTEL_LOGS_EXPORTER</code></td><td><code>console</code>, <code>otlp</code>, <code>none</code></td><td>unset</td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_PROTOCOL</code> (and <code>_METRICS_</code> / <code>_LOGS_</code> variants)</td><td><code>grpc</code>, <code>http/json</code>, <code>http/protobuf</code></td><td>none: required</td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_ENDPOINT</code> (and variants)</td><td>URL</td><td>unset</td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_HEADERS</code> (and variants)</td><td><code>Authorization=Bearer …</code></td><td>unset</td></tr>
+      <tr><td><code>OTEL_METRIC_EXPORT_INTERVAL</code></td><td>ms</td><td class="num">60000</td></tr>
+      <tr><td><code>OTEL_LOGS_EXPORT_INTERVAL</code></td><td>ms</td><td class="num">5000</td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE</code></td><td><code>delta</code>, <code>cumulative</code></td><td>delta</td></tr>
+      <tr><td><code>OTEL_RESOURCE_ATTRIBUTES</code></td><td><code>k=v,k=v</code>, no spaces</td><td>unset</td></tr>
+      <tr><td><code>OTEL_METRICS_INCLUDE_RESOURCE_ATTRIBUTES</code></td><td><code>true</code>, <code>false</code></td><td>true</td></tr>
+      <tr><td><code>OTEL_METRICS_INCLUDE_SESSION_ID</code> / <code>_ACCOUNT_UUID</code></td><td><code>true</code>, <code>false</code></td><td>true</td></tr>
+      <tr><td><code>OTEL_METRICS_INCLUDE_VERSION</code> / <code>_ENTRYPOINT</code> / <code>_REPOSITORY</code></td><td><code>true</code>, <code>false</code></td><td>false</td></tr>
+      <tr><td><code>OTEL_LOG_USER_PROMPTS</code></td><td><code>1</code></td><td>off</td></tr>
+      <tr><td><code>OTEL_LOG_ASSISTANT_RESPONSES</code></td><td><code>1</code>, <code>0</code></td><td>follows prompts switch</td></tr>
+      <tr><td><code>OTEL_LOG_TOOL_DETAILS</code></td><td><code>1</code></td><td>off</td></tr>
+      <tr><td><code>OTEL_LOG_RAW_API_BODIES</code></td><td><code>1</code>, <code>file:&lt;dir&gt;</code></td><td>off</td></tr>
+    </table></div>
+    <h3>Token fields by source</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Type</th><th>API / result <code>usage</code></th><th>Result <code>modelUsage</code></th><th><code>token.usage</code> <code>type</code></th><th><code>api_request</code> event</th></tr>
+      <tr><td><span class="tok in">input</span></td><td><code>input_tokens</code></td><td><code>inputTokens</code></td><td><code>input</code></td><td><code>input_tokens</code></td></tr>
+      <tr><td><span class="tok cw">cache write</span></td><td><code>cache_creation_input_tokens</code></td><td><code>cacheCreationInputTokens</code></td><td><code>cacheCreation</code></td><td><code>cache_creation_tokens</code> (+ <code>_5m_</code>, <code>_1h_</code>)</td></tr>
+      <tr><td><span class="tok cr">cache read</span></td><td><code>cache_read_input_tokens</code></td><td><code>cacheReadInputTokens</code></td><td><code>cacheRead</code></td><td><code>cache_read_tokens</code></td></tr>
+      <tr><td><span class="tok out">output</span></td><td><code>output_tokens</code></td><td><code>outputTokens</code></td><td><code>output</code></td><td><code>output_tokens</code></td></tr>
+      <tr><td>cost</td><td><code>total_cost_usd</code></td><td><code>costUSD</code>, <code>costBasis</code></td><td><code>claude_code.cost.usage</code></td><td><code>cost_usd</code>, <code>cost_usd_micros</code></td></tr>
+    </table></div>
+    <h3>Ratios and starting thresholds</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Ratio</th><th>Formula</th><th>Start alerting at</th></tr>
+      <tr><td>Cache hit ratio</td><td>cacheRead ÷ (input + cacheRead + cacheCreation)</td><td>&lt; 70% after 5 requests</td></tr>
+      <tr><td>Cost per session</td><td>sum <code>cost.usage</code> by <code>session.id</code></td><td>&gt; 2 × your p95</td></tr>
+      <tr><td>Cost per task</td><td>sum <code>cost_usd</code> by <code>prompt.id</code> or run tag</td><td>&gt; 2 × median for the task type</td></tr>
+      <tr><td>Output share</td><td>output cost ÷ total cost</td><td>&gt; 40%</td></tr>
+      <tr><td>Subagent share</td><td><code>query_source</code>=<code>subagent</code> cost ÷ total</td><td>&gt; 50% or a jump after a change</td></tr>
+      <tr><td>Error rate</td><td><code>api_error</code> ÷ (<code>api_request</code> + <code>api_error</code>)</td><td>&gt; 2% per hour</td></tr>
+      <tr><td>Tokens per request growth</td><td>input of request n ÷ request 1</td><td>&gt; 5×, or Haiku 5.5 &gt; 100k</td></tr>
+    </table></div>
+    <h3>Commands</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Command</th><th>What it gives</th></tr>
+      <tr><td><code>claude -p "…" --output-format json</code></td><td>One result object with totals</td></tr>
+      <tr><td><code>claude -p "…" --output-format stream-json --verbose</code></td><td>Per-response lines, then the result</td></tr>
+      <tr><td><code>claude -p "/usage"</code></td><td>Plan windows and usage breakdown, headless, no API call</td></tr>
+      <tr><td><code>/usage</code> (<code>/cost</code>, <code>/stats</code>)</td><td>Session block, <code>Prompt cache (main)</code> line, plan bars</td></tr>
+      <tr><td><code>claude --debug-file &lt;path&gt;</code></td><td><code>[3P telemetry]</code> lines showing exporter setup and export results</td></tr>
+    </table></div>
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>Console exporter prints nothing</td><td><code>--output-format json</code> or <code>stream-json</code> keeps stdout clean</td><td>Use text output, or an OTLP exporter</td></tr>
+      <tr><td>OTLP collector receives nothing</td><td>No <code>OTEL_EXPORTER_OTLP_PROTOCOL</code>; Claude Code has no default</td><td>Set it; check <code>--debug-file</code> for <code>[3P telemetry]</code> errors</td></tr>
+      <tr><td>Telemetry set in the repo's <code>.claude/settings.json</code> does nothing</td><td>Exporter variables are ignored in project and local settings</td><td>Shell, user settings, or managed settings</td></tr>
+      <tr><td>Custom tags missing from every datapoint</td><td>A space (or quote, comma, semicolon) in an <code>OTEL_RESOURCE_ATTRIBUTES</code> value</td><td>Use underscores or percent-encode</td></tr>
+      <tr><td>Totals far too high</td><td>Summing cumulative points, or counting stream-json lines without deduplicating <code>message.id</code></td><td>Sum deltas; take last value for cumulative; dedupe by id</td></tr>
+      <tr><td>Output tokens too low from stream-json</td><td><code>assistant</code> lines carry the count at stream start</td><td>Take output from the result line or <code>api_request</code> events</td></tr>
+      <tr><td>Cost figures do not match the invoice</td><td>List price; contracted rates differ</td><td>Set <code>modelPricing</code> in managed settings; reconcile with the console</td></tr>
+      <tr><td>A plan user sees large dollar figures</td><td>Notional list-price estimate</td><td>Watch window share in <code>/usage</code> or the status line instead</td></tr>
+      <tr><td>Developer redirects telemetry elsewhere</td><td>Endpoint not set in managed settings</td><td>Set endpoint, protocol and headers in managed settings; set exporter selectors there too</td></tr>
+      <tr><td>Metrics backend storage grows fast</td><td>High-cardinality resource attributes as labels</td><td><code>OTEL_METRICS_INCLUDE_RESOURCE_ATTRIBUTES=false</code>, or drop <code>session.id</code></td></tr>
+    </table></div>
+
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+        <li>Claude Code docs, "Monitoring": <a href="https://code.claude.com/docs/en/monitoring-usage" target="_blank" rel="noopener">code.claude.com/docs/en/monitoring-usage</a></li>
+        <li>Claude Code docs, "Customize your status line": <a href="https://code.claude.com/docs/en/statusline" target="_blank" rel="noopener">code.claude.com/docs/en/statusline</a></li>
+        <li>Claude Code docs, "How Claude Code uses prompt caching": <a href="https://code.claude.com/docs/en/prompt-caching" target="_blank" rel="noopener">code.claude.com/docs/en/prompt-caching</a></li>
+        <li>Claude Code docs, "Track cost and usage" (Agent SDK): <a href="https://code.claude.com/docs/en/agent-sdk/cost-tracking" target="_blank" rel="noopener">code.claude.com/docs/en/agent-sdk/cost-tracking</a></li>
+        <li>Claude Code docs, "Manage costs effectively": <a href="https://code.claude.com/docs/en/costs" target="_blank" rel="noopener">code.claude.com/docs/en/costs</a></li>
+        <li>Measured: every Expected line in the labs comes from a run on Claude Code 2.1.322 on 11 November 2026.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "Your team's dashboard shows one developer's daily cost at three times everyone else's, all on Sonnet. Their cache hit ratio is 55% while the team sits at 92%. They work on an API key and take long breaks to review diffs. What is the most likely cause?", "o": ["They write longer prompts than everyone else", "The 5-minute cache lifetime expires during their breaks, so each new prompt rewrites the prefix", "Their output share is too high", "Their subagents run on a more expensive model"], "a": 1, "why": "A low hit ratio with otherwise similar work points at cache writes replacing cache reads. On an API key Claude Code asks for a 5-minute lifetime by default, so a pause longer than that turns the next request into a full cache write. Longer prompts or output would not move the hit ratio this much."},
+    {"q": "You want per-team cost dashboards for 200 developers and must not collect source code or prompts. Which configuration fits?", "o": ["OTEL_LOG_TOOL_DETAILS=1 and OTEL_LOG_USER_PROMPTS=1 in managed settings, filter in the backend", "Ask each team to put the OTEL variables in their repositories' .claude/settings.json with their team.id", "Managed settings env with telemetry, otlp exporters, protocol, endpoint and OTEL_RESOURCE_ATTRIBUTES per team; content switches left off", "Have everyone paste /usage output into a shared sheet weekly"], "a": 2, "why": "Managed settings reach every machine and lock the endpoint; resource attributes give the team split; the counters and api_request events carry every cost figure with content switches off. Repository settings cannot turn exporters on, and collecting content just to drop it later breaks the requirement."},
+    {"q": "A pipeline exports with OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative. Your query sums every claude_code.cost.usage datapoint per run and reports $4.80 for a run whose result JSON said $0.40. What went wrong?", "o": ["The query summed running totals; with cumulative temporality you take the last value per series", "Cost metrics include thinking tokens and the result JSON does not", "The collector duplicated every export", "cost.usage is in micro-dollars"], "a": 0, "why": "Cumulative points each hold the total so far, so adding a dozen of them multiplies the figure. With the default delta temporality summing is correct; with cumulative you take the latest point per series. The unit is USD and both sources count thinking as output."},
+    {"q": "A colleague on a Max plan is alarmed that OpenTelemetry shows $60 of claude_code.cost.usage for yesterday. What do you tell them?", "o": ["They will be billed $60 in usage credits", "The figure is wrong because cost metrics do not work on plans", "Switch to an API key, which would be cheaper", "It is a list-price estimate and not a charge; watch 5-hour and weekly window share, and use the dollars only to compare sessions"], "a": 3, "why": "On a plan the flat fee covers usage inside the limits; the dollar figure is computed locally at list price and is notional. What limits a plan user is window share, visible in /usage, the status line rate_limits fields and the stream-json rate_limit_event. The dollars still rank sessions and habits against each other."},
+    {"q": "A headless job's cost doubled last week with the same prompts. Telemetry shows cache hit ratio unchanged, output share unchanged, and claude_code.cost.usage with query_source=subagent rising from 5% to 55%. Where do you look first?", "o": ["The model alias in the job's command line", "A recent change to a skill or agent definition that makes the job spawn subagents, using agent.name to find which", "The export interval", "The prompt cache lifetime"], "a": 1, "why": "Subagent share isolates the growth: the main loop costs the same and the new spend comes from subagents, each with a fresh context. agent.name on the cost counter names the agent type (real custom names need OTEL_LOG_TOOL_DETAILS=1). The export interval does not change cost, and unchanged hit ratio rules out the cache."}
+  ]</script>
+</section>

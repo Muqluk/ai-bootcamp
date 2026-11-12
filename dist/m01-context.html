@@ -1,0 +1,1217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>html,body{height:100%}body{margin:0}img{max-width:100%}</style>
+<title>Context · AI/LLM Bootcamp</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&family=Nunito:wght@700;800&display=swap">
+<style>
+/* AI/LLM Bootcamp. One stylesheet for the catalogue page and every module page.
+   Layout: a top bar (brand, where you are, theme picker), a part rail on the left (a strip in some themes and on phones),
+   one reading column that swaps parts on the hash.
+   The four token types keep one colour each everywhere, the way a utility meter keeps one colour per tariff.
+   Five themes: data-style a..e on the root (a = Meter is the base). data-mode light|dark is resolved in script. */
+:root {
+  --bg: #f1f3f6; --surface: #ffffff; --sunk: #e8ebf0; --fg: #17202b; --muted: #566273; --line: #d3d9e2;
+  --accent: #a4460d; --accent-ink: #ffffff; --accent-soft: #fbeadf;
+  --t-in: #2a66b3; --t-out: #b8500f; --t-cw: #7446bd; --t-cr: #25784c;
+  --good: #25784c; --good-soft: #e0f1e7; --bad: #a8372f; --bad-soft: #f8e3e1; --home: #7446bd; --home-soft: #efe8fa;
+  --font-display: "Archivo", "Segoe UI Semibold", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, "SF Mono", monospace;
+  --top-h: 46px;
+}
+:root[data-mode="dark"] {
+  --bg: #11151b; --surface: #19202a; --sunk: #0d1116; --fg: #e5e9ef; --muted: #98a4b3; --line: #2b3542;
+  --accent: #f09460; --accent-ink: #1d0f05; --accent-soft: #3a2415;
+  --t-in: #6ea9ee; --t-out: #f09460; --t-cw: #b396f0; --t-cr: #6cc795;
+  --good: #6cc795; --good-soft: #17301f; --bad: #e6837b; --bad-soft: #3a1f1d; --home: #b396f0; --home-soft: #261f38; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+script, pre.mermaid { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.6; margin: 0; }
+a { color: var(--accent); }
+h1, h2, h3, h4 { font-family: var(--font-display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(1.9rem, 4.6vw, 2.7rem); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.6rem; font-weight: 700; }
+h3 { font-size: 1.15rem; font-weight: 700; margin-top: 1.7em; }
+h4 { font-size: 1rem; font-weight: 700; margin-top: 1.2em; }
+p { margin: 0.7em 0; }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--sunk); padding: 0.08em 0.32em; border-radius: 4px; overflow-wrap: anywhere; }
+.codebox { margin: 0.7em 0; border: 1px solid var(--line); border-radius: 8px; background: var(--sunk); min-width: 0; }
+.codebox .cap { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--line); font: 600 0.72rem var(--font-mono); color: var(--muted); }
+.codebox pre { margin: 0; padding: 11px 13px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.5; }
+.codebox pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: normal; }
+.copy { font: 600 0.72rem var(--font-body); padding: 3px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
+.copy:hover { color: var(--fg); }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* top bar */
+.top { position: sticky; top: 0; z-index: 12; height: var(--top-h); display: flex; align-items: center; gap: 14px; background: var(--surface); border-bottom: 1px solid var(--line); padding: 0 max(14px, env(safe-area-inset-right, 0px)) 0 max(14px, env(safe-area-inset-left, 0px)); }
+.brand { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; text-decoration: none; color: var(--fg); white-space: nowrap; }
+.crumb { font-size: 0.86rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.themepick { margin-left: auto; display: flex; align-items: center; gap: 6px; font: 600 0.8rem var(--font-body); color: var(--muted); white-space: nowrap; }
+.themepick select { font: 600 0.8rem var(--font-body); padding: 4px 6px; }
+
+/* frame */
+.app { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: calc(100vh - var(--top-h)); }
+.app.solo { grid-template-columns: minmax(0, 1fr); }
+.side { position: sticky; top: var(--top-h); align-self: start; height: calc(100vh - var(--top-h)); overflow-y: auto; background: var(--surface); border-right: 1px solid var(--line); padding: 16px 12px 18px max(12px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 14px; }
+#nav { display: flex; flex-direction: column; gap: 2px; }
+.navlink { display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; align-items: center; text-decoration: none; color: var(--fg); font-size: 0.9rem; padding: 6px 8px; border-radius: 7px; line-height: 1.3; }
+.navlink:hover { background: var(--sunk); }
+.navlink.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.navlink .n { font: 600 0.74rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.navlink .p { font: 600 0.68rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.navlink .p.full { color: var(--good); }
+.side-foot { margin-top: auto; display: grid; gap: 6px; font-size: 0.85rem; padding: 0 8px; }
+.side-foot label { display: flex; gap: 8px; align-items: center; color: var(--muted); cursor: pointer; }
+main { min-width: 0; padding-block: 30px 72px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.view, section.module, .pager { max-width: 780px; margin: 0 auto; min-width: 0; }
+.view, section.module { display: grid; gap: 20px; }
+.view.wide { max-width: 1040px; }
+.view > *, section.module > * { min-width: 0; }
+@media (max-width: 860px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { z-index: 9; height: auto; flex-direction: row; align-items: center; gap: 10px; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px max(14px, env(safe-area-inset-right, 0px)) 6px max(14px, env(safe-area-inset-left, 0px)); overflow: visible; }
+  .side-foot { display: none; }
+  #nav { flex-direction: row; overflow-x: auto; scrollbar-width: none; min-width: 0; flex: 1; }
+  #nav::-webkit-scrollbar { display: none; }
+  .navlink { grid-template-columns: auto auto; flex: 0 0 auto; white-space: nowrap; padding: 5px 9px; }
+  .navlink .p { display: none; }
+  main { padding-block: 22px 56px; }
+  .crumb { display: none; }
+}
+
+/* shared pieces */
+.kicker { font: 600 0.72rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); }
+.muted { color: var(--muted); }
+.lede { font-size: 1.08rem; color: var(--muted); max-width: 66ch; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; min-width: 0; }
+.panel > h3:first-child { margin-top: 0; }
+.btn { font: 600 0.9rem var(--font-body); padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; text-decoration: none; display: inline-block; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+input[type="text"], input[type="number"], textarea, select { font: inherit; font-size: 0.92rem; color: var(--fg); background: var(--sunk); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; min-width: 0; }
+textarea { width: 100%; min-height: 96px; resize: vertical; font-family: var(--font-mono); font-size: 0.8rem; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 0.74rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 0.84rem; }
+.tok { font: 600 0.78rem var(--font-mono); white-space: nowrap; }
+.tok::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; background: currentColor; }
+.tok.in { color: var(--t-in); } .tok.out { color: var(--t-out); } .tok.cw { color: var(--t-cw); } .tok.cr { color: var(--t-cr); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.chip { font: 600 0.7rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; text-decoration: none; }
+a.chip:hover { border-color: var(--accent); color: var(--accent); }
+.chip.lv-foundation { color: var(--t-cr); border-color: var(--t-cr); }
+.chip.lv-practitioner { color: var(--t-in); border-color: var(--t-in); }
+.chip.lv-advanced { color: var(--t-cw); border-color: var(--t-cw); }
+
+/* catalogue */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+.mcard { display: grid; gap: 6px; align-content: start; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; text-decoration: none; color: inherit; }
+a.mcard:hover { border-color: var(--accent); }
+.mcard .n { font: 600 0.72rem var(--font-mono); color: var(--accent); }
+.mcard .t { font-family: var(--font-display); font-weight: 700; font-size: 1.08rem; }
+.mcard .s { font-size: 0.86rem; color: var(--muted); }
+.mcard .pre { font-size: 0.8rem; color: var(--muted); }
+.meter { height: 6px; background: var(--sunk); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.meter span { display: block; height: 100%; width: 0; background: var(--good); }
+.howto { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 18px; }
+.howto b { display: block; font-family: var(--font-display); font-size: 1rem; }
+.howto div { font-size: 0.92rem; color: var(--muted); }
+.paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.paths .panel { padding: 14px 16px; }
+.paths b { font-family: var(--font-display); }
+.paths ol { margin: 6px 0 0; padding-left: 1.3em; font-size: 0.9rem; }
+
+/* module */
+.mhead { display: grid; gap: 8px; }
+.mhead .meta { color: var(--muted); font-size: 0.92rem; }
+.partlist { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; }
+.partlist a { display: grid; grid-template-columns: 34px 1fr auto; gap: 8px; padding: 7px 8px; border-radius: 7px; text-decoration: none; color: var(--fg); }
+.partlist a:hover { background: var(--sunk); }
+.partlist .n { font: 600 0.74rem var(--font-mono); color: var(--accent); padding-top: 3px; }
+.partlist .m { font: 600 0.72rem var(--font-mono); color: var(--muted); padding-top: 3px; }
+.overview p, .overview li, .lesson p, .lesson li, .lab p, .lab li, .reference p, .reference li { max-width: 70ch; }
+.overview ul, .lesson ul, .lesson ol, .lab ul, .reference ul { padding-left: 1.2em; }
+.overview li, .lesson li, .lab li { margin: 0.3em 0; }
+.overview > h3:first-of-type { margin-top: 0.6em; }
+.recap { background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 14px 18px; margin-top: 1.2em; }
+.recap h3 { margin-top: 0; font-size: 1rem; }
+.sources { font-size: 0.88rem; color: var(--muted); }
+.sources h3 { color: var(--fg); }
+.sources li { margin: 0.25em 0; overflow-wrap: anywhere; }
+aside.rule { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; margin: 1.1em 0; max-width: 70ch; font-weight: 600; }
+aside.trap { background: var(--bad-soft); border-radius: 8px; padding: 10px 14px; margin: 1em 0; max-width: 70ch; font-size: 0.94rem; }
+aside.trap::before { content: "Trap"; display: block; font: 600 0.68rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--bad); }
+aside.home { background: var(--home-soft); border-radius: 8px; padding: 10px 14px; margin: 1em 0; max-width: 70ch; font-size: 0.94rem; }
+aside.home::before { content: "At home"; display: block; font: 600 0.68rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--home); }
+body.hide-home aside.home { display: none; }
+.labs { display: grid; gap: 18px; }
+.lab { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; min-width: 0; }
+.lab.done { border-color: var(--good); }
+.labhead { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.labhead h3 { margin: 0; }
+.labhead .meta { font: 600 0.72rem var(--font-mono); color: var(--muted); }
+.goal { color: var(--muted); }
+ol.steps { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 14px; counter-reset: step; }
+ol.steps > li { counter-increment: step; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 0 10px; margin: 0; max-width: none; }
+ol.steps > li > .tick { grid-row: 1 / span 30; }
+ol.steps > li > :not(.tick) { grid-column: 2; margin-top: 0; margin-bottom: 8px; min-width: 0; }
+ol.steps > li > :last-child { margin-bottom: 0; }
+.tick { appearance: none; -webkit-appearance: none; width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--sunk); cursor: pointer; display: grid; place-items: center; margin: 0; }
+.tick::before { content: counter(step); font: 600 0.78rem var(--font-mono); color: var(--muted); }
+.tick:checked { background: var(--good); border-color: var(--good); }
+.tick:checked::before { content: "\2713"; color: var(--surface); }
+p.expect { font-size: 0.92rem; border-left: 3px solid var(--t-cr); padding-left: 12px; color: var(--muted); }
+p.expect b { color: var(--fg); }
+details.check { border: 1px dashed var(--line); border-radius: 8px; padding: 10px 14px; margin-top: 12px; }
+details.check summary { cursor: pointer; font-weight: 600; }
+details.check[open] summary { margin-bottom: 6px; }
+.labfoot { display: flex; justify-content: flex-end; margin-top: 14px; }
+.lab.done .labfoot .btn { background: var(--good-soft); color: var(--good); border-color: var(--good); }
+.pager { display: flex; justify-content: space-between; gap: 10px; margin-top: 28px; }
+.pager .btn { max-width: 48%; }
+.pager .next { margin-left: auto; }
+
+/* calls */
+.drill { display: grid; gap: 14px; }
+.q { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 10px; }
+.q .qt { font-weight: 600; max-width: 70ch; }
+.opts { display: grid; gap: 7px; }
+.opt { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: transparent; color: var(--fg); font: inherit; font-size: 0.94rem; text-align: left; line-height: 1.45; }
+.opt:hover { border-color: var(--accent); }
+.opt .k { flex: 0 0 22px; font: 600 0.76rem var(--font-mono); color: var(--muted); padding-top: 2px; }
+.opt.right { border-color: var(--good); background: var(--good-soft); }
+.opt.wrong { border-color: var(--bad); background: var(--bad-soft); }
+.why { font-size: 0.92rem; color: var(--muted); border-left: 3px solid var(--line); padding-left: 12px; max-width: 70ch; }
+
+/* instruments */
+.tool { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin: 1em 0; display: grid; gap: 12px; min-width: 0; }
+.tool h4 { margin: 0; }
+.tool .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.tool label { display: grid; gap: 3px; font-size: 0.78rem; color: var(--muted); font-weight: 600; }
+.tool label input, .tool label select { width: 100%; }
+.bar { display: flex; height: 22px; border-radius: 5px; overflow: hidden; background: var(--sunk); }
+.bar span { display: block; height: 100%; min-width: 0; }
+.bar .in { background: var(--t-in); } .bar .out { background: var(--t-out); } .bar .cw { background: var(--t-cw); } .bar .cr { background: var(--t-cr); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; }
+.big { font: 700 1.5rem var(--font-display); font-variant-numeric: tabular-nums; }
+.verdict { font-weight: 600; }
+.note { font-size: 0.82rem; color: var(--muted); }
+
+/* diagrams: inline SVG drawn in the boxes-and-arrows style; every colour comes from the theme */
+figure.diagram { margin: 1.2em 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 10px; overflow-x: auto; }
+figure.diagram svg { display: block; width: 100%; height: auto; min-width: 520px; max-width: 760px; margin: 0 auto; font-family: var(--font-body); }
+figure.diagram figcaption { font-size: 0.84rem; color: var(--muted); margin-top: 8px; text-align: center; }
+.dg-box { fill: var(--sunk); stroke: var(--muted); stroke-width: 1.5; }
+.dg-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.dg-good { fill: var(--good-soft); stroke: var(--good); stroke-width: 1.5; }
+.dg-bad { fill: var(--bad-soft); stroke: var(--bad); stroke-width: 1.5; }
+.dg-ghost { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 6 4; }
+.dg-in { fill: var(--t-in); } .dg-out { fill: var(--t-out); } .dg-cw { fill: var(--t-cw); } .dg-cr { fill: var(--t-cr); }
+.dg-line { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.dg-line.dash { stroke-dasharray: 5 4; }
+.dg-line.hot { stroke: var(--accent); }
+.dg-head { fill: var(--muted); stroke: none; }
+.dg-head.hot { fill: var(--accent); }
+.dg-text { fill: var(--fg); font-size: 13px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+.dg-sub { fill: var(--muted); font-size: 11px; text-anchor: middle; dominant-baseline: middle; }
+.dg-label { fill: var(--muted); font-size: 11px; font-family: var(--font-mono); text-anchor: middle; dominant-baseline: middle; }
+.dg-on { fill: var(--surface); font-size: 12px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+.dg-left { text-anchor: start; } .dg-right { text-anchor: end; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+
+/* ---------- themes b to e: token overrides and a few shapes ---------- */
+/* a strip under the top bar instead of the left rail (b, d, e) */
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .app { grid-template-columns: minmax(0, 1fr); }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .side { z-index: 9; height: auto; flex-direction: row; align-items: center; gap: 12px; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px max(14px, env(safe-area-inset-right, 0px)) 6px max(14px, env(safe-area-inset-left, 0px)); overflow: visible; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) :is(.side-foot, .navlink .p) { display: none; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) #nav { flex-direction: row; overflow-x: auto; min-width: 0; flex: 1; scrollbar-width: none; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .navlink { grid-template-columns: auto auto; flex: 0 0 auto; white-space: nowrap; }
+:root:is([data-style="b"], [data-style="c"], [data-style="e"]) :is(.panel, .lab, .q, .tool, .codebox, .mcard, .btn, .opt, .copy, .bar, .navlink, input, textarea, select, details.check, aside.trap, aside.home, code, .recap, figure.diagram, .chip, .partlist a) { border-radius: var(--r, 2px); }
+
+/* b: Workbench. Editor greys, one cobalt accent, 2px corners, dense system type. */
+:root[data-style="b"] { --r: 2px; --bg: #f4f4f5; --surface: #ffffff; --sunk: #ececee; --fg: #1e1e1e; --muted: #5a5f66; --line: #d0d0d4; --accent: #2f6fe0; --accent-ink: #ffffff; --accent-soft: rgba(47, 111, 224, 0.1);
+  --t-in: #2f6fe0; --t-out: #a5641f; --t-cw: #8a4a81; --t-cr: #2f7a55; --good: #2f7a55; --good-soft: #e3f1ea; --bad: #b8404c; --bad-soft: #f8e4e6;
+  --font-display: "Segoe UI", system-ui, -apple-system, sans-serif; --font-body: "Segoe UI", system-ui, -apple-system, sans-serif; --font-mono: "Cascadia Code", Consolas, "Courier New", monospace; }
+:root[data-style="b"][data-mode="dark"] { --bg: #1e1e1e; --surface: #252526; --sunk: #181818; --fg: #d4d4d4; --muted: #a8adb4; --line: #3c3c3c; --accent: #4c8dff; --accent-ink: #ffffff; --accent-soft: rgba(76, 141, 255, 0.14);
+  --t-in: #4c8dff; --t-out: #c0813f; --t-cw: #a8689f; --t-cr: #6fae8c; --good: #6fae8c; --good-soft: rgba(111, 174, 140, 0.12); --bad: #e0707c; --bad-soft: rgba(224, 112, 124, 0.1); }
+:root[data-style="b"] body { font-size: 14px; line-height: 1.5; }
+:root[data-style="b"] .side { background: var(--sunk); padding-block: 4px; }
+:root[data-style="b"] .navlink.active { background: transparent; box-shadow: inset 0 -2px 0 var(--accent); border-radius: 0; }
+:root[data-style="b"] :is(h1, h2, h3, h4) { font-weight: 600; letter-spacing: 0; }
+:root[data-style="b"] h2 { font-size: 1.35rem; } :root[data-style="b"] h3 { font-size: 1.05rem; }
+:root[data-style="b"] .lab { border-left: 3px solid var(--accent); }
+:root[data-style="b"] .lab.done { border-left-color: var(--good); }
+:root[data-style="b"] .tick { border-radius: 2px; width: 24px; height: 24px; }
+:root[data-style="b"] .bar { height: 14px; }
+
+/* c: Blueprint. Drafting-sheet blues on a faint grid, mono headings, dashed frames, square corners. */
+:root[data-style="c"] { --r: 0px; --bg: #eaf1f8; --surface: #f7fafd; --sunk: #dbe6f2; --fg: #0f2a47; --muted: #476483; --line: #b3c7dc; --accent: #0b5cad; --accent-ink: #ffffff; --accent-soft: #d5e5f6;
+  --t-in: #0b5cad; --t-out: #b0560c; --t-cw: #6b3fb0; --t-cr: #1d7a55; --good: #1d7a55; --good-soft: #d9efe4; --bad: #a8372f; --bad-soft: #f6dedb;
+  --font-display: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; }
+:root[data-style="c"][data-mode="dark"] { --bg: #0f2540; --surface: #143052; --sunk: #0b1c31; --fg: #e8f1fb; --muted: #9db8d6; --line: #2d5484; --accent: #7fd4ff; --accent-ink: #06213a; --accent-soft: #1b426e;
+  --t-in: #7fd4ff; --t-out: #ffb86b; --t-cw: #d7a6ff; --t-cr: #8fe3b0; --good: #8fe3b0; --good-soft: #17463f; --bad: #ff9d94; --bad-soft: #4a2a3a; }
+:root[data-style="c"] body { background-image: linear-gradient(color-mix(in srgb, var(--line) 30%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--line) 30%, transparent) 1px, transparent 1px); background-size: 28px 28px; }
+:root[data-style="c"] :is(h1, h2, h3, h4) { text-transform: uppercase; letter-spacing: 0.03em; font-weight: 600; }
+:root[data-style="c"] h1 { font-size: clamp(1.5rem, 3.6vw, 2.1rem); }
+:root[data-style="c"] h2 { font-size: 1.35rem; } :root[data-style="c"] h3 { font-size: 0.98rem; }
+:root[data-style="c"] :is(.lab, .tool, .panel, .q, .mcard, figure.diagram) { border-style: dashed; border-color: var(--accent); }
+:root[data-style="c"] .side { background: var(--bg); border-right-style: dashed; }
+:root[data-style="c"] .tick { border-radius: 0; transform: rotate(45deg) scale(0.8); } :root[data-style="c"] .tick::before { transform: rotate(-45deg); }
+
+/* d: Classroom. Big friendly type, a coloured module banner, soft round cards, raspberry accent. */
+:root[data-style="d"] { --bg: #ffffff; --surface: #f5f6fa; --sunk: #e9ecf4; --fg: #151a2d; --muted: #565d78; --line: #dfe3ee; --accent: #c2255c; --accent-ink: #ffffff; --accent-soft: #fde8f0;
+  --t-in: #2a66b3; --t-out: #c2255c; --t-cw: #7446bd; --t-cr: #25784c;
+  --font-display: "Nunito", "Segoe UI", system-ui, sans-serif; }
+:root[data-style="d"][data-mode="dark"] { --bg: #16141c; --surface: #201d29; --sunk: #110f16; --fg: #f1eef7; --muted: #a8a2b8; --line: #342f42; --accent: #ff7aa8; --accent-ink: #2a0a17; --accent-soft: #3d1c2b;
+  --t-in: #6ea9ee; --t-out: #ff7aa8; --t-cw: #b396f0; --t-cr: #6cc795; }
+:root[data-style="d"] body { font-size: 17px; }
+:root[data-style="d"] :is(h1, h2, h3, h4) { font-weight: 800; }
+:root[data-style="d"] h2 { font-size: 2rem; }
+:root[data-style="d"] .mhead { background: var(--accent); color: var(--accent-ink); padding: 26px 28px; border-radius: 20px; }
+:root[data-style="d"] .mhead :is(.kicker, .meta) { color: inherit; opacity: 0.9; }
+:root[data-style="d"] .mhead .chip { color: inherit; border-color: currentColor; }
+:root[data-style="d"] :is(.lab, .tool, .panel, .q, .mcard, figure.diagram, .recap) { border: 0; border-radius: 20px; padding: 22px 24px; }
+:root[data-style="d"] .navlink { border-radius: 999px; padding: 6px 12px; }
+:root[data-style="d"] .tick { width: 36px; height: 36px; } :root[data-style="d"] ol.steps > li { grid-template-columns: 40px minmax(0, 1fr); }
+:root[data-style="d"] .bar { height: 30px; border-radius: 999px; }
+:root[data-style="d"] .btn { border-radius: 999px; }
+
+/* e: Console. Everything monospaced, hard rules, amber accent, no rounding, headings marked like Markdown. */
+:root[data-style="e"] { --r: 0px; --bg: #f5f5f2; --surface: #f5f5f2; --sunk: #e9e9e4; --fg: #141414; --muted: #5c5c55; --line: #2a2a28; --accent: #8a5a00; --accent-ink: #ffffff; --accent-soft: #f1e6c8;
+  --t-in: #1f5fa8; --t-out: #b34700; --t-cw: #7a3fb5; --t-cr: #1f7a4a; --good: #1f7a4a; --good-soft: #dcefe2; --bad: #a8372f; --bad-soft: #f6dedb;
+  --font-display: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; --font-body: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; }
+:root[data-style="e"][data-mode="dark"] { --bg: #141210; --surface: #141210; --sunk: #1e1b17; --fg: #f2e9d8; --muted: #a89c86; --line: #5a5246; --accent: #ffb000; --accent-ink: #141210; --accent-soft: #3a2c0a;
+  --t-in: #7ab8ff; --t-out: #ff8f4d; --t-cw: #c79bff; --t-cr: #7ee0a0; --good: #7ee0a0; --good-soft: #1b3324; --bad: #ff9d94; --bad-soft: #3d201d; }
+:root[data-style="e"] body { font-size: 14px; }
+:root[data-style="e"] :is(h1, h2, h3, h4) { font-weight: 600; letter-spacing: 0; }
+:root[data-style="e"] h1 { font-size: clamp(1.4rem, 3.4vw, 1.9rem); }
+:root[data-style="e"] h2 { font-size: 1.3rem; } :root[data-style="e"] h3 { font-size: 1rem; }
+:root[data-style="e"] .mhead h2::before, :root[data-style="e"] .mhead h1::before { content: "# "; color: var(--accent); }
+:root[data-style="e"] :is(.lesson, .overview, .reference) h3::before { content: "## "; color: var(--accent); }
+:root[data-style="e"] .tick { border-radius: 0; border-width: 1px; border-color: var(--line); }
+:root[data-style="e"] .bar { height: 18px; border: 1px solid var(--line); }
+:root[data-style="e"] .navlink.active { background: var(--fg); color: var(--bg); } :root[data-style="e"] .navlink.active .n { color: inherit; }
+
+/* ---------- Mermaid diagrams, pre-rendered to SVG at build time. Layout is Mermaid's; every colour is the theme's. ---------- */
+figure.diagram svg.mm { font-family: "Segoe UI", system-ui, Arial, sans-serif; min-width: 0; max-height: 620px; }
+figure.diagram.map svg.mm { max-width: 1000px; max-height: 1150px; }
+svg.mm text, svg.mm tspan { fill: var(--fg) !important; stroke: none !important; }
+svg.mm .node > :is(rect, circle, ellipse, polygon, path), svg.mm .label-container, svg.mm :is(rect.actor, .actor-box, .labelBox, .activation0, .activation1, .activation2), svg.mm .statediagram-state :is(rect, path).basic, svg.mm .classGroup rect, svg.mm .er.entityBox { fill: var(--sunk) !important; stroke: var(--muted) !important; }
+svg.mm .node .label rect, svg.mm .cluster-label rect { fill: none !important; stroke: none !important; }
+svg.mm :is(.edgeLabel rect, rect.background, .labelBkg, .edgeLabel .label rect) { fill: var(--surface) !important; stroke: none !important; opacity: 1 !important; }
+svg.mm :is(.flowchart-link, .transition, .relation, .messageLine0, .messageLine1, .edgePath path, .actor-line, .loopLine, line.divider, .edge-thickness-normal) { stroke: var(--muted) !important; }
+svg.mm :is(.flowchart-link, .transition, .relation, .edgePath path) { fill: none !important; }
+svg.mm marker :is(path, circle, polygon), svg.mm :is(.arrowMarkerPath, .arrowheadPath) { fill: var(--muted) !important; stroke: var(--muted) !important; }
+svg.mm .cluster > :is(rect, polygon, path), svg.mm .statediagram-cluster rect, svg.mm rect.rect { fill: color-mix(in srgb, var(--surface) 55%, transparent) !important; stroke: var(--line) !important; }
+svg.mm :is(.note, .state-note) :is(rect, path), svg.mm rect.note, svg.mm g.note > rect { fill: var(--accent-soft) !important; stroke: var(--accent) !important; }
+svg.mm :is(.state-start, .start-state, circle.state-start) { fill: var(--fg) !important; stroke: var(--fg) !important; }
+svg.mm :is(.end-state-outer, .state-end) { fill: var(--surface) !important; stroke: var(--fg) !important; }
+svg.mm .end-state-inner { fill: var(--fg) !important; stroke: var(--fg) !important; }
+svg.mm .node:is(.hot) > :is(rect, circle, ellipse, polygon, path) { fill: var(--accent-soft) !important; stroke: var(--accent) !important; }
+svg.mm .node:is(.good, .found) > :is(rect, circle, ellipse, polygon, path) { fill: var(--good-soft) !important; stroke: var(--good) !important; }
+svg.mm .node.bad > :is(rect, circle, ellipse, polygon, path) { fill: var(--bad-soft) !important; stroke: var(--bad) !important; }
+svg.mm .node:is(.info, .prac) > :is(rect, circle, ellipse, polygon, path) { fill: color-mix(in srgb, var(--t-in) 14%, var(--surface)) !important; stroke: var(--t-in) !important; }
+svg.mm .node:is(.alt, .adv) > :is(rect, circle, ellipse, polygon, path) { fill: color-mix(in srgb, var(--t-cw) 14%, var(--surface)) !important; stroke: var(--t-cw) !important; }
+svg.mm .node.ghost > :is(rect, circle, ellipse, polygon, path) { fill: none !important; stroke: var(--line) !important; stroke-dasharray: 6 4; }
+
+</style>
+</head>
+<body>
+<div class="top">
+  <a class="brand" href="index.html">AI/LLM Bootcamp</a>
+  <span class="crumb" id="crumb"></span>
+  <label class="themepick">Theme: <select id="theme" aria-label="Theme"></select></label>
+</div>
+<div class="app">
+  <aside class="side">
+    <nav id="nav" aria-label="Parts of this module"></nav>
+    <div class="side-foot">
+      
+      <a href="index.html">All modules</a>
+    </div>
+  </aside>
+  <main>
+<section class="module" id="m1" data-title="Context" data-sub="What the model sees, and what it costs to show it" data-level="foundation" data-prereq="" data-minutes="240">
+  <div class="overview">
+    <p class="lede">The model keeps no memory between requests. Everything it knows about your session is the text Claude Code sends with each request, and every token of that text is paid for again each turn. This module shows you what is in that text, how to measure it, and how to make sure the part that matters is the part the model actually reads.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Name the layers Claude Code puts in the context window, in order, and read their sizes from <code>/context</code>, the stream-json init line and the <code>usage</code> block.</li>
+      <li>Measure what a CLAUDE.md file adds to every request, and cut it with path-scoped rules, skills and HTML comments.</li>
+      <li>Predict how a session grows turn by turn, and choose between <code>/compact</code> with instructions, <code>/clear</code> and a fresh session, knowing what each one loses.</li>
+      <li>Explain why a bigger context can make answers worse, and place instructions so they hold.</li>
+      <li>Make the model read the source before it answers, ask for <code>file:line</code> evidence, and check that evidence.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key).</li>
+      <li>Windows PowerShell 5.1 or PowerShell 7 for the lab commands.</li>
+      <li>A project of your own with a CLAUDE.md or AGENTS.md, for the last lab.</li>
+      <li>About $0.10 of API usage for all five labs on Haiku, or a small slice of a plan's 5-hour window.</li>
+    </ul>
+  </div>
+
+  <div class="lesson" id="m1-l1" data-title="The model forgets everything between turns" data-minutes="20">
+    <h3>A stateless function with a long argument</h3>
+    <p>A language model is a function. It takes a sequence of tokens and returns a continuation. It holds nothing from one call to the next: no session, no scratchpad, no memory of what it said a minute ago. What looks like a conversation is the client sending the whole conversation again, with the new message appended, on every request.</p>
+    <p>Claude Code is that client. When you type a prompt, it builds one request that contains its own system prompt, the definitions of every tool the model may call, your instruction files, the conversation so far, every tool result so far, and your new message. The model answers. If the answer is a tool call, Claude Code runs the tool, appends the result, and sends the whole thing again. One prompt from you can be ten requests, and each of the ten carries everything before it.</p>
+    <p>This has three consequences you will use for the rest of the module.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Consequence</th><th>What it means in practice</th></tr>
+      <tr><td>The model knows only what is in the request.</td><td>A file it has not read, a rule that is not in an instruction file, a decision from yesterday's session: none of it exists for the model. It will not say "I don't know" reliably. It will often fill the gap with something plausible.</td></tr>
+      <tr><td>Every token is re-sent every request.</td><td>A 10,000-token file read on turn 3 is in the prompt of turn 4, 5 and 40. Its cost is paid per request, not once.</td></tr>
+      <tr><td>Order and position are under the client's control.</td><td>Claude Code decides what goes first and what goes last. You influence it through instruction files, skills, the prompt itself and when you compact or clear.</td></tr>
+    </table></div>
+
+    <h3>Why re-sending is affordable: the prompt cache</h3>
+    <p>Re-sending 50,000 tokens forty times would be expensive at full input price. The API caches the start of a request: if a new request begins with exactly the same tokens as a recent one, that prefix is served from cache. The <code>usage</code> block on every result splits the prompt side into three counts:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Meaning</th><th class="num">API price vs base input</th></tr>
+      <tr><td><span class="tok in">input_tokens</span></td><td>Tokens after the last cache breakpoint, read fresh.</td><td class="num">1x</td></tr>
+      <tr><td><span class="tok cw">cache_creation_input_tokens</span></td><td>Tokens written to the cache on this request.</td><td class="num">1.25x (5 min) or 2x (1 hour)</td></tr>
+      <tr><td><span class="tok cr">cache_read_input_tokens</span></td><td>Tokens served from the cache.</td><td class="num">0.1x, or less on some models</td></tr>
+      <tr><td><span class="tok out">output_tokens</span></td><td>What the model wrote, thinking included.</td><td class="num">5x</td></tr>
+    </table></div>
+    <p>The sum of the first three is the real size of the prompt the model saw. Call it the prompt side. It is the number to watch in this module, because it is what fills the window. Which of the three buckets a token lands in decides its price, and the module Tokens and their price covers that in depth.</p>
+    <p>Here is the result of the smallest possible run: a one-word reply on Haiku in an empty folder.</p>
+    <pre data-cap="output"><code>input_tokens                : 2
+cache_creation_input_tokens : 7214
+cache_read_input_tokens     : 14517
+output_tokens               : 4</code></pre>
+    <p>Four tokens of answer, about 21,700 tokens of prompt. None of that prompt was yours. It is the fixed cost of being a Claude Code session, and Lab 1 has you measure it on your machine.</p>
+
+    <h3>Subscription and API key</h3>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>API key</th><th>Subscription plan</th></tr>
+      <tr><td>What re-sending costs</td><td>Dollars per token, by bucket and model.</td><td>A share of the 5-hour window and the weekly limit. Cached content counts less against the limits.</td></tr>
+      <tr><td>Cache lifetime Claude Code asks for</td><td>5 minutes by default.</td><td>1 hour on the main conversation while you are within plan usage. On this machine every cache write on a plan login showed up as <code>ephemeral_1h_input_tokens</code>.</td></tr>
+      <tr><td><code>total_cost_usd</code></td><td>A client-side estimate of what you will be billed.</td><td>The same estimate at list price. Nothing is charged per token.</td></tr>
+    </table></div>
+    <p>Either way, the size of the prompt side is the lever. A smaller context costs fewer dollars on a key and less window on a plan.</p>
+    <aside class="rule">Treat the context as a document you are re-sending on every request, because you are.</aside>
+    <aside class="trap">Assuming the model remembers something because you discussed it in a previous session. A new session, <code>/clear</code>, or a subagent starts with none of it. Persistent facts go in an instruction file; everything else must be re-read.</aside>
+  </div>
+
+  <div class="lesson" id="m1-l2" data-title="What is in the window, in order" data-minutes="25">
+    <h3>Three slots, filled by the client</h3>
+    <p>The API orders a request as <b>tools</b>, then <b>system</b>, then <b>messages</b>. The cache works on that order: a change in an early slot invalidates the cache for everything after it. A change to the tool definitions invalidates all three; a new message only adds to the end. Claude Code fills the slots with these layers.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Layer</th><th>What it is</th><th class="num">Size, empty session</th><th>Changes when</th></tr>
+      <tr><td>System prompt</td><td>Claude Code's own instructions, environment facts, git status snapshot, plus anything from <code>--append-system-prompt</code> or an output style.</td><td class="num">about 3,400</td><td>Rarely within a session.</td></tr>
+      <tr><td>Tool definitions</td><td>Name, description and JSON schema of each built-in tool (Read, Edit, Bash, PowerShell, Grep and the rest).</td><td class="num">about 11,600</td><td>You change <code>--tools</code>, <code>--allowedTools</code> or permission settings.</td></tr>
+      <tr><td>Deferred tools</td><td>MCP tools and some built-ins are deferred: only their names and server instructions load. The full schema loads when the model searches for the tool.</td><td class="num">names only</td><td>You add or remove an MCP server.</td></tr>
+      <tr><td>Instruction files</td><td>CLAUDE.md, CLAUDE.local.md, unscoped <code>.claude/rules/</code> files, and the first 200 lines or 25KB of auto memory's MEMORY.md. Delivered as a user message after the system prompt.</td><td class="num">0 in an empty folder</td><td>You edit the files; on demand when Claude reads a file in a subdirectory that has its own.</td></tr>
+      <tr><td>Skills listing</td><td>Name and description of each skill the model may invoke. Bodies load only on invocation.</td><td class="num">about 2,200</td><td>You add a skill or plugin.</td></tr>
+      <tr><td>Messages</td><td>Your prompts, the model's replies, and system reminders Claude Code adds (a file changed on disk, attribution lines).</td><td class="num">10</td><td>Every turn.</td></tr>
+      <tr><td>Tool results</td><td>Everything a tool returned: file contents, command output, search hits.</td><td class="num">0</td><td>Every tool call. Usually the largest layer by far.</td></tr>
+    </table></div>
+<figure class="diagram">
+<svg class="mm mm-flowchart" role="img" id="mmd39e9e164e3d" width="100%" xmlns="http://www.w3.org/2000/svg" style="max-width: 936px;" viewBox="4 4 936 61"><style>#mmd39e9e164e3d{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;fill:#000000;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#mmd39e9e164e3d .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#mmd39e9e164e3d .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#mmd39e9e164e3d .error-icon{fill:#552222;}#mmd39e9e164e3d .error-text{fill:#552222;stroke:#552222;}#mmd39e9e164e3d .edge-thickness-normal{stroke-width:1px;}#mmd39e9e164e3d .edge-thickness-thick{stroke-width:3.5px;}#mmd39e9e164e3d .edge-pattern-solid{stroke-dasharray:0;}#mmd39e9e164e3d .edge-thickness-invisible{stroke-width:0;fill:none;}#mmd39e9e164e3d .edge-pattern-dashed{stroke-dasharray:3;}#mmd39e9e164e3d .edge-pattern-dotted{stroke-dasharray:2;}#mmd39e9e164e3d .marker{fill:#666;stroke:#666;}#mmd39e9e164e3d .marker.cross{stroke:#666;}#mmd39e9e164e3d svg{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;}#mmd39e9e164e3d p{margin:0;}#mmd39e9e164e3d .label{font-family:"Segoe UI",Arial,sans-serif;color:#000000;}#mmd39e9e164e3d .cluster-label text{fill:#333;}#mmd39e9e164e3d .cluster-label span{color:#333;}#mmd39e9e164e3d .cluster-label span p{background-color:transparent;}#mmd39e9e164e3d .label text,#mmd39e9e164e3d span{fill:#000000;color:#000000;}#mmd39e9e164e3d .node rect,#mmd39e9e164e3d .node circle,#mmd39e9e164e3d .node ellipse,#mmd39e9e164e3d .node polygon,#mmd39e9e164e3d .node path{fill:#eee;stroke:#999;stroke-width:1px;}#mmd39e9e164e3d .rough-node .label text,#mmd39e9e164e3d .node .label text,#mmd39e9e164e3d .image-shape .label,#mmd39e9e164e3d .icon-shape .label{text-anchor:middle;}#mmd39e9e164e3d .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#mmd39e9e164e3d .rough-node .label,#mmd39e9e164e3d .node .label,#mmd39e9e164e3d .image-shape .label,#mmd39e9e164e3d .icon-shape .label{text-align:center;}#mmd39e9e164e3d .node.clickable{cursor:pointer;}#mmd39e9e164e3d .root .anchor path{fill:#666!important;stroke-width:0;stroke:#666;}#mmd39e9e164e3d .arrowheadPath{fill:#333333;}#mmd39e9e164e3d .edgePaths .path{stroke:#666;stroke-width:1px;}#mmd39e9e164e3d .flowchart-link{stroke:#666;fill:none;}#mmd39e9e164e3d .edgeLabel{background-color:white;text-align:center;}#mmd39e9e164e3d .edgeLabel p{background-color:white;}#mmd39e9e164e3d .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mmd39e9e164e3d .labelBkg{background-color:rgba(255, 255, 255, 0.5);}#mmd39e9e164e3d .cluster rect{fill:hsl(0, 0%, 98.9215686275%);stroke:#707070;stroke-width:1px;}#mmd39e9e164e3d .cluster text{fill:#333;}#mmd39e9e164e3d .cluster span{color:#333;}#mmd39e9e164e3d .node .collapsed-indicator{fill:#707070;stroke:none;opacity:0.6;}#mmd39e9e164e3d .node .collapsed-separator{stroke:#707070;stroke-width:0.75px;}#mmd39e9e164e3d div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"Segoe UI",Arial,sans-serif;font-size:12px;background:hsl(-160, 0%, 93.3333333333%);border:1px solid #707070;border-radius:2px;pointer-events:none;z-index:100;}#mmd39e9e164e3d .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mmd39e9e164e3d rect.text{fill:none;stroke-width:0;}#mmd39e9e164e3d .icon-shape,#mmd39e9e164e3d .image-shape{background-color:white;text-align:center;}#mmd39e9e164e3d .icon-shape p,#mmd39e9e164e3d .image-shape p{background-color:white;padding:2px;}#mmd39e9e164e3d .icon-shape .label rect,#mmd39e9e164e3d .image-shape .label rect{opacity:0.5;background-color:white;fill:white;}#mmd39e9e164e3d .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#mmd39e9e164e3d .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#mmd39e9e164e3d .node .neo-node{stroke:#999;}#mmd39e9e164e3d [data-look="neo"].node rect,#mmd39e9e164e3d [data-look="neo"].cluster rect,#mmd39e9e164e3d [data-look="neo"].node polygon{stroke:url(#mmd39e9e164e3d-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmd39e9e164e3d [data-look="neo"].swimlane.cluster rect{filter:none;}#mmd39e9e164e3d [data-look="neo"].node path{stroke:url(#mmd39e9e164e3d-gradient);stroke-width:1px;}#mmd39e9e164e3d [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmd39e9e164e3d [data-look="neo"].node .neo-line path{stroke:#999;filter:none;}#mmd39e9e164e3d [data-look="neo"].node circle{stroke:url(#mmd39e9e164e3d-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmd39e9e164e3d [data-look="neo"].node circle .state-start{fill:#000000;}#mmd39e9e164e3d [data-look="neo"].icon-shape .icon{fill:url(#mmd39e9e164e3d-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmd39e9e164e3d [data-look="neo"].icon-shape .icon-neo path{stroke:url(#mmd39e9e164e3d-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmd39e9e164e3d :root{--mermaid-font-family:"Segoe UI",Arial,sans-serif;}</style><g><marker id="mmd39e9e164e3d_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mmd39e9e164e3d_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mmd39e9e164e3d_flowchart-v2-pointEnd-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="11.5" refY="7" markerUnits="userSpaceOnUse" markerWidth="10.5" markerHeight="14" orient="auto"><path d="M 0 0 L 11.5 7 L 0 14 z" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></path></marker><marker id="mmd39e9e164e3d_flowchart-v2-pointStart-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="1" refY="7" markerUnits="userSpaceOnUse" markerWidth="11.5" markerHeight="14" orient="auto"><polygon points="0,7 11.5,14 11.5,0" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></polygon></marker><marker id="mmd39e9e164e3d_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmd39e9e164e3d_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmd39e9e164e3d_flowchart-v2-circleEnd-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refY="5" refX="12.25" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmd39e9e164e3d_flowchart-v2-circleStart-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-2" refY="5" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmd39e9e164e3d_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mmd39e9e164e3d_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mmd39e9e164e3d_flowchart-v2-crossEnd-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="17.7" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5;"></path></marker><marker id="mmd39e9e164e3d_flowchart-v2-crossStart-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="-3.5" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edges edgePaths"><path d="M164,34.5L200,34.5" id="mmd39e9e164e3d-L_a_b_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_a_b_0" data-points="W3sieCI6MTY0LCJ5IjozNC41fSx7IngiOjIwNCwieSI6MzQuNX1d" data-look="neo" marker-end="url(#mmd39e9e164e3d_flowchart-v2-pointEnd-margin)"></path><path d="M356,34.5L392,34.5" id="mmd39e9e164e3d-L_b_c_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_b_c_0" data-points="W3sieCI6MzU2LCJ5IjozNC41fSx7IngiOjM5NiwieSI6MzQuNX1d" data-look="neo" marker-end="url(#mmd39e9e164e3d_flowchart-v2-pointEnd-margin)"></path><path d="M548,34.5L584,34.5" id="mmd39e9e164e3d-L_c_d_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_c_d_0" data-points="W3sieCI6NTQ4LCJ5IjozNC41fSx7IngiOjU4OCwieSI6MzQuNX1d" data-look="neo" marker-end="url(#mmd39e9e164e3d_flowchart-v2-pointEnd-margin)"></path><path d="M740,34.5L776,34.5" id="mmd39e9e164e3d-L_d_e_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_d_e_0" data-points="W3sieCI6NzQwLCJ5IjozNC41fSx7IngiOjc4MCwieSI6MzQuNX1d" data-look="neo" marker-end="url(#mmd39e9e164e3d_flowchart-v2-pointEnd-margin)"></path></g><g class="edgeLabels"></g><g class="nodes"><g class="node default" id="mmd39e9e164e3d-flowchart-a-0" data-look="neo" transform="translate(88, 34.5)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Tool</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> definitions</tspan></tspan></text></g></g></g><g class="node default" id="mmd39e9e164e3d-flowchart-b-1" data-look="neo" transform="translate(280, 34.5)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">System</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> prompt</tspan></tspan></text></g></g></g><g class="node default" id="mmd39e9e164e3d-flowchart-c-3" data-look="neo" transform="translate(472, 34.5)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Instruction</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> files</tspan></tspan></text></g></g></g><g class="node default" id="mmd39e9e164e3d-flowchart-d-5" data-look="neo" transform="translate(664, 34.5)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Messages</tspan></tspan></text></g></g></g><g class="node default hot" id="mmd39e9e164e3d-flowchart-e-7" data-look="neo" transform="translate(856, 34.5)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Tool</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> results</tspan></tspan></text></g></g></g></g></g></g><defs><filter id="mmd39e9e164e3d-drop-shadow" height="130%" width="130%"><feDropShadow dx="4" dy="4" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><defs><filter id="mmd39e9e164e3d-drop-shadow-small" height="150%" width="150%"><feDropShadow dx="2" dy="2" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><linearGradient id="mmd39e9e164e3d-gradient" gradientUnits="objectBoundingBox" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="hsl(0, 0%, 83.3333333333%)" stop-opacity="1"></stop><stop offset="100%" stop-color="hsl(0, 0%, 88.9215686275%)" stop-opacity="1"></stop></linearGradient></svg>
+  <figcaption>Order of one request: early slots change rarely and are cached; the newest messages and tool results sit at the end and grow every turn.</figcaption>
+</figure>
+    <p>The sizes are from an empty folder on Claude Code 2.1.322 with no MCP servers, measured with the three instruments below. Your numbers will differ with version, platform, plugins and servers. That is the point of measuring.</p>
+
+    <h3>Instrument 1: <code>/context</code></h3>
+    <p><code>/context</code> prints the window by category. It works in a live session and also headless, as <code>claude -p "/context"</code>. <code>/context all</code> expands the per-file lists. Output from the empty folder:</p>
+    <pre data-cap="output"><code>**Tokens:** 17.2k / 1m (2%)
+
+| Category | Tokens | Percentage |
+|----------|--------|------------|
+| System prompt | 3.4k | 0.3% |
+| System tools | 11.6k | 1.2% |
+| System tools (deferred) | 13.8k | 1.4% |
+| Skills | 2.2k | 0.2% |
+| Messages | 10 | 0.0% |
+| Free space | 949.8k | 95.0% |
+| Autocompact buffer | 33k | 3.3% |</code></pre>
+    <p>Two things to read correctly. The deferred line is not in the 17.2k total: the other lines add up to it without the deferred tools. That is what deferral buys you. And <code>/context</code> is an estimate. The billed prompt side on the same session was about 21,700. Use <code>/context</code> to see which category is large, and the <code>usage</code> block for the number.</p>
+
+    <h3>Instrument 2: the stream-json init line</h3>
+    <p>Run headless with <code>--output-format stream-json --verbose</code> and the first line is a JSON object with <code>type</code> "system" and <code>subtype</code> "init". It lists what loaded, not how big it is: <code>tools</code>, <code>mcp_servers</code>, <code>model</code>, <code>permissionMode</code>, <code>slash_commands</code>, <code>skills</code>, <code>plugins</code>, <code>agents</code>, <code>memory_paths</code>, <code>apiKeySource</code> and more. In the empty folder it showed 26 tools, 17 skills, no MCP servers, and a <code>memory_paths</code> object with only the auto memory folder. Use it to answer "did that server, skill or file load at all" in a script.</p>
+
+    <h3>Instrument 3: the <code>usage</code> block</h3>
+    <p>Every <code>--output-format json</code> result, and the last line of a stream-json run, carries <code>usage</code>. Prompt side = <code>input_tokens</code> + <code>cache_creation_input_tokens</code> + <code>cache_read_input_tokens</code>. For a run that made several model calls, the three counts are summed across the calls, so a turn with one tool call counts the prefix twice. That is real cost, but it is not the window size. For window size, compare single-call runs, or read the last entry of <code>usage.iterations</code>.</p>
+    <p>One more detail from the lab runs: the very first run in an empty folder already showed about 14,500 tokens of cache read. The cache matches on identical prefixes, not on sessions, so the system prompt and tool definitions written by an earlier session on the same account are reused. The part that is new to each session (its working folder, its first message) is written fresh.</p>
+    <aside class="rule">Use <code>/context</code> to find the big category, the init line to prove what loaded, and the <code>usage</code> block for the number you pay for.</aside>
+    <aside class="trap">Reading the cost of a multi-call turn as the window size. A turn that read one file can report twice the prompt side, because the prefix was sent twice.</aside>
+  </div>
+
+  <div class="lesson" id="m1-l3" data-title="Instruction files" data-minutes="25">
+    <h3>Where they live and how they stack</h3>
+    <p>CLAUDE.md files do not override each other. Every file that applies is concatenated into context, broadest first, so the more specific file is read last.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Scope</th><th>Location</th><th>Loaded</th></tr>
+      <tr><td>Managed policy</td><td><code>C:\Program Files\ClaudeCode\CLAUDE.md</code>, <code>/etc/claude-code/CLAUDE.md</code>, <code>/Library/Application Support/ClaudeCode/CLAUDE.md</code></td><td>At launch, every session, cannot be excluded.</td></tr>
+      <tr><td>User</td><td><code>~/.claude/CLAUDE.md</code></td><td>At launch, when user settings are loaded.</td></tr>
+      <tr><td>Project</td><td><code>./CLAUDE.md</code> or <code>./.claude/CLAUDE.md</code>, and the same in every folder above the working folder</td><td>At launch, root of the filesystem first, working folder last.</td></tr>
+      <tr><td>Local</td><td><code>./CLAUDE.local.md</code> (gitignore it)</td><td>At launch, right after the CLAUDE.md in the same folder.</td></tr>
+      <tr><td>Rules</td><td><code>.claude/rules/*.md</code>, recursive</td><td>At launch if unscoped; on demand if the file has <code>paths:</code> frontmatter.</td></tr>
+      <tr><td>Subfolder</td><td><code>sub/CLAUDE.md</code> below the working folder</td><td>On demand, when Claude reads, writes or edits a file in that folder.</td></tr>
+    </table></div>
+    <p>If a repository has an <code>AGENTS.md</code> and no <code>CLAUDE.md</code> or <code>CLAUDE.local.md</code> in the working folder or above it, Claude Code reads <code>AGENTS.md</code> instead. A <code>CLAUDE.md</code> containing the line <code>@AGENTS.md</code> loads both tools' instructions from one file.</p>
+
+    <h3>Imports and comments</h3>
+    <p>A line such as <code>See @docs/style.md</code> imports that file. Relative paths resolve from the importing file; imports nest up to four hops; a path inside backticks is not imported. An import that resolves outside the project asks for approval the first time.</p>
+    <p>Imports organise a file. They do not make it cheaper. Lab 2 measured it: 300 rules inline in CLAUDE.md added about 13,900 tokens per request; the same 300 rules moved to an imported file added about 14,000. <code>/context all</code> lists the imported file as its own memory file.</p>
+    <p>Block-level HTML comments are stripped before injection. The same 300 rules wrapped in <code>&lt;!-- --&gt;</code> added about 160 tokens, the cost of the heading and one remaining line. Comments are the right place for maintainer notes: owner, review date, why a rule exists.</p>
+
+    <h3>What belongs in CLAUDE.md, and what does not</h3>
+    <p>CLAUDE.md is paid on every request of every session. It earns its place only with facts the model needs in every session and cannot discover cheaply.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Content</th><th>Where it goes</th><th>Why</th></tr>
+      <tr><td>Build and test commands, branch rules, "never do X"</td><td>CLAUDE.md</td><td>Needed every session; short.</td></tr>
+      <tr><td>A multi-step procedure (release, migration, incident triage)</td><td>A skill</td><td>Only the description is in context until it is used. See the module Skills.</td></tr>
+      <tr><td>Rules for one part of the tree (<code>src/api/**</code>)</td><td>A rule with <code>paths:</code></td><td>Loads only when Claude touches a matching file.</td></tr>
+      <tr><td>Directory layouts, dependency lists, architecture tours</td><td>Nowhere</td><td>The model can read the tree when it needs to. A stale copy is worse than none.</td></tr>
+      <tr><td>Something that must happen every time (format on save, block a command)</td><td>A hook</td><td>Instructions are context, not enforcement. See the module Hooks.</td></tr>
+      <tr><td>Personal URLs, test accounts, preferences</td><td>CLAUDE.local.md or <code>~/.claude/CLAUDE.md</code></td><td>Not the team's business; not in git.</td></tr>
+    </table></div>
+    <p>The documentation sets a target of under 200 lines per CLAUDE.md file. Longer files cost more context and reduce adherence, and Claude Code warns at startup and in <code>/status</code> when a file is over the recommended length. Write rules concrete enough to check ("Run <code>make test</code> before committing", not "test your changes"), group them under headings, and remove contradictions: when two files disagree, the model may pick either one.</p>
+    <p>CLAUDE.md is delivered as a user message after the system prompt, so it is strong guidance, not configuration. When you need system-prompt weight in a script, <code>--append-system-prompt</code> puts text there. In a session, <code>/memory</code> lists and opens the files, and <code>/doctor prompt-audit</code> reviews them for stale or conflicting content without changing anything until you ask.</p>
+    <aside class="rule">Every line in CLAUDE.md is a line you pay for on every request. Keep the ones the model needs every time and cannot find on its own.</aside>
+    <aside class="trap">Splitting a 600-line CLAUDE.md into six imported files and believing it shrank. The window sees all 600 lines. Use path-scoped rules or skills to make content load less often.</aside>
+    
+  </div>
+
+  <div class="lesson" id="m1-l4" data-title="Growth, compaction and clearing" data-minutes="20">
+    <h3>How a session grows</h3>
+    <p>The prompt side of each request is the fixed overhead plus everything said and returned so far. Lab 4 measured a resumed session in which each turn read one 150-line log file (about 13KB):</p>
+    <div class="tablewrap"><table>
+      <tr><th class="num">Turn</th><th>What happened</th><th class="num">Prompt side of the last call</th></tr>
+      <tr><td class="num">0</td><td>One-word reply, Read as the only tool</td><td class="num">4,813</td></tr>
+      <tr><td class="num">1</td><td>Read app-1.log, reply with one number</td><td class="num">11,636</td></tr>
+      <tr><td class="num">2</td><td>Read app-2.log</td><td class="num">18,516</td></tr>
+      <tr><td class="num">3</td><td>Read app-3.log</td><td class="num">25,335</td></tr>
+      <tr><td class="num">4</td><td>Read app-4.log</td><td class="num">32,140</td></tr>
+      <tr><td class="num">5</td><td>After <code>/compact</code>, one question</td><td class="num">6,398</td></tr>
+    </table></div>
+    <p>Each file added about 6,800 tokens and stayed. The answers were one number each; the cost came from what the model read, not what it wrote. Per-turn cost rose in step: turn 4 cost about four times turn 1, for the same work. Tool results dominate growth in real sessions too. A test log, a <code>git diff</code> of a lockfile or a directory listing does the same thing.</p>
+    <p>Note also the overhead of turn 0: 4,813 tokens with only the Read tool, against about 21,700 with the default tool set. Restricting <code>--tools</code> in a headless job is one of the largest savings available.</p>
+
+    <h3>Auto-compaction</h3>
+    <p>When the window approaches its limit, Claude Code compacts on its own: it replaces the conversation with a structured summary and carries on. On the 1M-token models the default trigger is about 967K; <code>/context</code> shows the reserve as "Autocompact buffer". You can move the trigger with <code>/autocompact 500k</code>, the <code>--autocompact</code> flag, the <code>autoCompactWindow</code> setting or <code>CLAUDE_CODE_AUTO_COMPACT_WINDOW</code> (100K to 1M). If a single output is so large that the window refills right after each summary, Claude Code stops after a few attempts and shows an error instead of looping.</p>
+
+<figure class="diagram">
+<svg class="mm mm-statediagram-v" role="img" id="mm4844336eeb1c" width="100%" xmlns="http://www.w3.org/2000/svg" style="max-width: 596.4661865234375px;" viewBox="4 4 596.4661865234375 493.6000061035156"><style>#mm4844336eeb1c{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;fill:#000000;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#mm4844336eeb1c .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#mm4844336eeb1c .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#mm4844336eeb1c .error-icon{fill:#552222;}#mm4844336eeb1c .error-text{fill:#552222;stroke:#552222;}#mm4844336eeb1c .edge-thickness-normal{stroke-width:1px;}#mm4844336eeb1c .edge-thickness-thick{stroke-width:3.5px;}#mm4844336eeb1c .edge-pattern-solid{stroke-dasharray:0;}#mm4844336eeb1c .edge-thickness-invisible{stroke-width:0;fill:none;}#mm4844336eeb1c .edge-pattern-dashed{stroke-dasharray:3;}#mm4844336eeb1c .edge-pattern-dotted{stroke-dasharray:2;}#mm4844336eeb1c .marker{fill:#666;stroke:#666;}#mm4844336eeb1c .marker.cross{stroke:#666;}#mm4844336eeb1c svg{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;}#mm4844336eeb1c p{margin:0;}#mm4844336eeb1c defs [id$="-barbEnd"]{fill:#000;stroke:#000;}#mm4844336eeb1c g.stateGroup text{fill:#999;stroke:none;font-size:10px;}#mm4844336eeb1c g.stateGroup text{fill:#000000;stroke:none;font-size:10px;}#mm4844336eeb1c g.stateGroup .state-title{font-weight:bolder;fill:#111111;}#mm4844336eeb1c g.stateGroup rect{fill:#eee;stroke:#999;}#mm4844336eeb1c g.stateGroup line{stroke:#666;stroke-width:1;}#mm4844336eeb1c .transition{stroke:#000;stroke-width:1;fill:none;}#mm4844336eeb1c .stateGroup .composit{fill:#ffffff;border-bottom:1px;}#mm4844336eeb1c .stateGroup .alt-composit{fill:#e0e0e0;border-bottom:1px;}#mm4844336eeb1c .state-note{stroke:#999;fill:#666;}#mm4844336eeb1c .state-note text{fill:#fff;stroke:none;font-size:10px;}#mm4844336eeb1c .stateLabel .box{stroke:none;stroke-width:0;fill:#eee;opacity:0.5;}#mm4844336eeb1c .edgeLabel .label rect{fill:#eee;opacity:0.5;}#mm4844336eeb1c .edgeLabel{background-color:white;text-align:center;}#mm4844336eeb1c .edgeLabel p{background-color:white;}#mm4844336eeb1c .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mm4844336eeb1c .edgeLabel .label text{fill:#000000;}#mm4844336eeb1c .label div .edgeLabel{color:#000000;}#mm4844336eeb1c .stateLabel text{fill:#111111;font-size:10px;font-weight:bold;}#mm4844336eeb1c .node circle.state-start{fill:#222;stroke:#222;}#mm4844336eeb1c .node .fork-join{fill:#222;stroke:#222;}#mm4844336eeb1c .node circle.state-end{fill:hsl(0, 0%, 83.3333333333%);stroke:#ffffff;stroke-width:1.5;}#mm4844336eeb1c .end-state-inner{fill:#ffffff;stroke-width:1.5;}#mm4844336eeb1c .node rect{fill:#eee;stroke:#000;stroke-width:1px;}#mm4844336eeb1c .node polygon{fill:#eee;stroke:#000;stroke-width:1px;}#mm4844336eeb1c [id$="-barbEnd"]{fill:#666;}#mm4844336eeb1c .statediagram-cluster rect{fill:#eee;stroke:#000;stroke-width:1px;}#mm4844336eeb1c .cluster-label,#mm4844336eeb1c .nodeLabel{color:#111111;}#mm4844336eeb1c .statediagram-cluster rect.outer{rx:5px;ry:5px;}#mm4844336eeb1c .statediagram-state .divider{stroke:#000;}#mm4844336eeb1c .statediagram-state .title-state{rx:5px;ry:5px;}#mm4844336eeb1c .statediagram-cluster.statediagram-cluster .inner{fill:#ffffff;}#mm4844336eeb1c .statediagram-cluster.statediagram-cluster-alt .inner{fill:#f4f4f4;}#mm4844336eeb1c .statediagram-cluster .inner{rx:0;ry:0;}#mm4844336eeb1c .statediagram-state rect.basic{rx:5px;ry:5px;}#mm4844336eeb1c .statediagram-state rect.divider{stroke-dasharray:10,10;fill:#f4f4f4;}#mm4844336eeb1c .note-edge{stroke-dasharray:5;}#mm4844336eeb1c .statediagram-note rect{fill:#666;stroke:#999;stroke-width:1px;rx:0;ry:0;}#mm4844336eeb1c .statediagram-note rect{fill:#666;stroke:#999;stroke-width:1px;rx:0;ry:0;}#mm4844336eeb1c .statediagram-note text{fill:#fff;}#mm4844336eeb1c .statediagram-note .nodeLabel{color:#fff;}#mm4844336eeb1c .statediagram .edgeLabel{color:red;}#mm4844336eeb1c [id$="-dependencyStart"],#mm4844336eeb1c [id$="-dependencyEnd"]{fill:#666;stroke:#666;stroke-width:1;}#mm4844336eeb1c .statediagramTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mm4844336eeb1c [data-look="neo"].statediagram-cluster rect{fill:#eee;stroke:url(#mm4844336eeb1c-gradient);stroke-width:1;}#mm4844336eeb1c [data-look="neo"].statediagram-cluster rect.outer{rx:5px;ry:5px;filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm4844336eeb1c .node .neo-node{stroke:#999;}#mm4844336eeb1c [data-look="neo"].node rect,#mm4844336eeb1c [data-look="neo"].cluster rect,#mm4844336eeb1c [data-look="neo"].node polygon{stroke:url(#mm4844336eeb1c-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm4844336eeb1c [data-look="neo"].swimlane.cluster rect{filter:none;}#mm4844336eeb1c [data-look="neo"].node path{stroke:url(#mm4844336eeb1c-gradient);stroke-width:1px;}#mm4844336eeb1c [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm4844336eeb1c [data-look="neo"].node .neo-line path{stroke:#999;filter:none;}#mm4844336eeb1c [data-look="neo"].node circle{stroke:url(#mm4844336eeb1c-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm4844336eeb1c [data-look="neo"].node circle .state-start{fill:#000000;}#mm4844336eeb1c [data-look="neo"].icon-shape .icon{fill:url(#mm4844336eeb1c-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm4844336eeb1c [data-look="neo"].icon-shape .icon-neo path{stroke:url(#mm4844336eeb1c-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm4844336eeb1c :root{--mermaid-font-family:"Segoe UI",Arial,sans-serif;}</style><g><defs><marker id="mm4844336eeb1c_stateDiagram-barbEnd" refX="19" refY="7" markerWidth="20" markerHeight="14" markerUnits="strokeWidth" orient="auto"><path d="M 19,7 L11,14 L13,7 L11,0 Z"></path></marker></defs><defs><marker id="mm4844336eeb1c_stateDiagram-barbEnd-margin" refX="17" refY="7" markerWidth="20" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto"><path d="M 19,7 L11,14 L13,7 L11,0 Z" fill="#000"></path></marker></defs><g class="root"><g class="clusters"></g><g class="edges edgePaths"><path d="M314.91927083333326,26L314.91927083333326,125.5" id="mm4844336eeb1c-edge0" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 99.5 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge0" data-points="W3sieCI6MzE0LjkxOTI3MDgzMzMzMzI2LCJ5IjoyNn0seyJ4IjozMTQuOTE5MjcwODMzMzMzMjYsInkiOjEzMX1d" data-look="neo" marker-end="url(#mm4844336eeb1c_stateDiagram-barbEnd-margin)"></path><path d="M246.91927083333326,147.8257575757576L246.9192708333333,147.57954545454547Q246.9192708333333,147.33333333333334 246.67305871212116,147.33333333333334L229.08593749999994,147.33333333333334Q226.9192708333333,147.33333333333334 226.9192708333333,149.5L226.9192708333333,149.5Q226.9192708333333,151.66666666666669 229.08593749999994,151.66666666666669L241.4192708333333,151.66666666666669" id="mm4844336eeb1c-edge1" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 37.6003532409668 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge1" data-points="W3sieCI6MjQ2LjkxOTI3MDgzMzMzMzI2LCJ5IjoxNDcuODI1NzU3NTc1NzU3Nn0seyJ4IjoyNDYuOTE5MjcwODMzMzMzMywieSI6MTQ3LjMzMzMzMzMzMzMzMzM0fSx7IngiOjIyNi45MTkyNzA4MzMzMzMzLCJ5IjoxNDcuMzMzMzMzMzMzMzMzMzR9LHsieCI6MjI2LjkxOTI3MDgzMzMzMzMsInkiOjE1MS42NjY2NjY2NjY2NjY2OX0seyJ4IjoyNDYuOTE5MjcwODMzMzMzMywieSI6MTUxLjY2NjY2NjY2NjY2NjY5fV0=" data-look="neo" marker-end="url(#mm4844336eeb1c_stateDiagram-barbEnd-margin)"></path><path d="M280.1192708333333,168L280.1192708333333,180.92893218813452Q280.1192708333333,188 273.0482030214678,188L84.07106781186548,188Q77,188 77,195.07106781186548L77,283.5289306622556Q77,290.5999984741211 84.07106781186548,290.5999984741211L140.26356760480118,290.5999984741211Q147.33463541666666,290.5999984741211 147.33463541666666,297.67106628598657L147.33463541666666,305.0999984741211" id="mm4844336eeb1c-edge2" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 399.8973388671875 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge2" data-points="W3sieCI6MjgwLjExOTI3MDgzMzMzMzMsInkiOjE2OH0seyJ4IjoyODAuMTE5MjcwODMzMzMzMywieSI6MTg4fSx7IngiOjc3LCJ5IjoxODh9LHsieCI6NzcsInkiOjI5MC41OTk5OTg0NzQxMjExfSx7IngiOjE0Ny4zMzQ2MzU0MTY2NjY2NiwieSI6MjkwLjU5OTk5ODQ3NDEyMTF9LHsieCI6MTQ3LjMzNDYzNTQxNjY2NjY2LCJ5IjozMTAuNTk5OTk4NDc0MTIxMX1d" data-look="neo" marker-end="url(#mm4844336eeb1c_stateDiagram-barbEnd-margin)"></path><path d="M186.00130208333331,310.5999984741211L186.00130208333331,297.67106628598657Q186.00130208333331,290.5999984741211 193.0723698951988,290.5999984741211L249.26486968813452,290.5999984741211Q256.3359375,290.5999984741211 256.3359375,283.5289306622556L256.3359375,215.07106781186548Q256.3359375,208 263.4070053118655,208L296.2482030214678,208Q303.3192708333333,208 303.3192708333333,200.92893218813452L303.3192708333333,173.5" id="mm4844336eeb1c-edge3" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 243.76141357421875 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge3" data-points="W3sieCI6MTg2LjAwMTMwMjA4MzMzMzMxLCJ5IjozMTAuNTk5OTk4NDc0MTIxMX0seyJ4IjoxODYuMDAxMzAyMDgzMzMzMzEsInkiOjI5MC41OTk5OTg0NzQxMjExfSx7IngiOjI1Ni4zMzU5Mzc1LCJ5IjoyOTAuNTk5OTk4NDc0MTIxMX0seyJ4IjoyNTYuMzM1OTM3NSwieSI6MjA4fSx7IngiOjMwMy4zMTkyNzA4MzMzMzMzLCJ5IjoyMDh9LHsieCI6MzAzLjMxOTI3MDgzMzMzMzMsInkiOjE2OH1d" data-look="neo" marker-end="url(#mm4844336eeb1c_stateDiagram-barbEnd-margin)"></path><path d="M326.5192708333333,168L326.5192708333333,200.92893218813452Q326.5192708333333,208 333.59033864519876,208L364.9107030214679,208Q371.98177083333337,208 371.98177083333337,215.07106781186548L371.98177083333337,249.29999923706055L371.98177083333337,400.0999984741211L371.98177083333337,447.0999984741211" id="mm4844336eeb1c-edge4" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 319.2342834472656 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge4" data-points="W3sieCI6MzI2LjUxOTI3MDgzMzMzMzMsInkiOjE2OH0seyJ4IjozMjYuNTE5MjcwODMzMzMzMywieSI6MjA4fSx7IngiOjM3MS45ODE3NzA4MzMzMzMzNywieSI6MjA4fSx7IngiOjM3MS45ODE3NzA4MzMzMzMzNywieSI6MjQ5LjI5OTk5OTIzNzA2MDU1fSx7IngiOjM3MS45ODE3NzA4MzMzMzMzNywieSI6NDAwLjA5OTk5ODQ3NDEyMTF9LHsieCI6MzcxLjk4MTc3MDgzMzMzMzM3LCJ5Ijo0NTIuNTk5OTk4NDc0MTIxMX1d" data-look="neo" marker-end="url(#mm4844336eeb1c_stateDiagram-barbEnd-margin)"></path><path d="M166.66796875,347.5999984741211L166.66796875,425.5289306622556Q166.66796875,432.5999984741211 173.73903656186548,432.5999984741211L335.9107030214679,432.5999984741211Q342.98177083333337,432.5999984741211 342.98177083333337,439.67106628598657L342.98177083333337,447.0999984741211" id="mm4844336eeb1c-edge5" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 270.48553466796875 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge5" data-points="W3sieCI6MTY2LjY2Nzk2ODc1LCJ5IjozNDcuNTk5OTk4NDc0MTIxMX0seyJ4IjoxNjYuNjY3OTY4NzUsInkiOjQzMi41OTk5OTg0NzQxMjExfSx7IngiOjM0Mi45ODE3NzA4MzMzMzMzNywieSI6NDMyLjU5OTk5ODQ3NDEyMTF9LHsieCI6MzQyLjk4MTc3MDgzMzMzMzM3LCJ5Ijo0NTIuNTk5OTk4NDc0MTIxMX1d" data-look="neo" marker-end="url(#mm4844336eeb1c_stateDiagram-barbEnd-margin)"></path><path d="M400.98177083333337,452.5999984741211L400.98177083333337,439.67106628598657Q400.98177083333337,432.5999984741211 408.05283864519885,432.5999984741211L499.03570302146784,432.5999984741211Q506.1067708333333,432.5999984741211 506.1067708333333,425.5289306622556L506.1067708333333,400.0999984741211L506.1067708333333,249.29999923706055L506.1067708333333,195.07106781186548Q506.1067708333333,188 499.03570302146784,188L356.7903386451988,188Q349.7192708333333,188 349.7192708333333,180.92893218813452L349.7192708333333,173.5" id="mm4844336eeb1c-edge6" class="edge-thickness-normal edge-pattern-solid transition" style="stroke-dasharray: 0 0 529.9559326171875 0; stroke-dashoffset: 0;fill:none;;;fill:none" data-edge="true" data-et="edge" data-id="edge6" data-points="W3sieCI6NDAwLjk4MTc3MDgzMzMzMzM3LCJ5Ijo0NTIuNTk5OTk4NDc0MTIxMX0seyJ4Ijo0MDAuOTgxNzcwODMzMzMzMzcsInkiOjQzMi41OTk5OTg0NzQxMjExfSx7IngiOjUwNi4xMDY3NzA4MzMzMzMzLCJ5Ijo0MzIuNTk5OTk4NDc0MTIxMX0seyJ4Ijo1MDYuMTA2NzcwODMzMzMzMywieSI6NDAwLjA5OTk5ODQ3NDEyMTF9LHsieCI6NTA2LjEwNjc3MDgzMzMzMzMsInkiOjI0OS4yOTk5OTkyMzcwNjA1NX0seyJ4Ijo1MDYuMTA2NzcwODMzMzMzMywieSI6MTg4fSx7IngiOjM0OS43MTkyNzA4MzMzMzMzLCJ5IjoxODh9LHsieCI6MzQ5LjcxOTI3MDgzMzMzMzMsInkiOjE2OH1d" data-look="neo" marker-end="url(#mm4844336eeb1c_stateDiagram-barbEnd-margin)"></path></g><g class="edgeLabels"><g class="edgeLabel" transform="translate(314.46614583333326, 78.5)"><g class="label" data-id="edge0" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-55.046875" y="-3" width="110.09375" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">"session</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> starts"</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(137.2239583333333, 149.5)"><g class="label" data-id="edge1" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-85.6953125" y="-3" width="171.390625" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">"each</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> turn</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> adds</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> results"</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(76.66796875, 249.29999923706055)"><g class="label" data-id="edge2" transform="translate(-0.21484375, -18.299999237060547)"><g><rect class="background" style="" x="-64.453125" y="-3" width="129.3359375" height="42.599998474121094"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">"auto-compact</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> or</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">/compact"</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(255.89843749999997, 249.29999923706055)"><g class="label" data-id="edge3" transform="translate(0, -18.299999237060547)"><g><rect class="background" style="" x="-94.5625" y="-3" width="189.125" height="42.599998474121094"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">"summary</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> plus</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> re-injected</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">files"</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(371.54427083333337, 329.0999984741211)"><g class="label" data-id="edge4" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-28.0625" y="-3" width="56.125" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">"/clear"</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(166.23046875, 400.0999984741211)"><g class="label" data-id="edge5" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-28.0625" y="-3" width="56.125" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">"/clear"</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(506.03645833333337, 329.0999984741211)"><g class="label" data-id="edge6" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-86.4296875" y="-3" width="172.859375" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">"instruction</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> files</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> reload"</tspan></tspan></text></g></g></g></g><g class="nodes"><g class="node default" id="mm4844336eeb1c-state-root_start-0" data-look="neo" transform="translate(314.91927083333326, 19)"><circle class="state-start" r="7" width="14" height="14"></circle></g><g class="node  statediagram-state" id="mm4844336eeb1c-state-Filling-6" data-look="neo" transform="translate(314.91927083333326, 149.5)"><rect class="basic label-container" style="" rx="5" ry="5" x="-68" y="-18.5" width="136" height="37"></rect><g class="label" style="" transform="translate(-60, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Filling</tspan></tspan></text></g></g></g><g class="node  statediagram-state" id="mm4844336eeb1c-state-Compacted-5" data-look="neo" transform="translate(166.66796875, 329.0999984741211)"><rect class="basic label-container" style="" rx="5" ry="5" x="-68" y="-18.5" width="136" height="37"></rect><g class="label" style="" transform="translate(-60, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Compacted</tspan></tspan></text></g></g></g><g class="node  statediagram-state" id="mm4844336eeb1c-state-Empty-6" data-look="neo" transform="translate(371.98177083333337, 471.0999984741211)"><rect class="basic label-container" style="" rx="5" ry="5" x="-68" y="-18.5" width="136" height="37"></rect><g class="label" style="" transform="translate(-60, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Empty</tspan></tspan></text></g></g></g></g></g></g><defs><filter id="mm4844336eeb1c-drop-shadow" height="130%" width="130%"><feDropShadow dx="4" dy="4" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><defs><filter id="mm4844336eeb1c-drop-shadow-small" height="150%" width="150%"><feDropShadow dx="2" dy="2" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><linearGradient id="mm4844336eeb1c-gradient" gradientUnits="objectBoundingBox" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="hsl(0, 0%, 83.3333333333%)" stop-opacity="1"></stop><stop offset="100%" stop-color="hsl(0, 0%, 88.9215686275%)" stop-opacity="1"></stop></linearGradient></svg>
+  <figcaption>The window only grows until you compact it into a summary or clear it; only a clear drops the whole conversation.</figcaption>
+</figure>
+    <h3>Your three manual levers</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Command</th><th>What it does</th><th>What you keep</th><th>What you lose</th></tr>
+      <tr><td><code>/compact [instructions]</code></td><td>Summarises the conversation now. Instructions steer the summary: <code>/compact keep the failing test names and the fix plan</code>.</td><td>Same session. System prompt, project-root CLAUDE.md, unscoped rules, auto memory and skill descriptions are re-injected from disk. Up to five recently edited files are re-read. Invoked skill bodies come back capped at 5,000 tokens each.</td><td>Exact wording of earlier turns, tool output details, path-scoped rules and subfolder CLAUDE.md files (they reload only when a matching file is touched again), and anything the summary judged unimportant.</td></tr>
+      <tr><td><code>/clear [name]</code></td><td>Starts a new conversation with empty context. The old one stays in the <code>/resume</code> picker.</td><td>Instruction files and memory, loaded fresh.</td><td>The whole conversation.</td></tr>
+      <tr><td>New session or subagent</td><td>A separate context window from the start.</td><td>Instruction files.</td><td>Everything in your current conversation, unless you write it into the prompt.</td></tr>
+    </table></div>
+    <p><code>/compact</code> also works headless on a resumed session: <code>claude -p "/compact ..." --resume &lt;id&gt;</code> returns a result with <code>local_command</code> "compact" and a zero <code>usage</code> block. In Lab 4 it took the window from about 32,000 to about 6,400 tokens, and the next turn still listed all four files and their values, because the compact instructions asked for exactly that.</p>
+    <p>A CLAUDE.md section titled "Compact Instructions" steers every automatic compaction the same way. Rules that must survive compaction belong in the project-root CLAUDE.md or an unscoped rule, never only in the conversation.</p>
+    <aside class="rule">Clear between unrelated tasks; compact with instructions inside one long task; never rely on the conversation to hold a rule.</aside>
+    <aside class="trap">Telling the model a constraint in turn 2 ("don't touch the prod config") and finding it ignored after an auto-compaction in turn 80. The summary kept the task and dropped the aside.</aside>
+  </div>
+
+  <div class="lesson" id="m1-l5" data-title="When more context makes answers worse" data-minutes="15">
+    <h3>A big window is not a good memory</h3>
+    <p>A 1M-token window means the request is accepted, not that every token gets equal attention. The model weighs everything in the prompt against everything else. Three effects follow, and all three get worse as the context grows.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Effect</th><th>Mechanism</th><th>What you see</th></tr>
+      <tr><td>Position</td><td>Models attend most reliably to the start and the end of a long prompt. Material in the middle of a long run of tool output is the most likely to be missed.</td><td>A rule from the middle of a 900-line instruction file is ignored; the detail from the third of eight file reads is misquoted.</td></tr>
+      <tr><td>Dilution</td><td>Every irrelevant token competes with the relevant ones. Thirty near-identical rules make each one weaker.</td><td>Adherence falls as CLAUDE.md grows. The documentation's 200-line guidance exists because of this.</td></tr>
+      <tr><td>Stale content</td><td>Old instructions, old file contents and abandoned plans stay in the window and look exactly as authoritative as new ones.</td><td>The model edits code against the version of a file it read an hour ago, or follows a plan you rejected.</td></tr>
+    </table></div>
+    <p>Claude Code mitigates the stale-file case with a system reminder when a file it read changes on disk. It cannot know that the plan you discussed at turn 10 was replaced verbally at turn 30.</p>
+
+    <h3>Placing what matters</h3>
+    <ul>
+      <li><b>The task goes last and is specific.</b> Your prompt is the end of the request. Name the file, the function, the acceptance test. "Fix the timeout in <code>gate/upstream.go</code> so <code>TestBillingRetry</code> passes" beats "fix the bug we talked about".</li>
+      <li><b>Standing rules go in instruction files, at the top.</b> Put the few rules that cause damage when missed at the start of CLAUDE.md, under a clear heading. The same applies to SKILL.md: after compaction a skill body is cut to its first 5,000 tokens.</li>
+      <li><b>Restate a constraint when it matters.</b> Repeating "read-only: do not modify files" in the prompt that needs it costs a dozen tokens and puts the rule at the end of the window.</li>
+      <li><b>Keep bulk out.</b> Ask for <code>head</code>, a filtered search, or a summary instead of a full log. Send a large investigation to a subagent: it reads in its own window and returns only its report. The module Headless runs and subagents covers how.</li>
+      <li><b>Reset when the topic changes.</b> A fresh window with a two-line handoff note outperforms a long window full of the previous task.</li>
+    </ul>
+    <aside class="rule">Put the instruction where the model looks: the top of an instruction file for standing rules, the end of the prompt for this task.</aside>
+    <aside class="trap">Answering "the model ignored my rule" by adding the rule again in a second place in CLAUDE.md. That makes the file longer and the rule no stronger. Shorten the file, make the rule concrete, or turn it into a hook.</aside>
+  </div>
+
+  <div class="lesson" id="m1-l6" data-title="Grounding: make it read before it answers" data-minutes="25">
+    <h3>The confident wrong answer</h3>
+    <p>Ask a model about a file it cannot see and it rarely says "I cannot see it". It produces the most likely text. Lab 3 asks Haiku about a small proxy config, <code>acme-gate.conf</code>, in which <code>/invoice/</code> routes to a billing upstream with <code>read_timeout = 180s</code> and <code>retries = 0</code>. With no tools at all (<code>--tools=</code>), these were real answers across the lab runs:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Run</th><th>What came back</th><th>Why it is wrong</th></tr>
+      <tr><td>No tools</td><td>"I couldn't find <code>acme-gate.conf</code> in this workspace, <code>C:\...</code>, or your user profile."</td><td>It searched nothing. The result showed <code>num_turns</code> 1 and the init line listed 0 tools. The claim of a search was invented.</td></tr>
+      <tr><td>No tools</td><td>Text shaped like a tool call (<code>Glob</code> with <code>**/acme-gate.conf</code>) followed by a made-up "No files found" result.</td><td>A transcript of work that never happened, printed as the answer.</td></tr>
+      <tr><td>Read allowed, stale notes in the prompt, evidence required</td><td>"Read timeout is 180s (<code>acme-gate.conf:13</code>), and retries are 0 (<code>acme-gate.conf:14</code>). The notes saying 60s and 3 are out of date."</td><td>Correct, and checkable in five seconds.</td></tr>
+    </table></div>
+    <p>The failure is not that the model lies. It is that a fluent answer and a grounded answer look the same on the screen. Your defence is to make grounding the default and to make the evidence visible.</p>
+
+    <h3>Read on demand versus stuffing</h3>
+    <p>There are two ways to put source material in front of the model.</p>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>Stuff it in up front</th><th>Let the model read on demand</th></tr>
+      <tr><td>How</td><td>Paste files into the prompt, import them in CLAUDE.md, pipe them on stdin.</td><td>Grant Read, Grep and Glob; ask a question; the model searches and reads what it needs.</td></tr>
+      <tr><td>Cost</td><td>Every token on every request, relevant or not.</td><td>Only what was read, from the turn it was read.</td></tr>
+      <tr><td>Freshness</td><td>A snapshot from when you pasted it.</td><td>The file as it is now.</td></tr>
+      <tr><td>Risk</td><td>Dilution; stale copies.</td><td>The model skips the read and answers from prior. Counter it with the prompt below.</td></tr>
+      <tr><td>Good for</td><td>A short, stable spec the whole task depends on.</td><td>Codebases, configs, logs, anything large or changing.</td></tr>
+    </table></div>
+    <p>Claude Code is built for the second way. Its tools are a search engine over your files, used at the moment of need.</p>
+
+    <h3>Retrieval and RAG, honestly</h3>
+    <p>Retrieval-augmented generation is the same idea run by a program instead of the model: split documents into chunks, index them (often by embedding similarity), fetch the top matches for a question, and paste them into the prompt. It is the right tool when the corpus is too large to search with grep, lives outside the file system, or the caller is not an agent with tools. Its weaknesses are the chunker and the ranker: the passage that answers the question can be split across chunks or ranked eleventh, and the model then answers from what it was given, confidently. In an agent session with file tools, the model's own Grep and Read are a retrieval system whose queries you can see and whose results you can check. Prefer them until the corpus forces you elsewhere. MCP servers that expose a search tool are the usual bridge to corpora that are not files.</p>
+
+    <h3>Asking for evidence</h3>
+    <p>Three sentences turn an answer you have to trust into one you can check:</p>
+    <pre><code>Read the file first. Cite file:line for each value you report.
+If the file does not say, answer "not in the file".</code></pre>
+    <p>Then check a citation. <code>Select-String -Path acme-gate.conf -Pattern read_timeout</code> printed line 13 as <code>read_timeout = 180s</code>, matching the claim. A citation that points at the wrong line is your signal that the rest needs checking too. For anything that matters (a firewall rule, a retention setting, a version pin) make "evidence or it did not happen" the rule, and put that rule in CLAUDE.md.</p>
+    <aside class="rule">No read, no answer: require file:line evidence for any claim about your systems, and spot-check one citation.</aside>
+    <aside class="trap">Removing tools to make a run "safe" and then trusting its answer. A model with no tools has nothing but its prior. It will still answer, and it may tell you it looked.</aside>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m1-lab1" data-title="Measure the fixed overhead of an empty session" data-minutes="15">
+      <p class="goal">Run one tiny prompt in an empty folder and read what loaded, how big it is, and which part is cached, from the init line, the <code>usage</code> block and <code>/context</code>.</p>
+      <ol class="steps">
+        <li><p>Make an empty lab folder and move into it.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m1/lab1 | Out-Null; cd ~/bootcamp-labs/m1/lab1</code></pre></li>
+        <li><p>Run one prompt with stream-json output. Every headless run in this module carries <code>--setting-sources project</code> and <code>--strict-mcp-config</code>: the first loads only settings from the lab folder, so your personal settings, hooks and user CLAUDE.md stay out of the measurement; the second loads no MCP servers except ones you pass with <code>--mcp-config</code>. <code>--model haiku</code> keeps the runs cheap.</p>
+          <pre><code>claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format stream-json --verbose &gt; run1.jsonl</code></pre>
+          <p class="expect"><b>Expected:</b> a file of about four JSON lines: <code>system/init</code>, an assistant message, a rate-limit event on a plan login, and the <code>result</code>.</p></li>
+        <li><p>Read the init line: what loaded.</p>
+          <pre><code>$lines = Get-Content run1.jsonl
+$init = $lines[0] | ConvertFrom-Json
+"tools: $($init.tools.Count)  skills: $($init.skills.Count)  mcp_servers: $(@($init.mcp_servers).Count)  agents: $($init.agents.Count)"
+$init.memory_paths</code></pre>
+          <p class="expect"><b>Expected:</b> about 26 tools, 17 skills, 0 MCP servers and 6 agents on Claude Code 2.1.322 for Windows. <code>memory_paths</code> shows only an <code>auto</code> folder: no CLAUDE.md loaded.</p></li>
+        <li><p>Read the <code>usage</code> block on the last line: how big it was.</p>
+          <pre><code>$u = ($lines[-1] | ConvertFrom-Json).usage
+$u | Select-Object input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens
+"prompt side: $($u.input_tokens + $u.cache_creation_input_tokens + $u.cache_read_input_tokens)"</code></pre>
+          <p class="expect"><b>Expected:</b> about 2 input, 7,200 cache write, 14,500 cache read and 4 output tokens; prompt side about 21,700. If this is your first run in a while, more of it is cache write.</p></li>
+        <li><p>Ask for the category breakdown, headless.</p>
+          <pre><code>claude -p "/context" --model haiku --setting-sources project --strict-mcp-config</code></pre>
+          <p class="expect"><b>Expected:</b> a Markdown table with total about 17.2k of 1m; System prompt about 3.4k, System tools about 11.6k, System tools (deferred) about 13.8k, Skills about 2.2k, Messages 10, Autocompact buffer 33k.</p></li>
+        <li><p>Run the plain prompt again with JSON output and compare the buckets.</p>
+          <pre><code>claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json &gt; run2.json
+(Get-Content run2.json -Raw | ConvertFrom-Json).usage | Select-Object input_tokens, cache_creation_input_tokens, cache_read_input_tokens</code></pre>
+          <p class="expect"><b>Expected:</b> the same prompt side within a few tokens, with more of it as cache read: about 4,500 cache write and 17,200 cache read in the lab run.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>Which single category is largest in your <code>/context</code> output? On a default install it is System tools, about two thirds of the total.</li>
+          <li>Add the non-deferred categories. Do they equal the total? They should: deferred tools are listed but not counted.</li>
+          <li>Why is the <code>usage</code> prompt side (about 21,700) larger than <code>/context</code> (about 17.2k)? <code>/context</code> is an estimate by category; <code>usage</code> is what the API counted, including per-session text such as environment details.</li>
+          <li>Why did run 2 still write some cache? The part of the prefix unique to each new session (its first message, environment details) is new every time. Only the shared part is read.</li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m1-lab2" data-title="Measure what a CLAUDE.md costs per request" data-minutes="20">
+      <p class="goal">Add a 300-line CLAUDE.md to a lab folder, measure the tokens it adds to every request, then show that imports cost the same and HTML comments cost nothing.</p>
+      <ol class="steps">
+        <li><p>Make the folder and take a baseline.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m1/lab2 | Out-Null; cd ~/bootcamp-labs/m1/lab2
+function Prompt-Side($file) { $u = (Get-Content $file -Raw | ConvertFrom-Json).usage; $u.input_tokens + $u.cache_creation_input_tokens + $u.cache_read_input_tokens }
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json &gt; before.json
+Prompt-Side before.json</code></pre>
+          <p class="expect"><b>Expected:</b> about 21,700, the same overhead as Lab 1.</p></li>
+        <li><p>Write a 300-rule CLAUDE.md.</p>
+          <pre><code>$rules = foreach ($i in 1..300) { "- Rule {0:D3}: in the acme deploy scripts, service web-{1:D2} restarts only after its health check on port {2} passes twice in a row." -f $i, ($i % 40), (8000 + $i) }
+Set-Content -Encoding utf8 CLAUDE.md -Value (@('# Acme deploy rules', '') + $rules)
+(Get-Content CLAUDE.md).Count; (Get-Item CLAUDE.md).Length</code></pre>
+          <p class="expect"><b>Expected:</b> 302 lines, about 38,700 bytes.</p></li>
+        <li><p>Measure again, twice.</p>
+          <pre><code>claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json &gt; after.json
+(Prompt-Side after.json) - (Prompt-Side before.json)
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json &gt; after2.json
+(Get-Content after2.json -Raw | ConvertFrom-Json).usage | Select-Object cache_creation_input_tokens, cache_read_input_tokens</code></pre>
+          <p class="expect"><b>Expected:</b> the file adds about 13,900 tokens. On the second run the whole prompt side, about 35,700, was cache read with no cache write: cheap per token, but present on every request.</p></li>
+        <li><p>See it by name.</p>
+          <pre><code>claude -p "/context all" --model haiku --setting-sources project --strict-mcp-config</code></pre>
+          <p class="expect"><b>Expected:</b> a new category <code>Memory files</code> of about 13.8k, and a Memory Files table with one row: type <code>Project</code>, the path of your CLAUDE.md, about 13.8k tokens.</p></li>
+        <li><p>Wrap the rules in an HTML comment, keep one real rule, and measure.</p>
+          <pre><code>Set-Content -Encoding utf8 CLAUDE.md -Value (@('# Acme deploy rules', '', '&lt;!--') + $rules + @('--&gt;', '', '- Deploy only from the main branch.'))
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json &gt; comment.json
+(Prompt-Side comment.json) - (Prompt-Side before.json)</code></pre>
+          <p class="expect"><b>Expected:</b> about 160 tokens. The comment block is stripped before injection.</p></li>
+        <li><p>Move the rules to an imported file and measure.</p>
+          <pre><code>Set-Content -Encoding utf8 deploy-rules.md -Value $rules
+Set-Content -Encoding utf8 CLAUDE.md -Value @('# Acme deploy rules', '', 'Rules: @deploy-rules.md')
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json &gt; import.json
+(Prompt-Side import.json) - (Prompt-Side before.json)</code></pre>
+          <p class="expect"><b>Expected:</b> about 14,000 tokens, slightly more than inline. An import is not a saving.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>How many tokens per line did your CLAUDE.md cost? About 46 in the lab (13,900 / 302). Multiply by your own file's line count for a first estimate.</li>
+          <li>A session makes 60 model calls. On an API key with Haiku 5.5 at $0.10 per million input tokens and cache reads at 0.1x, what do the 13,900 tokens cost if every call reads them from cache? 60 x 13,900 x $0.01 per million, about $0.008. On Opus 5.5 ($4 input, cache read 0.05x) it is about $0.17. Small per session, but it is the same file in every session of every developer, and it dilutes attention at any price.</li>
+          <li>Which change would actually cut the cost: imports, comments, or path-scoped rules? Comments (for notes) and path-scoped rules or skills (for content). Imports cut nothing.</li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m1-lab3" data-title="Compare an ungrounded and a grounded answer" data-minutes="20">
+      <p class="goal">Ask the same question about a made-up config file with no tools and then with Read allowed and evidence required, and check both answers against the file.</p>
+      <ol class="steps">
+        <li><p>Make the folder and write the config.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m1/lab3 | Out-Null; cd ~/bootcamp-labs/m1/lab3
+Set-Content -Encoding utf8 acme-gate.conf -Value @'
+# acme-gate: edge proxy for the acme web tier
+[listen]
+port = 8443
+tls_profile = modern
+
+[upstream web]
+servers = web-01:9080, web-02:9080
+read_timeout = 47s
+retries = 2
+
+[upstream billing]
+servers = bill-01:7311
+read_timeout = 180s
+retries = 0
+
+[routes]
+/api/      -&gt; web
+/billing/  -&gt; billing
+/invoice/  -&gt; billing
+
+[limits]
+max_body = 12m
+idle_close = 75s
+'@
+$q = 'Our edge proxy config is acme-gate.conf. What read timeout and how many retries apply to requests for /invoice/? Answer in two short lines.'
+$notes = 'Notes from last month: the billing upstream in acme-gate.conf has read_timeout = 60s and retries = 3.'</code></pre></li>
+        <li><p>Ask with no tools at all. Write <code>--tools=</code> with the equals sign: Windows PowerShell 5.1 drops an empty <code>""</code> argument, so <code>--tools ""</code> does not reach Claude Code intact.</p>
+          <pre><code>claude -p $q --model haiku --setting-sources project --strict-mcp-config --tools= --max-turns 1 --output-format json &gt; a.json
+$r = Get-Content a.json -Raw | ConvertFrom-Json; $r.result; "turns: $($r.num_turns)"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>turns: 1</code> and no correct values. In the lab runs the result was either text shaped like a tool call (<code>Glob</code> for <code>**/acme-gate.conf</code>) with no real answer, or a statement that the file could not be found in the workspace or the user profile. No search happened: there were no tools.</p></li>
+        <li><p>Add stale notes to the prompt, still with no tools.</p>
+          <pre><code>claude -p "$notes $q" --model haiku --setting-sources project --strict-mcp-config --tools= --max-turns 1 --output-format json &gt; b.json
+$r = Get-Content b.json -Raw | ConvertFrom-Json; $r.result</code></pre>
+          <p class="expect"><b>Expected:</b> no correct values. Depending on the run, the model repeats the notes (60s and 3), prints a fake <code>Grep</code> call as text, or declines. Whatever it says, it has not seen the file.</p></li>
+        <li><p>Same prompt with the notes, Read allowed, and evidence required.</p>
+          <pre><code>claude -p "$notes $q Read the file first and cite file:line for each value." --model haiku --setting-sources project --strict-mcp-config --tools "Read" --allowedTools "Read" --max-turns 3 --output-format json &gt; c.json
+$r = Get-Content c.json -Raw | ConvertFrom-Json; $r.result; "turns: $($r.num_turns)"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>turns: 2</code> (one Read, one answer). "Read timeout is 180s (<code>acme-gate.conf:13</code>), and retries are 0 (<code>acme-gate.conf:14</code>)", with a note that the 60s and 3 in the notes are out of date and that <code>/invoice/</code> routes to billing at line 19.</p></li>
+        <li><p>Check the citations against the file.</p>
+          <pre><code>Select-String -Path acme-gate.conf -Pattern 'read_timeout|retries|/invoice/' | ForEach-Object { "$($_.LineNumber): $($_.Line)" }</code></pre>
+          <p class="expect"><b>Expected:</b> lines 8 and 9 (web: 47s, 2), 13 and 14 (billing: 180s, 0), and 19 (<code>/invoice/ -&gt; billing</code>). The grounded answer's line numbers match.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>What proves run A did not look at the file? <code>num_turns</code> 1 and <code>--tools=</code>: there was no tool to look with. Any claim of a search is invented.</li>
+          <li>A confident answer of "47s and 2" would have been plausible. Why? Those are real values in the file, for the wrong upstream. A model guessing from a partial view, or an earlier read of only the top of the file, produces exactly this kind of wrong answer.</li>
+          <li>Which part of the prompt in run C made the answer checkable? "cite file:line for each value". Without it you get the values but no way to verify them except reading the file yourself.</li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m1-lab4" data-title="Plot a session's growth, then compact it" data-minutes="25">
+      <p class="goal">Resume one headless session for four turns that each read a log file, tabulate the prompt side per turn, compact with instructions, and measure the drop.</p>
+      <ol class="steps">
+        <li><p>Make the folder and four 150-line log files.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m1/lab4 | Out-Null; cd ~/bootcamp-labs/m1/lab4
+foreach ($n in 1..4) {
+  $lines = foreach ($i in 1..150) { "2026-11-0{0} 10:{1:D2}:{2:D2} web-0{0} INFO request id={3} path=/api/orders status=200 ms={4}" -f $n, ($i % 60), (($i * 7) % 60), (100000 + $n * 1000 + $i), (20 + ($i * 13) % 400) }
+  Set-Content -Encoding utf8 "app-$n.log" -Value $lines
+}</code></pre>
+          <p class="expect"><b>Expected:</b> four files of about 12.9KB each.</p></li>
+        <li><p>Define a helper that turns one result into a table row. <code>prompt</code> is the size of the last model call in the turn, which is the window size at the end of that turn.</p>
+          <pre><code>function Row($turn, $file) {
+  $r = Get-Content $file -Raw | ConvertFrom-Json; $u = $r.usage; $last = $u.iterations[-1]
+  [pscustomobject]@{ turn = $turn
+    prompt = $last.input_tokens + $last.cache_creation_input_tokens + $last.cache_read_input_tokens
+    cache_write = $u.cache_creation_input_tokens; cache_read = $u.cache_read_input_tokens
+    output = $u.output_tokens; cost = [math]::Round($r.total_cost_usd, 4) }
+}</code></pre></li>
+        <li><p>Start a session with Read as the only tool, and keep its id.</p>
+          <pre><code>claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --tools "Read" --allowedTools "Read" --output-format json &gt; t0.json
+$sid = (Get-Content t0.json -Raw | ConvertFrom-Json).session_id
+$rows = @(Row 0 t0.json)</code></pre>
+          <p class="expect"><b>Expected:</b> a session id (a UUID). Turn 0's prompt is about 4,800 tokens, far below Lab 1's 21,700, because only one tool definition is loaded.</p></li>
+        <li><p>Resume it four times, reading one file per turn.</p>
+          <pre><code>foreach ($n in 1..4) {
+  claude -p "Read app-$n.log and reply with only the highest ms value in it." --resume $sid --model haiku --setting-sources project --strict-mcp-config --tools "Read" --allowedTools "Read" --max-turns 3 --output-format json &gt; "t$n.json"
+  $rows += Row $n "t$n.json"
+}
+$rows | Format-Table -AutoSize
+$rows | Export-Csv -NoTypeInformation growth.csv</code></pre>
+          <p class="expect"><b>Expected:</b> each answer is 419. The table from the lab run:</p>
+          <pre data-cap="output"><code>turn prompt cache_write cache_read output   cost
+---- ------ ----------- ---------- ------   ----
+   0   4813           0       4811      4 0.0001
+   1  11636        6772       9724    260 0.0016
+   2  18516        6880      23435    140 0.0033
+   3  25335        6819      37134    126 0.0051
+   4  32140        6805      50758     85 0.0070</code></pre>
+          <p>The prompt grows by about 6,800 tokens per file and never shrinks. Cost per turn rises with it. Your cost column will differ with cache state; the prompt column should match within a few tokens.</p></li>
+        <li><p>Compact with instructions, headless, then ask a question that needs what was kept.</p>
+          <pre><code>claude -p "/compact Keep only the file names and the highest ms value found in each." --resume $sid --model haiku --setting-sources project --strict-mcp-config --tools "Read" --allowedTools "Read" --output-format json &gt; compact.json
+(Get-Content compact.json -Raw | ConvertFrom-Json) | Select-Object local_command, num_turns
+claude -p "List the files you read and the value you found in each, one line per file." --resume $sid --model haiku --setting-sources project --strict-mcp-config --tools "Read" --allowedTools "Read" --max-turns 2 --output-format json &gt; t5.json
+(Get-Content t5.json -Raw | ConvertFrom-Json).result
+Row 5 t5.json | Format-Table -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> <code>local_command</code> is <code>compact</code> and <code>num_turns</code> 0. The answer lists app-1.log to app-4.log with 419 each, without reading any file again. Turn 5's prompt is about 6,400 tokens, down from about 32,100.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>What is the slope of your prompt column, in tokens per turn? About 6,800: the size of one log file as tokens. The answers added almost nothing.</li>
+          <li>If this session went on reading one such file per turn, roughly when would it reach the default auto-compact trigger of about 967K? After about 140 turns (967,000 / 6,800). Long before that, every turn would carry tens of thousands of tokens of logs it no longer needs.</li>
+          <li>What did compaction lose? The log contents and the exact wording of every turn. Ask a question about a specific line of app-2.log and the model has to read the file again.</li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m1-lab5" data-title="Audit your own instruction files" data-minutes="30">
+      <p class="goal">Run a measuring script against a project of your own, read its numbers against a checklist, and change the instruction files until the checklist passes.</p>
+      <ol class="steps">
+        <li><p>Save the audit script in the lab folder. It lists every CLAUDE.md, CLAUDE.local.md, AGENTS.md and <code>.claude/rules</code> file under the project with line count, size, imports, HTML comments and backticked file references that do not exist, then asks <code>/context all</code> (from inside the project, project settings only) for the token cost of each file that loads at launch. It writes <code>audit.txt</code> in the lab folder and changes nothing in the project.</p>
+          <pre data-file="~/bootcamp-labs/m1/audit.ps1"><code>param([Parameter(Mandatory)][string]$Project)
+$Project = (Resolve-Path $Project).Path
+$out = New-Object System.Collections.Generic.List[string]
+$files = @(Get-ChildItem -Path $Project -Recurse -File -Force -Include CLAUDE.md, CLAUDE.local.md, AGENTS.md -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '\\(node_modules|\.git)\\' })
+$rules = Join-Path $Project '.claude\rules'
+if (Test-Path $rules) { $files += @(Get-ChildItem $rules -Recurse -File -Filter *.md) }
+$out.Add("FILES")
+foreach ($f in $files) {
+  $text = Get-Content $f.FullName
+  $imports = @($text | Select-String -Pattern '(^|\s)@[\w./~\\-]+' -AllMatches).Count
+  $comments = @($text | Select-String -Pattern '&lt;!--').Count
+  $missing = @()
+  foreach ($m in ($text | Select-String -Pattern '`([\w./-]+\.(md|ps1|sh|json|yml|yaml|txt))`' -AllMatches)) {
+    foreach ($g in $m.Matches) { $p = Join-Path $Project $g.Groups[1].Value; if (-not (Test-Path $p)) { $missing += $g.Groups[1].Value } }
+  }
+  $flag = if ($text.Count -gt 200) { 'OVER 200' } else { 'ok' }
+  $out.Add(("{0}  lines={1} ({2})  bytes={3}  imports={4}  html-comments={5}  missing-refs={6}" -f $f.FullName.Substring($Project.Length), $text.Count, $flag, $f.Length, $imports, $comments, ($missing -join ',')))
+}
+Push-Location $Project
+$ctx = claude -p "/context all" --model haiku --setting-sources project --strict-mcp-config
+Pop-Location
+$out.Add("CONTEXT")
+$ctx | Where-Object { $_ -match 'Memory files|^\| (Project|Local|User|Managed)|System prompt \||System tools \|' } | ForEach-Object { $out.Add($_) }
+$out | Set-Content -Encoding utf8 audit.txt
+$out</code></pre>
+          <p>Save it with your editor, or paste it into <code>Set-Content -Encoding utf8 ~/bootcamp-labs/m1/audit.ps1 -Value @' ... '@</code>.</p></li>
+        <li><p>Optional warm-up: build a sample project with typical faults and audit it first, so you know what the output looks like.</p>
+          <pre><code>cd ~/bootcamp-labs/m1
+New-Item -ItemType Directory -Force sample\docs, sample\.claude\rules | Out-Null
+$body = @('# acme web', '', '## Build', '- Build with `make build`; test with `make test`.', '- Deploy notes are in `docs/deploy-old.md`.', '', '&lt;!-- owner: platform team; review quarterly --&gt;', '', 'Style guide: @docs/style.md', '')
+$body += foreach ($i in 1..200) { "- Layout: src/module{0:D3}/ holds the handlers for feature {0}." -f $i }
+Set-Content -Encoding utf8 sample\CLAUDE.md -Value $body
+Set-Content -Encoding utf8 sample\docs\style.md -Value (@('# Style') + (1..60 | ForEach-Object { "- Style rule $_ : use four spaces in file type $_." }))
+Set-Content -Encoding utf8 sample\.claude\rules\testing.md -Value @('# Testing', '- Always run `make test` before you commit.')
+&amp; .\audit.ps1 -Project sample</code></pre>
+          <p class="expect"><b>Expected:</b></p>
+          <pre data-cap="output"><code>FILES
+\CLAUDE.md  lines=210 (OVER 200)  bytes=12499  imports=1  html-comments=1  missing-refs=docs/deploy-old.md
+\.claude\rules\testing.md  lines=2 (ok)  bytes=59  imports=0  html-comments=0  missing-refs=
+CONTEXT
+| System prompt | 3.4k | 0.3% |
+| System tools | 11.6k | 1.2% |
+| Memory files | 6.2k | 0.6% |
+### Memory Files
+| Project | ...\sample\CLAUDE.md | 4.9k |
+| Project | ...\sample\docs\style.md | 1.3k |
+| Project | ...\sample\.claude\rules\testing.md | 29 |</code></pre>
+          <p>Three faults show: a file over 200 lines, a reference to a file that does not exist, and an imported style guide costing 1.3k on every request. The 200 layout lines are content the model could discover by listing <code>src/</code>.</p></li>
+        <li><p>Run it on your own project. Use a path to a repository you work in.</p>
+          <pre><code>cd ~/bootcamp-labs/m1
+&amp; .\audit.ps1 -Project C:\path\to\your\repo</code></pre>
+          <p class="expect"><b>Expected:</b> one FILES row per instruction file and a CONTEXT section with your <code>Memory files</code> total and one row per file loaded at launch. A repository that uses only AGENTS.md shows it as a memory file when no CLAUDE.md is on the path.</p></li>
+        <li><p>Score each file against this checklist and write the score into <code>audit.txt</code> by hand or in a second file.</p>
+          <div class="tablewrap"><table>
+            <tr><th>#</th><th>Check</th><th>Pass when</th></tr>
+            <tr><td class="num">1</td><td>Length</td><td>Every file is 200 lines or fewer.</td></tr>
+            <tr><td class="num">2</td><td>Total cost</td><td><code>Memory files</code> is a number you can justify line by line. As a starting bar, under 5k.</td></tr>
+            <tr><td class="num">3</td><td>No dead references</td><td><code>missing-refs</code> is empty everywhere.</td></tr>
+            <tr><td class="num">4</td><td>No discoverable content</td><td>No directory tours, dependency lists or architecture overviews the model can get from the tree.</td></tr>
+            <tr><td class="num">5</td><td>Procedures are skills</td><td>No multi-step procedure longer than about ten lines; those are skills.</td></tr>
+            <tr><td class="num">6</td><td>Scoped rules are scoped</td><td>Rules for one part of the tree have <code>paths:</code> frontmatter.</td></tr>
+            <tr><td class="num">7</td><td>Rules are checkable</td><td>Each rule names a command, a path or a value. No "be careful", "write clean code".</td></tr>
+            <tr><td class="num">8</td><td>No contradictions</td><td>No two files give different answers to the same question.</td></tr>
+            <tr><td class="num">9</td><td>Critical rules first</td><td>The rules that cause damage when missed are in the first screen of the root file.</td></tr>
+            <tr><td class="num">10</td><td>Notes are comments</td><td>Ownership and rationale notes are in <code>&lt;!-- --&gt;</code> blocks.</td></tr>
+          </table></div></li>
+        <li><p>Fix what fails: move procedures to skills, add <code>paths:</code> to scoped rules, delete discoverable content, wrap notes in comments. Run the audit again.</p>
+          <pre><code>&amp; .\audit.ps1 -Project C:\path\to\your\repo</code></pre></li>
+      </ol>
+      <p><b>Done when:</b> the second <code>audit.txt</code> shows every file at 200 lines or fewer, no missing references, and a <code>Memory files</code> total lower than the first run, and you have a pass mark on all ten checks. If your files already passed, the done-test is the scored checklist itself.</p>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>Your <code>Memory files</code> total went from A to B tokens. Over a day of 200 model calls, how many prompt tokens is that? 200 x (A - B). On an API key multiply by your model's cache-read price; on a plan it is window share you get back.</li>
+          <li>You moved a 40-line release procedure into a skill. What is still in context every session? Its name and description in the skills listing. The 40 lines load only when the skill is invoked.</li>
+          <li>The audit shows an AGENTS.md but <code>/context</code> does not list it. Why? A CLAUDE.md or CLAUDE.local.md on the path takes precedence, so AGENTS.md is not read. Import it with <code>@AGENTS.md</code> from the CLAUDE.md, or merge them.</li>
+        </ul>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Instruments</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Instrument</th><th>How to get it</th><th>What it tells you</th></tr>
+      <tr><td><code>/context [all]</code></td><td>In a session, or <code>claude -p "/context"</code></td><td>Window by category (System prompt, System tools, System tools (deferred), Memory files, Skills, Messages, Free space, Autocompact buffer); <code>all</code> lists memory files and skills with tokens. An estimate.</td></tr>
+      <tr><td>Init line</td><td><code>--output-format stream-json --verbose</code>, first line</td><td>What loaded: <code>tools</code>, <code>mcp_servers</code>, <code>skills</code>, <code>plugins</code>, <code>agents</code>, <code>slash_commands</code>, <code>memory_paths</code>, <code>model</code>, <code>permissionMode</code>, <code>apiKeySource</code>.</td></tr>
+      <tr><td><code>usage</code> block</td><td><code>--output-format json</code> result</td><td>Billed counts: <code>input_tokens</code>, <code>cache_creation_input_tokens</code>, <code>cache_read_input_tokens</code>, <code>output_tokens</code>, <code>cache_creation.ephemeral_1h_input_tokens</code> / <code>ephemeral_5m_input_tokens</code>, per-call <code>iterations</code>. Summed across calls in a turn.</td></tr>
+      <tr><td><code>/memory</code></td><td>In a session</td><td>Lists and opens instruction files; toggles auto memory.</td></tr>
+      <tr><td><code>/doctor prompt-audit</code></td><td>In a session</td><td>Reviews instruction files for stale or conflicting content; proposes edits.</td></tr>
+    </table></div>
+
+    <h3>Flags and commands used</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Flag or command</th><th>Effect</th></tr>
+      <tr><td><code>--setting-sources project</code></td><td>Load only project settings (and project instruction files); user and local settings stay out.</td></tr>
+      <tr><td><code>--strict-mcp-config</code></td><td>Use only MCP servers passed with <code>--mcp-config</code>.</td></tr>
+      <tr><td><code>--tools "Read"</code>, <code>--tools=</code></td><td>Limit the built-in tool set; <code>--tools=</code> gives no tools (use the equals form in PowerShell 5.1).</td></tr>
+      <tr><td><code>--allowedTools "Read"</code></td><td>Pre-approve tools so headless runs do not stop for permission.</td></tr>
+      <tr><td><code>--resume &lt;id&gt;</code></td><td>Continue a session by id, same session id.</td></tr>
+      <tr><td><code>--append-system-prompt</code></td><td>Add text to the system prompt.</td></tr>
+      <tr><td><code>--autocompact &lt;auto|tokens&gt;</code>, <code>/autocompact</code></td><td>Set the auto-compact trigger (100K to 1M). Also <code>autoCompactWindow</code>, <code>CLAUDE_CODE_AUTO_COMPACT_WINDOW</code>.</td></tr>
+      <tr><td><code>/compact [instructions]</code></td><td>Summarise now, steered by instructions. Works headless with <code>--resume</code>.</td></tr>
+      <tr><td><code>/clear [name]</code></td><td>New empty conversation; old one stays in <code>/resume</code>.</td></tr>
+      <tr><td><code>/rewind</code></td><td>Roll back, or summarise from or up to a chosen message.</td></tr>
+    </table></div>
+
+    <h3>Instruction file locations</h3>
+    <div class="tablewrap"><table>
+      <tr><th>File</th><th>When it loads</th><th>Notes</th></tr>
+      <tr><td>Managed CLAUDE.md</td><td>Launch</td><td>Cannot be excluded.</td></tr>
+      <tr><td><code>~/.claude/CLAUDE.md</code></td><td>Launch</td><td>Personal, all projects.</td></tr>
+      <tr><td><code>CLAUDE.md</code>, <code>.claude/CLAUDE.md</code> (here and above)</td><td>Launch</td><td>Root first, working folder last.</td></tr>
+      <tr><td><code>CLAUDE.local.md</code></td><td>Launch</td><td>After CLAUDE.md in the same folder; gitignore it.</td></tr>
+      <tr><td><code>.claude/rules/*.md</code></td><td>Launch, or on demand with <code>paths:</code></td><td>Skipped when <code>project</code> is not in <code>--setting-sources</code>.</td></tr>
+      <tr><td><code>sub/CLAUDE.md</code></td><td>On demand</td><td>When a file in <code>sub/</code> is read or edited.</td></tr>
+      <tr><td><code>AGENTS.md</code></td><td>Launch, only if no CLAUDE.md or CLAUDE.local.md on the path</td><td>Or import it: <code>@AGENTS.md</code>.</td></tr>
+      <tr><td>Auto memory <code>MEMORY.md</code></td><td>Launch</td><td>First 200 lines or 25KB only.</td></tr>
+    </table></div>
+
+    <h3>Numbers from the labs (Claude Code 2.1.322, Haiku, Windows)</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Measure</th><th class="num">Value</th></tr>
+      <tr><td>Prompt side, empty folder, default tools</td><td class="num">about 21,700</td></tr>
+      <tr><td>Prompt side, empty folder, Read only</td><td class="num">about 4,800</td></tr>
+      <tr><td>300-line CLAUDE.md (38.7KB)</td><td class="num">about 13,900 per request</td></tr>
+      <tr><td>Same rules inside an HTML comment</td><td class="num">about 160</td></tr>
+      <tr><td>Same rules as an <code>@</code> import</td><td class="num">about 14,000</td></tr>
+      <tr><td>One 150-line log file read (12.9KB)</td><td class="num">about 6,800, every later request</td></tr>
+      <tr><td>Default auto-compact trigger, 1M models</td><td class="num">about 967K</td></tr>
+    </table></div>
+
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>The model ignores a CLAUDE.md rule.</td><td>File too long, rule vague, contradicted elsewhere, or file not loaded.</td><td>Check <code>/context all</code> Memory files; shorten; make the rule concrete; remove the conflict; use a hook if it must always happen.</td></tr>
+      <tr><td>A rule worked early and stopped later.</td><td>It was only in the conversation, or in a path-scoped rule, and compaction summarised it away.</td><td>Move it to the project-root CLAUDE.md or an unscoped rule; add Compact Instructions.</td></tr>
+      <tr><td>Confident answer about a file that is wrong.</td><td>The model did not read the file, or read an old version earlier in the session.</td><td>Require a read and <code>file:line</code> evidence; check one citation.</td></tr>
+      <tr><td>A run with no tools says it searched.</td><td>Fabricated action; it had nothing to search with.</td><td>Trust <code>num_turns</code> and the init line, not the prose.</td></tr>
+      <tr><td>Every turn gets slower and dearer.</td><td>Tool results piling up in the window.</td><td><code>/compact</code> with instructions, <code>/clear</code> between tasks, filtered reads, subagents for bulk.</td></tr>
+      <tr><td>Splitting CLAUDE.md into imports did not reduce cost.</td><td>Imports load with the importing file.</td><td>Path-scoped rules or skills.</td></tr>
+      <tr><td>AGENTS.md is not read.</td><td>A CLAUDE.md or CLAUDE.local.md exists on the path.</td><td>Add <code>@AGENTS.md</code> to the CLAUDE.md.</td></tr>
+      <tr><td>Headless overhead is large for a tiny job.</td><td>Default tool set and skills listing in every request.</td><td>Pass <code>--tools</code> with only what the job needs.</td></tr>
+      <tr><td><code>--tools ""</code> behaves oddly in PowerShell 5.1.</td><td>The empty argument is dropped before Claude Code sees it.</td><td>Write <code>--tools=</code>.</td></tr>
+    </table></div>
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+      <li>Claude Code docs, "How Claude remembers your project": <a href="https://code.claude.com/docs/en/memory" target="_blank" rel="noopener">code.claude.com/docs/en/memory</a></li>
+      <li>Claude Code docs, "How Claude Code works": <a href="https://code.claude.com/docs/en/how-claude-code-works" target="_blank" rel="noopener">code.claude.com/docs/en/how-claude-code-works</a></li>
+      <li>Claude Code docs, "Model configuration": <a href="https://code.claude.com/docs/en/model-config" target="_blank" rel="noopener">code.claude.com/docs/en/model-config</a></li>
+      <li>Claude Code docs, "CLI reference": <a href="https://code.claude.com/docs/en/cli-reference" target="_blank" rel="noopener">code.claude.com/docs/en/cli-reference</a></li>
+      <li>Claude Code docs, "Commands": <a href="https://code.claude.com/docs/en/commands" target="_blank" rel="noopener">code.claude.com/docs/en/commands</a></li>
+      <li>Claude Code docs, "Run Claude Code programmatically": <a href="https://code.claude.com/docs/en/headless" target="_blank" rel="noopener">code.claude.com/docs/en/headless</a></li>
+      <li>Measured: every Expected line in the labs comes from a run on Claude Code 2.1.322 on 11 November 2026.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "A teammate's CLAUDE.md is 650 lines. To \"make it lighter\" they split it into a 40-line CLAUDE.md that imports five topic files with @path. What changed in the per-request context cost?", "o": ["It fell to about 40 lines' worth, since imports load on demand", "It fell by about half, since imports are cached separately", "Almost nothing: imported files load at launch with the file that imports them", "It rose sharply, since each import adds a separate system prompt"], "a": 2, "why": "Imports expand into context alongside the importing CLAUDE.md, so the window still carries all 650 lines. Lab 2 measured an import at slightly more than the same text inline. To load content less often, use path-scoped rules or skills."},
+    {"q": "Eighty turns into a session, the model edits a production config you told it in turn 3 never to touch. /context shows the session compacted once. What is the most effective fix for next time?", "o": ["Put the rule in the project-root CLAUDE.md, near the top, and back it with a hook if it must never happen", "Repeat the rule every ten turns", "Raise the auto-compact trigger to 1M so compaction never happens", "Use /clear more often"], "a": 0, "why": "The rule lived only in the conversation, and compaction summarised it away. Project-root CLAUDE.md is re-injected after compaction, and a hook enforces what instructions can only request. Raising the trigger only delays the same loss and grows the window in the meantime."},
+    {"q": "A headless nightly job asks Claude to read one JSON file and write a one-line summary. Its usage shows about 22,000 prompt tokens per run for a 2,000-token file. Which change cuts the most?", "o": ["Switch output format to text", "Add a CLAUDE.md telling the model to be brief", "Move the job to a folder without a git repository", "Pass --tools \"Read\" so only the Read tool definition is sent"], "a": 3, "why": "Most of an empty session's prompt is tool definitions, about 11,600 tokens on a default install. Lab 4 started at about 4,800 with Read only against about 21,700 with the default set. Output format and brevity change the output side, which is tiny here."},
+    {"q": "You ask about the retry count in a service config. The answer is confident, specific and has no citations. The session's tools include Read. What should you do?", "o": ["Accept it: with Read available the model will have looked", "Ask again with \"Read the file first and cite file:line\", then check one citation", "Ask the same question twice and accept it if both answers match", "Lower the temperature and ask again"], "a": 1, "why": "Having a tool available does not prove it was used, and the model can answer from prior or from a stale earlier read. Requiring file:line evidence makes the answer checkable, and checking one citation tells you whether to trust the rest. Two matching ungrounded answers can be the same guess twice."},
+    {"q": "You finished debugging a flaky test and now want to review an unrelated pull request in the same repository. The session is at 180K tokens. What is the best move?", "o": ["/compact with no instructions, then start the review", "Keep going: the window is 1M, so 180K leaves plenty of room", "/clear, then give the review task with the PR number and what to check", "Start a subagent from the current session to do the review, then keep the session for later"], "a": 2, "why": "The debugging context is irrelevant to the review and would dilute it and cost tokens on every request. /clear starts with an empty conversation while instruction files reload. Compaction keeps a summary of work you no longer need; room in the window is not a reason to keep stale content."}
+  ]</script>
+</section>
+
+    <section class="view" id="view-share" hidden>
+      <div>
+        <div class="kicker">Export and share</div>
+        <h2>Hand this module on</h2>
+        <p class="lede">This module is a complete page on its own: briefing, labs, judgment calls and cheat sheet. It names no organization, host, account or internal tool, and every lab runs on plain Claude Code in a scratch folder.</p>
+      </div>
+      <div class="panel">
+        <h3>1. The link</h3>
+        <p>When you are reading this on claude.ai, use Share on this page. A viewer needs only the link. Each module has its own link, so you can send one module to one person. Their progress stays in their own browser and is never visible to you.</p>
+        <h3>2. One HTML file</h3>
+        <p>This module is also the single self-contained file <code>m01-context.html</code>. It needs no server and no network: mail it, put it on a file share, or open it from a USB stick. Offline it falls back to system fonts; everything else is identical, diagrams and instruments included.</p>
+        <div class="row"><button class="btn" type="button" data-save="m01-context.html">Save this module as a file</button><span class="note"></span></div>
+        <h3>3. The whole set</h3>
+        <p>All modules plus the catalogue page (<code>index.html</code>) form one folder of files that link to each other. Keep them together and the links between modules work offline. The same folder works behind any static web server with nothing to configure.</p>
+        <h3>Moving progress between copies</h3>
+        <p>The link, the file and a hosted copy each keep their own progress. Use the progress code on this module's overview to carry it across.</p>
+        
+      </div>
+    </section>
+    <div class="pager" id="pager"></div>
+  </main>
+</div>
+
+<script type="application/json" id="manifest">{"edition":"portable","kind":"file","self":"m1","catalogue":"index.html","modules":[{"id":"m1","title":"Context","sub":"What the model sees, and what it costs to show it","level":"foundation","prereq":[],"minutes":240,"lessons":6,"labs":5,"calls":5,"href":"m01-context.html"},{"id":"m2","title":"Tokens and their price","sub":"Input, output, cache write, cache read","level":"foundation","prereq":[],"minutes":220,"lessons":6,"labs":5,"calls":5,"href":"m02-tokens.html"},{"id":"m3","title":"Skills","sub":"Instructions that load only when needed","level":"practitioner","prereq":["m1"],"minutes":230,"lessons":6,"labs":5,"calls":5,"href":"m03-skills.html"},{"id":"m4","title":"Commands","sub":"Built-in and your own","level":"practitioner","prereq":["m1"],"minutes":245,"lessons":6,"labs":5,"calls":5,"href":"m04-commands.html"},{"id":"m5","title":"Hooks","sub":"Rules the model cannot talk its way past","level":"practitioner","prereq":[],"minutes":200,"lessons":6,"labs":5,"calls":5,"href":"m05-hooks.html"},{"id":"m6","title":"Plugins and marketplaces","sub":"Package it, publish it, control it","level":"advanced","prereq":["m3","m5"],"minutes":255,"lessons":5,"labs":5,"calls":5,"href":"m06-marketplaces.html"},{"id":"m7","title":"Headless runs and subagents","sub":"Claude Code as a program, and as a team","level":"practitioner","prereq":["m1","m2"],"minutes":220,"lessons":6,"labs":5,"calls":5,"href":"m07-agents.html"},{"id":"m8","title":"Orchestration","sub":"Briefs, handoffs, queues and the ways they fail","level":"advanced","prereq":["m7"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m08-orchestration.html"},{"id":"m9","title":"Telemetry","sub":"See tokens, cache and cost as they happen","level":"practitioner","prereq":["m2"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m09-telemetry.html"},{"id":"m10","title":"Cutting cost","sub":"The levers, and proof that each one worked","level":"advanced","prereq":["m2","m9"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m10-cost.html"},{"id":"m11","title":"Evals and A/B testing","sub":"Compare prompts, models and setups without fooling yourself","level":"advanced","prereq":["m2","m7"],"minutes":250,"lessons":6,"labs":5,"calls":5,"href":"m11-ab-testing.html"},{"id":"m12","title":"Session transcripts","sub":"The anatomy of the JSONL behind every session","level":"practitioner","prereq":["m1","m2"],"minutes":215,"lessons":6,"labs":5,"calls":5,"href":"m12-transcripts.html"},{"id":"m13","title":"Models and ways to teach them","sub":"Model tiers, retrieval, ingestion, fine-tuning and what you will actually use","level":"foundation","prereq":[],"minutes":230,"lessons":6,"labs":5,"calls":5,"href":"m13-models.html"},{"id":"m14","title":"Agent SDK and agent teams","sub":"Your own agent loop, and sessions that message each other","level":"advanced","prereq":["m7"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m14-agent-sdk.html"},{"id":"m15","title":"The wider ecosystem","sub":"Multiplexers, community skills and how to vet them","level":"practitioner","prereq":["m3"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m15-ecosystem.html"},{"id":"m16","title":"Security","sub":"Permissions, sandboxing, prompt injection and what you install","level":"practitioner","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m16-security.html"},{"id":"m17","title":"Daily workflow","sub":"Plan mode, rewind, worktrees, effort and git habits","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m17-workflow.html"},{"id":"m18","title":"Unattended and CI","sub":"GitHub Actions, review in the pipeline, scheduled runs","level":"advanced","prereq":["m7","m16"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m18-ci.html"},{"id":"m19","title":"Claude API building blocks","sub":"Tool use, structured outputs, vision, citations, batch, computer use","level":"practitioner","prereq":["m2"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m19-api.html"},{"id":"m20","title":"Writing for agents","sub":"Briefs, specs, handoffs and CLAUDE.md design","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m20-writing.html"},{"id":"m21","title":"Where Claude Code runs","sub":"Terminal, VS Code, JetBrains, desktop and web compared","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m21-surfaces.html"},{"id":"m22","title":"Sensitive data","sub":"PHI, PII and secrets: what leaves the machine and how to stop it","level":"practitioner","prereq":["m5","m16"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m22-sensitive-data.html"},{"id":"m23","title":"MCP: anatomy of the protocol","sub":"JSON-RPC, capabilities, transports, auth, and a server you build","level":"practitioner","prereq":["m1"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m23-mcp.html"},{"id":"m24","title":"MCP server or CLI tool","sub":"The same job both ways, measured in tokens and turns","level":"advanced","prereq":["m2","m23"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m24-mcp-or-cli.html"}]}</script>
+<script>
+/* AI/LLM Bootcamp page script. One file for the catalogue page and every module page.
+   Reads the manifest (module list, links, edition) that the build embeds, then:
+   - theme: a "Theme:" dropdown at the top right, remembered per viewer; light or dark follows the host page or the system
+   - module page: part navigation on the hash (#overview, #l1.., #labs, #calls, #ref, #share), lab step ticks, lab done,
+     drill answers, progress code. State is kept per module in localStorage, so each module page stands alone.
+   - catalogue page: module cards with level, time and prerequisites, a level filter, and progress where it can be read. */
+(function () {
+  'use strict';
+  var PRISTINE = ''; try { PRISTINE = '<!doctype html>\n' + document.documentElement.outerHTML; } catch (e) {}
+  var root = document.documentElement;
+  var MAN = { modules: [] }; try { MAN = JSON.parse(document.getElementById('manifest').textContent); } catch (e) {}
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function put(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function modById(id) { return MAN.modules.filter(function (x) { return x.id === id; })[0]; }
+  function num(id) { return +id.slice(1); }
+  function mins(n) { n = +n || 0; return n >= 60 ? (Math.round(n / 6) / 10) + ' h' : n + ' min'; }
+  function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+  function link(a, href) { if (href) a.href = href; return a; }
+
+  /* ---- theme ---- */
+  var THEMES = [['a', 'Meter'], ['b', 'Workbench'], ['c', 'Blueprint'], ['d', 'Classroom'], ['e', 'Console']];
+  var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null, forced = null;
+  function mode() { var t = forced || root.getAttribute('data-theme'); root.setAttribute('data-mode', t === 'dark' || (t !== 'light' && mq && mq.matches) ? 'dark' : 'light'); }
+  var sel = document.getElementById('theme');
+  function pick(s, keep) { if (!/^[a-e]$/.test(s)) s = 'a'; root.setAttribute('data-style', s); if (sel) sel.value = s; if (keep) put('ai-bootcamp-theme', s); }
+  if (sel) {
+    THEMES.forEach(function (t) { var o = el('option', '', t[1]); o.value = t[0]; sel.appendChild(o); });
+    sel.addEventListener('change', function () { pick(sel.value, true); });
+  }
+  var qs = /[?&]style=([1-5a-e])/.exec(location.search), qm = /[?&]mode=(light|dark)/.exec(location.search);
+  if (qm) forced = qm[1];
+  pick(qs ? (/\d/.test(qs[1]) ? 'abcde'.charAt(+qs[1] - 1) : qs[1]) : (get('ai-bootcamp-theme') || 'a'), false);
+  mode();
+  if (mq && mq.addEventListener) mq.addEventListener('change', mode);
+  try { new MutationObserver(mode).observe(root, { attributes: true, attributeFilter: ['data-theme'] }); } catch (e) {}
+
+  /* ---- code blocks: caption with a file name or "shell", plus a copy button ---- */
+  [].forEach.call(document.querySelectorAll('pre'), function (pre) {
+    var box = el('div', 'codebox'), c = el('div', 'cap');
+    c.appendChild(el('span', '', pre.getAttribute('data-file') ? 'file  ' + pre.getAttribute('data-file') : (pre.getAttribute('data-cap') || 'shell')));
+    var b = el('button', 'copy', 'Copy'); b.type = 'button';
+    b.addEventListener('click', function () {
+      var t = pre.textContent;
+      function pickText() { try { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = 'Selected'; } catch (e) {} }
+      try { navigator.clipboard.writeText(t).then(function () { b.textContent = 'Copied'; }, pickText); } catch (e) { pickText(); }
+      setTimeout(function () { b.textContent = 'Copy'; }, 1600);
+    });
+    c.appendChild(b); pre.parentNode.insertBefore(box, pre); box.appendChild(c); box.appendChild(pre);
+  });
+
+  function levelChip(lv) { return el('span', 'chip lv-' + lv, lv); }
+  function readState(id) { var S = { labs: {}, steps: {}, drill: [], seen: {} }; try { var r = JSON.parse(get('ai-bootcamp-v2-' + id) || 'null'); if (r && typeof r === 'object') { ['labs', 'steps', 'seen'].forEach(function (k) { if (r[k] && typeof r[k] === 'object') S[k] = r[k]; }); if (r.drill && r.drill.length != null) S.drill = r.drill; } } catch (e) {} return S; }
+  function doneCount(S) { var n = 0, k; for (k in S.labs) if (S.labs[k]) n++; (S.drill || []).forEach(function (x) { if (x != null) n++; }); return n; }
+
+  var hn = document.getElementById('home-notes');
+  function homeNotes() { var off = get('ai-bootcamp-home') === '0'; if (hn) hn.checked = !off; document.body.classList.toggle('hide-home', off); }
+  if (hn) hn.addEventListener('change', function () { put('ai-bootcamp-home', hn.checked ? '1' : '0'); homeNotes(); });
+  homeNotes();
+
+  /* ---- save a copy of this page as one file ---- */
+  /* Inside a hosted viewer the page may be given a save function; it is asked for once, at load. Everywhere else
+     (a file on disk, a plain web server) it stays null and the button uses an ordinary download link. */
+  var DL = null;
+  try {
+    if (window.claude && typeof window.claude.use === 'function') {
+      Promise.resolve(window.claude.use('downloads')).then(function (d) { DL = d || null; }, function () { DL = null; });
+    }
+  } catch (e) { DL = null; }
+  [].forEach.call(document.querySelectorAll('[data-save]'), function (b) {
+    b.addEventListener('click', function () {
+      var msg = b.parentNode.querySelector('.note') || b;
+      var name = b.getAttribute('data-save');
+      function say(t) { if (msg !== b) msg.textContent = t; }
+      function viaLink() {
+        try {
+          var a = el('a'); a.href = URL.createObjectURL(new Blob([PRISTINE], { type: 'text/html' })); a.download = name;
+          document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+          say('Saved as ' + name + ' if your browser allows downloads from this page. If nothing happened, use the file from the export set instead.');
+        } catch (e) { say('This page cannot start a download here. Use the file from the export set instead.'); }
+      }
+      if (DL && typeof DL.save === 'function') {
+        DL.save({ filename: name, data: PRISTINE }).then(function () { say('Saved as ' + name + '.'); }, function (err) {
+          var code = err && err.code;
+          if (code === 'declined') return;
+          if (code === 'rate_limited') { say('A save is already waiting for your answer. Wait a moment, then try again.'); return; }
+          viaLink();
+        });
+      } else { viaLink(); }
+    });
+  });
+
+  /* ================= catalogue page ================= */
+  var cards = document.getElementById('cards');
+  if (cards) {
+    var filter = get('ai-bootcamp-level') || 'all', fbar = document.getElementById('levels');
+    var draw = function () {
+      cards.textContent = '';
+      MAN.modules.forEach(function (m) {
+        if (filter !== 'all' && m.level !== filter) return;
+        var c = link(el(m.href ? 'a' : 'div', 'mcard'), m.href);
+        var top = el('div', 'chips'); top.appendChild(el('span', 'n', 'MODULE ' + num(m.id))); top.appendChild(levelChip(m.level)); top.appendChild(el('span', 'chip', mins(m.minutes))); c.appendChild(top);
+        c.appendChild(el('span', 't', m.title)); c.appendChild(el('span', 's', m.sub));
+        c.appendChild(el('span', 'pre', (m.lessons || 0) + ' lessons · ' + (m.labs || 0) + ' labs · ' + (m.prereq.length ? 'after ' + m.prereq.map(function (p) { var x = modById(p); return x ? num(p) + ' ' + x.title : p; }).join(', ') : 'no prerequisites')));
+        if (!m.href) c.appendChild(el('span', 'pre', 'Published as its own page; ask for the link or use the file set.'));
+        var S = readState(m.id), d = doneCount(S), total = (m.labs || 0) + (m.calls || 0);
+        if (d && total) { var mt = el('div', 'meter'), sp = el('span'); sp.style.width = Math.min(100, Math.round(100 * d / total)) + '%'; mt.appendChild(sp); c.appendChild(mt); }
+        cards.appendChild(c);
+      });
+      if (fbar) [].forEach.call(fbar.children, function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-level') === filter ? 'true' : 'false'); });
+    };
+    if (fbar) ['all', 'foundation', 'practitioner', 'advanced'].forEach(function (lv) {
+      var b = el('button', 'btn', lv === 'all' ? 'All levels' : cap(lv)); b.type = 'button'; b.setAttribute('data-level', lv);
+      b.addEventListener('click', function () { filter = lv; put('ai-bootcamp-level', lv); draw(); }); fbar.appendChild(b);
+    });
+    draw();
+    [].forEach.call(document.querySelectorAll('[data-mod]'), function (a) { var m = modById(a.getAttribute('data-mod')); if (m) { if (!a.textContent) a.textContent = num(m.id) + '. ' + m.title; link(a, m.href); } });
+    var tot = document.getElementById('totals');
+    if (tot) { var tl = 0, tm = 0; MAN.modules.forEach(function (m) { tl += m.labs || 0; tm += +m.minutes || 0; }); tot.textContent = MAN.modules.length + ' modules, ' + tl + ' labs, about ' + Math.round(tm / 60) + ' hours in all'; }
+    return;
+  }
+
+  /* ================= module page ================= */
+  var m = document.querySelector('section.module'); if (!m) return;
+  var id = m.id, me = modById(id) || { prereq: [], level: m.getAttribute('data-level') || '', minutes: m.getAttribute('data-minutes') }, KEY = 'ai-bootcamp-v2-' + id;
+  var S = readState(id);
+  function save() { put(KEY, JSON.stringify(S)); }
+  var nav = document.getElementById('nav'), pager = document.getElementById('pager'), crumb = document.getElementById('crumb'), share = document.getElementById('view-share');
+  var overview = m.querySelector('.overview'), labsEl = m.querySelector('.labs'), ref = m.querySelector('.reference');
+  var lessons = [].slice.call(m.querySelectorAll('.lesson')), labEls = [].slice.call(m.querySelectorAll('article.lab'));
+  var drill = el('div', 'drill'); m.appendChild(drill);
+  var qsn = []; try { qsn = JSON.parse(m.querySelector('script.drill').textContent); } catch (e) {}
+
+  var parts = [];
+  if (overview) parts.push({ key: 'overview', n: '', title: 'Overview', el: overview });
+  lessons.forEach(function (l, i) { parts.push({ key: 'l' + (i + 1), n: String(i + 1), title: l.getAttribute('data-title') || 'Lesson ' + (i + 1), el: l, kind: 'Lesson ' + (i + 1) + ' of ' + lessons.length, min: l.getAttribute('data-minutes') }); });
+  if (labsEl && labEls.length) parts.push({ key: 'labs', n: 'L', title: 'Labs', el: labsEl, kind: labEls.length + ' labs' });
+  if (qsn.length) parts.push({ key: 'calls', n: '?', title: 'Calls', el: drill, kind: qsn.length + ' judgment calls' });
+  if (ref && ref.children.length) parts.push({ key: 'ref', n: '#', title: 'Cheat sheet', el: ref, kind: 'Reference' });
+
+  /* header: full on the overview, slim on the other parts */
+  var head = el('div', 'mhead'), kick = el('div', 'kicker'), h = el('h1', '', m.getAttribute('data-title')), meta = el('div', 'meta'), chips = el('div', 'chips');
+  head.appendChild(kick); head.appendChild(h); head.appendChild(meta); head.appendChild(chips); m.insertBefore(head, m.firstChild);
+  chips.appendChild(levelChip(me.level || 'practitioner')); chips.appendChild(el('span', 'chip', mins(m.getAttribute('data-minutes'))));
+  chips.appendChild(el('span', 'chip', lessons.length + ' lessons')); chips.appendChild(el('span', 'chip', labEls.length + ' labs'));
+  (me.prereq || []).forEach(function (p) { var x = modById(p); if (x) chips.appendChild(link(el(x.href ? 'a' : 'span', 'chip'), x.href)).textContent = 'after ' + num(p) + ' ' + x.title; });
+  if (!(me.prereq || []).length) chips.appendChild(el('span', 'chip', 'no prerequisites'));
+
+  /* overview extras: the parts of this module, what to take next, the progress code */
+  if (overview) {
+    var pl = el('div', 'panel'); pl.appendChild(el('div', 'kicker', 'In this module')); var ul = el('ol', 'partlist');
+    parts.forEach(function (p) { if (p.key === 'overview') return; var li = el('li'), a = el('a'); a.href = '#' + p.key; a.appendChild(el('span', 'n', p.n)); a.appendChild(el('span', '', p.title)); a.appendChild(el('span', 'm', p.min ? p.min + ' min' : (p.kind || ''))); li.appendChild(a); ul.appendChild(li); });
+    pl.appendChild(ul); overview.appendChild(pl);
+    var nexts = MAN.modules.filter(function (x) { return x.prereq.indexOf(id) >= 0; });
+    if (nexts.length || MAN.catalogue) {
+      var nx = el('div', 'panel'); nx.appendChild(el('div', 'kicker', 'Where to go from here')); var row = el('div', 'chips'); row.style.marginTop = '8px';
+      nexts.forEach(function (x) { var a = link(el(x.href ? 'a' : 'span', 'chip'), x.href); a.textContent = num(x.id) + ' ' + x.title; row.appendChild(a); });
+      if (MAN.catalogue) { var ca = link(el('a', 'chip'), MAN.catalogue); ca.textContent = 'All modules'; row.appendChild(ca); }
+      nx.appendChild(row); overview.appendChild(nx);
+    }
+    var pp = el('div', 'panel'); pp.appendChild(el('div', 'kicker', 'Progress code'));
+    var pd = el('p', 'muted', 'Progress for this module lives in this browser only. To move it to another device or another copy of this page, copy the code here and load it there.'); pd.style.marginTop = '6px'; pp.appendChild(pd);
+    var pr = el('div', 'row'), pc = el('input'); pc.type = 'text'; pc.setAttribute('aria-label', 'Progress code'); pc.style.cssText = 'flex:1;min-width:200px;font-family:var(--font-mono);font-size:0.8rem';
+    var b1 = el('button', 'btn', 'Copy mine'), b2 = el('button', 'btn', 'Load'), pm = el('p', 'note'); b1.type = b2.type = 'button'; pm.style.marginBottom = '0';
+    pr.appendChild(pc); pr.appendChild(b1); pr.appendChild(b2); pp.appendChild(pr); pp.appendChild(pm); overview.appendChild(pp);
+    b1.addEventListener('click', function () {
+      try { pc.value = 'AIB2.' + id + '.' + btoa(unescape(encodeURIComponent(JSON.stringify(S)))); } catch (e) { pm.textContent = 'Could not build the code.'; return; }
+      pc.select(); try { navigator.clipboard.writeText(pc.value).then(function () { pm.textContent = 'Copied.'; }, function () { pm.textContent = 'Selected. Copy it with Ctrl+C.'; }); } catch (e) { pm.textContent = 'Selected. Copy it with Ctrl+C.'; }
+    });
+    b2.addEventListener('click', function () {
+      try { var v = pc.value.trim(), pre = 'AIB2.' + id + '.'; if (v.indexOf(pre) !== 0) throw 0; var o = JSON.parse(decodeURIComponent(escape(atob(v.slice(pre.length))))); if (!o || typeof o !== 'object') throw 0; put(KEY, JSON.stringify(o)); location.reload(); }
+      catch (e) { pm.textContent = 'That is not a progress code for this module. It starts with AIB2.' + id + '.'; }
+    });
+  }
+
+  /* labs */
+  labEls.forEach(function (lab, li) {
+    var lh = el('div', 'labhead'); lh.appendChild(el('h3', '', 'Lab ' + (li + 1) + '  ' + lab.getAttribute('data-title'))); lh.appendChild(el('span', 'meta', lab.getAttribute('data-minutes') + ' min')); lab.insertBefore(lh, lab.firstChild);
+    [].forEach.call(lab.querySelectorAll('ol.steps > li'), function (step, si) {
+      var c = el('input', 'tick'); c.type = 'checkbox'; c.setAttribute('aria-label', 'Step ' + (si + 1) + ' done'); c.checked = (S.steps[lab.id] || []).indexOf(si) >= 0;
+      c.addEventListener('change', function () { var a = (S.steps[lab.id] || []).filter(function (x) { return x !== si; }); if (c.checked) a.push(si); S.steps[lab.id] = a; save(); });
+      step.insertBefore(c, step.firstChild);
+    });
+    var foot = el('div', 'labfoot'), btn = el('button', 'btn'); btn.type = 'button';
+    function paint() { var d = !!S.labs[lab.id]; lab.classList.toggle('done', d); btn.textContent = d ? 'Done. Undo' : 'Mark lab done'; }
+    btn.addEventListener('click', function () { if (S.labs[lab.id]) delete S.labs[lab.id]; else S.labs[lab.id] = 1; save(); paint(); progress(); });
+    foot.appendChild(btn); lab.appendChild(foot); paint();
+  });
+
+  /* calls */
+  qsn.forEach(function (q, qi) {
+    var box = el('div', 'q'); box.appendChild(el('div', 'qt', (qi + 1) + '. ' + q.q));
+    var opts = el('div', 'opts'), why = el('div', 'why', q.why); why.hidden = true;
+    var btns = q.o.map(function (o, oi) {
+      var b = el('button', 'opt'); b.type = 'button'; b.appendChild(el('span', 'k', 'ABCD'.charAt(oi))); b.appendChild(el('span', '', o));
+      b.addEventListener('click', function () { S.drill[qi] = oi; save(); mark(); progress(); }); opts.appendChild(b); return b;
+    });
+    function mark() { var a = S.drill[qi]; btns.forEach(function (b, oi) { b.classList.toggle('right', a != null && oi === q.a); b.classList.toggle('wrong', a === oi && oi !== q.a); }); why.hidden = a == null; }
+    box.appendChild(opts); box.appendChild(why); drill.appendChild(box); mark();
+  });
+  if (qsn.length) { var reset = el('button', 'btn', 'Clear my answers'); reset.type = 'button'; reset.style.justifySelf = 'start'; reset.addEventListener('click', function () { S.drill = []; save(); location.reload(); }); drill.appendChild(reset); }
+
+  /* navigation */
+  parts.forEach(function (p) {
+    var a = el('a', 'navlink'); a.href = '#' + p.key; a.appendChild(el('span', 'n', p.n || '·')); a.appendChild(el('span', '', p.title)); a.appendChild(el('span', 'p')); nav.appendChild(a); p.nav = a;
+  });
+  var shareNav = null;
+  if (share) { shareNav = el('a', 'navlink'); shareNav.href = '#share'; shareNav.appendChild(el('span', 'n', '\u2197')); shareNav.appendChild(el('span', '', 'Export and share')); shareNav.appendChild(el('span', 'p')); nav.appendChild(shareNav); }
+  function progress() {
+    parts.forEach(function (p) {
+      var t = p.nav.querySelector('.p'), txt = '', full = false;
+      if (p.key === 'labs') { var d = labEls.filter(function (l) { return S.labs[l.id]; }).length; txt = d ? d + '/' + labEls.length : ''; full = d === labEls.length; }
+      else if (p.key === 'calls') { var a = S.drill.filter(function (x) { return x != null; }).length; txt = a ? a + '/' + qsn.length : ''; full = a === qsn.length; }
+      else if (S.seen[p.key]) { txt = '✓'; full = true; }
+      t.textContent = txt; t.classList.toggle('full', full);
+    });
+  }
+  function route() {
+    var key = (location.hash || '#overview').slice(1), isShare = key === 'share' && share;
+    var cur = parts.filter(function (p) { return p.key === key; })[0]; if (!cur && !isShare) cur = parts[0];
+    m.hidden = !!isShare; if (share) share.hidden = !isShare;
+    if (shareNav) shareNav.classList.toggle('active', !!isShare);
+    parts.forEach(function (p) { p.el.hidden = p !== cur; p.nav.classList.toggle('active', p === cur); });
+    if (cur) {
+      var first = cur.key === 'overview';
+      kick.textContent = 'Module ' + num(id) + (first ? ' · ' + cap(me.level || '') : ' · ' + m.getAttribute('data-title'));
+      h.textContent = first ? m.getAttribute('data-title') : cur.title;
+      meta.textContent = first ? m.getAttribute('data-sub') : (cur.kind || '') + (cur.min ? ' · about ' + cur.min + ' min' : '');
+      chips.hidden = !first;
+      if (/^l\d+$/.test(cur.key) && !S.seen[cur.key]) { S.seen[cur.key] = 1; save(); }
+      if (crumb) crumb.textContent = 'Module ' + num(id) + ' · ' + m.getAttribute('data-title') + (first ? '' : ' · ' + cur.title);
+      var i = parts.indexOf(cur); pager.textContent = '';
+      if (i > 0) { var pv = el('a', 'btn', '← ' + parts[i - 1].title); pv.href = '#' + parts[i - 1].key; pager.appendChild(pv); }
+      if (i < parts.length - 1) { var nx2 = el('a', 'btn primary next', parts[i + 1].title + ' →'); nx2.href = '#' + parts[i + 1].key; pager.appendChild(nx2); }
+      try { cur.nav.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {}
+    } else { pager.textContent = ''; if (crumb) crumb.textContent = 'Export and share'; }
+    progress(); window.scrollTo(0, 0);
+  }
+  route(); window.addEventListener('hashchange', route);
+})();
+
+</script>
+<script>
+
+</script>
+
+</body>
+</html>

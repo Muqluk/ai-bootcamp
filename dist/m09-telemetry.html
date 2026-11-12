@@ -1,0 +1,1273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>html,body{height:100%}body{margin:0}img{max-width:100%}</style>
+<title>Telemetry · AI/LLM Bootcamp</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&family=Nunito:wght@700;800&display=swap">
+<style>
+/* AI/LLM Bootcamp. One stylesheet for the catalogue page and every module page.
+   Layout: a top bar (brand, where you are, theme picker), a part rail on the left (a strip in some themes and on phones),
+   one reading column that swaps parts on the hash.
+   The four token types keep one colour each everywhere, the way a utility meter keeps one colour per tariff.
+   Five themes: data-style a..e on the root (a = Meter is the base). data-mode light|dark is resolved in script. */
+:root {
+  --bg: #f1f3f6; --surface: #ffffff; --sunk: #e8ebf0; --fg: #17202b; --muted: #566273; --line: #d3d9e2;
+  --accent: #a4460d; --accent-ink: #ffffff; --accent-soft: #fbeadf;
+  --t-in: #2a66b3; --t-out: #b8500f; --t-cw: #7446bd; --t-cr: #25784c;
+  --good: #25784c; --good-soft: #e0f1e7; --bad: #a8372f; --bad-soft: #f8e3e1; --home: #7446bd; --home-soft: #efe8fa;
+  --font-display: "Archivo", "Segoe UI Semibold", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, "SF Mono", monospace;
+  --top-h: 46px;
+}
+:root[data-mode="dark"] {
+  --bg: #11151b; --surface: #19202a; --sunk: #0d1116; --fg: #e5e9ef; --muted: #98a4b3; --line: #2b3542;
+  --accent: #f09460; --accent-ink: #1d0f05; --accent-soft: #3a2415;
+  --t-in: #6ea9ee; --t-out: #f09460; --t-cw: #b396f0; --t-cr: #6cc795;
+  --good: #6cc795; --good-soft: #17301f; --bad: #e6837b; --bad-soft: #3a1f1d; --home: #b396f0; --home-soft: #261f38; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+script, pre.mermaid { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.6; margin: 0; }
+a { color: var(--accent); }
+h1, h2, h3, h4 { font-family: var(--font-display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(1.9rem, 4.6vw, 2.7rem); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.6rem; font-weight: 700; }
+h3 { font-size: 1.15rem; font-weight: 700; margin-top: 1.7em; }
+h4 { font-size: 1rem; font-weight: 700; margin-top: 1.2em; }
+p { margin: 0.7em 0; }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--sunk); padding: 0.08em 0.32em; border-radius: 4px; overflow-wrap: anywhere; }
+.codebox { margin: 0.7em 0; border: 1px solid var(--line); border-radius: 8px; background: var(--sunk); min-width: 0; }
+.codebox .cap { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--line); font: 600 0.72rem var(--font-mono); color: var(--muted); }
+.codebox pre { margin: 0; padding: 11px 13px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.5; }
+.codebox pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: normal; }
+.copy { font: 600 0.72rem var(--font-body); padding: 3px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
+.copy:hover { color: var(--fg); }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* top bar */
+.top { position: sticky; top: 0; z-index: 12; height: var(--top-h); display: flex; align-items: center; gap: 14px; background: var(--surface); border-bottom: 1px solid var(--line); padding: 0 max(14px, env(safe-area-inset-right, 0px)) 0 max(14px, env(safe-area-inset-left, 0px)); }
+.brand { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; text-decoration: none; color: var(--fg); white-space: nowrap; }
+.crumb { font-size: 0.86rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.themepick { margin-left: auto; display: flex; align-items: center; gap: 6px; font: 600 0.8rem var(--font-body); color: var(--muted); white-space: nowrap; }
+.themepick select { font: 600 0.8rem var(--font-body); padding: 4px 6px; }
+
+/* frame */
+.app { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: calc(100vh - var(--top-h)); }
+.app.solo { grid-template-columns: minmax(0, 1fr); }
+.side { position: sticky; top: var(--top-h); align-self: start; height: calc(100vh - var(--top-h)); overflow-y: auto; background: var(--surface); border-right: 1px solid var(--line); padding: 16px 12px 18px max(12px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 14px; }
+#nav { display: flex; flex-direction: column; gap: 2px; }
+.navlink { display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; align-items: center; text-decoration: none; color: var(--fg); font-size: 0.9rem; padding: 6px 8px; border-radius: 7px; line-height: 1.3; }
+.navlink:hover { background: var(--sunk); }
+.navlink.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.navlink .n { font: 600 0.74rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.navlink .p { font: 600 0.68rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.navlink .p.full { color: var(--good); }
+.side-foot { margin-top: auto; display: grid; gap: 6px; font-size: 0.85rem; padding: 0 8px; }
+.side-foot label { display: flex; gap: 8px; align-items: center; color: var(--muted); cursor: pointer; }
+main { min-width: 0; padding-block: 30px 72px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.view, section.module, .pager { max-width: 780px; margin: 0 auto; min-width: 0; }
+.view, section.module { display: grid; gap: 20px; }
+.view.wide { max-width: 1040px; }
+.view > *, section.module > * { min-width: 0; }
+@media (max-width: 860px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { z-index: 9; height: auto; flex-direction: row; align-items: center; gap: 10px; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px max(14px, env(safe-area-inset-right, 0px)) 6px max(14px, env(safe-area-inset-left, 0px)); overflow: visible; }
+  .side-foot { display: none; }
+  #nav { flex-direction: row; overflow-x: auto; scrollbar-width: none; min-width: 0; flex: 1; }
+  #nav::-webkit-scrollbar { display: none; }
+  .navlink { grid-template-columns: auto auto; flex: 0 0 auto; white-space: nowrap; padding: 5px 9px; }
+  .navlink .p { display: none; }
+  main { padding-block: 22px 56px; }
+  .crumb { display: none; }
+}
+
+/* shared pieces */
+.kicker { font: 600 0.72rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); }
+.muted { color: var(--muted); }
+.lede { font-size: 1.08rem; color: var(--muted); max-width: 66ch; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; min-width: 0; }
+.panel > h3:first-child { margin-top: 0; }
+.btn { font: 600 0.9rem var(--font-body); padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; text-decoration: none; display: inline-block; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+input[type="text"], input[type="number"], textarea, select { font: inherit; font-size: 0.92rem; color: var(--fg); background: var(--sunk); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; min-width: 0; }
+textarea { width: 100%; min-height: 96px; resize: vertical; font-family: var(--font-mono); font-size: 0.8rem; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 0.74rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 0.84rem; }
+.tok { font: 600 0.78rem var(--font-mono); white-space: nowrap; }
+.tok::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; background: currentColor; }
+.tok.in { color: var(--t-in); } .tok.out { color: var(--t-out); } .tok.cw { color: var(--t-cw); } .tok.cr { color: var(--t-cr); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.chip { font: 600 0.7rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; text-decoration: none; }
+a.chip:hover { border-color: var(--accent); color: var(--accent); }
+.chip.lv-foundation { color: var(--t-cr); border-color: var(--t-cr); }
+.chip.lv-practitioner { color: var(--t-in); border-color: var(--t-in); }
+.chip.lv-advanced { color: var(--t-cw); border-color: var(--t-cw); }
+
+/* catalogue */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+.mcard { display: grid; gap: 6px; align-content: start; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; text-decoration: none; color: inherit; }
+a.mcard:hover { border-color: var(--accent); }
+.mcard .n { font: 600 0.72rem var(--font-mono); color: var(--accent); }
+.mcard .t { font-family: var(--font-display); font-weight: 700; font-size: 1.08rem; }
+.mcard .s { font-size: 0.86rem; color: var(--muted); }
+.mcard .pre { font-size: 0.8rem; color: var(--muted); }
+.meter { height: 6px; background: var(--sunk); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.meter span { display: block; height: 100%; width: 0; background: var(--good); }
+.howto { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 18px; }
+.howto b { display: block; font-family: var(--font-display); font-size: 1rem; }
+.howto div { font-size: 0.92rem; color: var(--muted); }
+.paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.paths .panel { padding: 14px 16px; }
+.paths b { font-family: var(--font-display); }
+.paths ol { margin: 6px 0 0; padding-left: 1.3em; font-size: 0.9rem; }
+
+/* module */
+.mhead { display: grid; gap: 8px; }
+.mhead .meta { color: var(--muted); font-size: 0.92rem; }
+.partlist { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; }
+.partlist a { display: grid; grid-template-columns: 34px 1fr auto; gap: 8px; padding: 7px 8px; border-radius: 7px; text-decoration: none; color: var(--fg); }
+.partlist a:hover { background: var(--sunk); }
+.partlist .n { font: 600 0.74rem var(--font-mono); color: var(--accent); padding-top: 3px; }
+.partlist .m { font: 600 0.72rem var(--font-mono); color: var(--muted); padding-top: 3px; }
+.overview p, .overview li, .lesson p, .lesson li, .lab p, .lab li, .reference p, .reference li { max-width: 70ch; }
+.overview ul, .lesson ul, .lesson ol, .lab ul, .reference ul { padding-left: 1.2em; }
+.overview li, .lesson li, .lab li { margin: 0.3em 0; }
+.overview > h3:first-of-type { margin-top: 0.6em; }
+.recap { background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 14px 18px; margin-top: 1.2em; }
+.recap h3 { margin-top: 0; font-size: 1rem; }
+.sources { font-size: 0.88rem; color: var(--muted); }
+.sources h3 { color: var(--fg); }
+.sources li { margin: 0.25em 0; overflow-wrap: anywhere; }
+aside.rule { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; margin: 1.1em 0; max-width: 70ch; font-weight: 600; }
+aside.trap { background: var(--bad-soft); border-radius: 8px; padding: 10px 14px; margin: 1em 0; max-width: 70ch; font-size: 0.94rem; }
+aside.trap::before { content: "Trap"; display: block; font: 600 0.68rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--bad); }
+aside.home { background: var(--home-soft); border-radius: 8px; padding: 10px 14px; margin: 1em 0; max-width: 70ch; font-size: 0.94rem; }
+aside.home::before { content: "At home"; display: block; font: 600 0.68rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--home); }
+body.hide-home aside.home { display: none; }
+.labs { display: grid; gap: 18px; }
+.lab { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; min-width: 0; }
+.lab.done { border-color: var(--good); }
+.labhead { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.labhead h3 { margin: 0; }
+.labhead .meta { font: 600 0.72rem var(--font-mono); color: var(--muted); }
+.goal { color: var(--muted); }
+ol.steps { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 14px; counter-reset: step; }
+ol.steps > li { counter-increment: step; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 0 10px; margin: 0; max-width: none; }
+ol.steps > li > .tick { grid-row: 1 / span 30; }
+ol.steps > li > :not(.tick) { grid-column: 2; margin-top: 0; margin-bottom: 8px; min-width: 0; }
+ol.steps > li > :last-child { margin-bottom: 0; }
+.tick { appearance: none; -webkit-appearance: none; width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--sunk); cursor: pointer; display: grid; place-items: center; margin: 0; }
+.tick::before { content: counter(step); font: 600 0.78rem var(--font-mono); color: var(--muted); }
+.tick:checked { background: var(--good); border-color: var(--good); }
+.tick:checked::before { content: "\2713"; color: var(--surface); }
+p.expect { font-size: 0.92rem; border-left: 3px solid var(--t-cr); padding-left: 12px; color: var(--muted); }
+p.expect b { color: var(--fg); }
+details.check { border: 1px dashed var(--line); border-radius: 8px; padding: 10px 14px; margin-top: 12px; }
+details.check summary { cursor: pointer; font-weight: 600; }
+details.check[open] summary { margin-bottom: 6px; }
+.labfoot { display: flex; justify-content: flex-end; margin-top: 14px; }
+.lab.done .labfoot .btn { background: var(--good-soft); color: var(--good); border-color: var(--good); }
+.pager { display: flex; justify-content: space-between; gap: 10px; margin-top: 28px; }
+.pager .btn { max-width: 48%; }
+.pager .next { margin-left: auto; }
+
+/* calls */
+.drill { display: grid; gap: 14px; }
+.q { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 10px; }
+.q .qt { font-weight: 600; max-width: 70ch; }
+.opts { display: grid; gap: 7px; }
+.opt { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: transparent; color: var(--fg); font: inherit; font-size: 0.94rem; text-align: left; line-height: 1.45; }
+.opt:hover { border-color: var(--accent); }
+.opt .k { flex: 0 0 22px; font: 600 0.76rem var(--font-mono); color: var(--muted); padding-top: 2px; }
+.opt.right { border-color: var(--good); background: var(--good-soft); }
+.opt.wrong { border-color: var(--bad); background: var(--bad-soft); }
+.why { font-size: 0.92rem; color: var(--muted); border-left: 3px solid var(--line); padding-left: 12px; max-width: 70ch; }
+
+/* instruments */
+.tool { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin: 1em 0; display: grid; gap: 12px; min-width: 0; }
+.tool h4 { margin: 0; }
+.tool .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.tool label { display: grid; gap: 3px; font-size: 0.78rem; color: var(--muted); font-weight: 600; }
+.tool label input, .tool label select { width: 100%; }
+.bar { display: flex; height: 22px; border-radius: 5px; overflow: hidden; background: var(--sunk); }
+.bar span { display: block; height: 100%; min-width: 0; }
+.bar .in { background: var(--t-in); } .bar .out { background: var(--t-out); } .bar .cw { background: var(--t-cw); } .bar .cr { background: var(--t-cr); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; }
+.big { font: 700 1.5rem var(--font-display); font-variant-numeric: tabular-nums; }
+.verdict { font-weight: 600; }
+.note { font-size: 0.82rem; color: var(--muted); }
+
+/* diagrams: inline SVG drawn in the boxes-and-arrows style; every colour comes from the theme */
+figure.diagram { margin: 1.2em 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 10px; overflow-x: auto; }
+figure.diagram svg { display: block; width: 100%; height: auto; min-width: 520px; max-width: 760px; margin: 0 auto; font-family: var(--font-body); }
+figure.diagram figcaption { font-size: 0.84rem; color: var(--muted); margin-top: 8px; text-align: center; }
+.dg-box { fill: var(--sunk); stroke: var(--muted); stroke-width: 1.5; }
+.dg-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.dg-good { fill: var(--good-soft); stroke: var(--good); stroke-width: 1.5; }
+.dg-bad { fill: var(--bad-soft); stroke: var(--bad); stroke-width: 1.5; }
+.dg-ghost { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 6 4; }
+.dg-in { fill: var(--t-in); } .dg-out { fill: var(--t-out); } .dg-cw { fill: var(--t-cw); } .dg-cr { fill: var(--t-cr); }
+.dg-line { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.dg-line.dash { stroke-dasharray: 5 4; }
+.dg-line.hot { stroke: var(--accent); }
+.dg-head { fill: var(--muted); stroke: none; }
+.dg-head.hot { fill: var(--accent); }
+.dg-text { fill: var(--fg); font-size: 13px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+.dg-sub { fill: var(--muted); font-size: 11px; text-anchor: middle; dominant-baseline: middle; }
+.dg-label { fill: var(--muted); font-size: 11px; font-family: var(--font-mono); text-anchor: middle; dominant-baseline: middle; }
+.dg-on { fill: var(--surface); font-size: 12px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+.dg-left { text-anchor: start; } .dg-right { text-anchor: end; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+
+/* ---------- themes b to e: token overrides and a few shapes ---------- */
+/* a strip under the top bar instead of the left rail (b, d, e) */
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .app { grid-template-columns: minmax(0, 1fr); }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .side { z-index: 9; height: auto; flex-direction: row; align-items: center; gap: 12px; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px max(14px, env(safe-area-inset-right, 0px)) 6px max(14px, env(safe-area-inset-left, 0px)); overflow: visible; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) :is(.side-foot, .navlink .p) { display: none; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) #nav { flex-direction: row; overflow-x: auto; min-width: 0; flex: 1; scrollbar-width: none; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .navlink { grid-template-columns: auto auto; flex: 0 0 auto; white-space: nowrap; }
+:root:is([data-style="b"], [data-style="c"], [data-style="e"]) :is(.panel, .lab, .q, .tool, .codebox, .mcard, .btn, .opt, .copy, .bar, .navlink, input, textarea, select, details.check, aside.trap, aside.home, code, .recap, figure.diagram, .chip, .partlist a) { border-radius: var(--r, 2px); }
+
+/* b: Workbench. Editor greys, one cobalt accent, 2px corners, dense system type. */
+:root[data-style="b"] { --r: 2px; --bg: #f4f4f5; --surface: #ffffff; --sunk: #ececee; --fg: #1e1e1e; --muted: #5a5f66; --line: #d0d0d4; --accent: #2f6fe0; --accent-ink: #ffffff; --accent-soft: rgba(47, 111, 224, 0.1);
+  --t-in: #2f6fe0; --t-out: #a5641f; --t-cw: #8a4a81; --t-cr: #2f7a55; --good: #2f7a55; --good-soft: #e3f1ea; --bad: #b8404c; --bad-soft: #f8e4e6;
+  --font-display: "Segoe UI", system-ui, -apple-system, sans-serif; --font-body: "Segoe UI", system-ui, -apple-system, sans-serif; --font-mono: "Cascadia Code", Consolas, "Courier New", monospace; }
+:root[data-style="b"][data-mode="dark"] { --bg: #1e1e1e; --surface: #252526; --sunk: #181818; --fg: #d4d4d4; --muted: #a8adb4; --line: #3c3c3c; --accent: #4c8dff; --accent-ink: #ffffff; --accent-soft: rgba(76, 141, 255, 0.14);
+  --t-in: #4c8dff; --t-out: #c0813f; --t-cw: #a8689f; --t-cr: #6fae8c; --good: #6fae8c; --good-soft: rgba(111, 174, 140, 0.12); --bad: #e0707c; --bad-soft: rgba(224, 112, 124, 0.1); }
+:root[data-style="b"] body { font-size: 14px; line-height: 1.5; }
+:root[data-style="b"] .side { background: var(--sunk); padding-block: 4px; }
+:root[data-style="b"] .navlink.active { background: transparent; box-shadow: inset 0 -2px 0 var(--accent); border-radius: 0; }
+:root[data-style="b"] :is(h1, h2, h3, h4) { font-weight: 600; letter-spacing: 0; }
+:root[data-style="b"] h2 { font-size: 1.35rem; } :root[data-style="b"] h3 { font-size: 1.05rem; }
+:root[data-style="b"] .lab { border-left: 3px solid var(--accent); }
+:root[data-style="b"] .lab.done { border-left-color: var(--good); }
+:root[data-style="b"] .tick { border-radius: 2px; width: 24px; height: 24px; }
+:root[data-style="b"] .bar { height: 14px; }
+
+/* c: Blueprint. Drafting-sheet blues on a faint grid, mono headings, dashed frames, square corners. */
+:root[data-style="c"] { --r: 0px; --bg: #eaf1f8; --surface: #f7fafd; --sunk: #dbe6f2; --fg: #0f2a47; --muted: #476483; --line: #b3c7dc; --accent: #0b5cad; --accent-ink: #ffffff; --accent-soft: #d5e5f6;
+  --t-in: #0b5cad; --t-out: #b0560c; --t-cw: #6b3fb0; --t-cr: #1d7a55; --good: #1d7a55; --good-soft: #d9efe4; --bad: #a8372f; --bad-soft: #f6dedb;
+  --font-display: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; }
+:root[data-style="c"][data-mode="dark"] { --bg: #0f2540; --surface: #143052; --sunk: #0b1c31; --fg: #e8f1fb; --muted: #9db8d6; --line: #2d5484; --accent: #7fd4ff; --accent-ink: #06213a; --accent-soft: #1b426e;
+  --t-in: #7fd4ff; --t-out: #ffb86b; --t-cw: #d7a6ff; --t-cr: #8fe3b0; --good: #8fe3b0; --good-soft: #17463f; --bad: #ff9d94; --bad-soft: #4a2a3a; }
+:root[data-style="c"] body { background-image: linear-gradient(color-mix(in srgb, var(--line) 30%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--line) 30%, transparent) 1px, transparent 1px); background-size: 28px 28px; }
+:root[data-style="c"] :is(h1, h2, h3, h4) { text-transform: uppercase; letter-spacing: 0.03em; font-weight: 600; }
+:root[data-style="c"] h1 { font-size: clamp(1.5rem, 3.6vw, 2.1rem); }
+:root[data-style="c"] h2 { font-size: 1.35rem; } :root[data-style="c"] h3 { font-size: 0.98rem; }
+:root[data-style="c"] :is(.lab, .tool, .panel, .q, .mcard, figure.diagram) { border-style: dashed; border-color: var(--accent); }
+:root[data-style="c"] .side { background: var(--bg); border-right-style: dashed; }
+:root[data-style="c"] .tick { border-radius: 0; transform: rotate(45deg) scale(0.8); } :root[data-style="c"] .tick::before { transform: rotate(-45deg); }
+
+/* d: Classroom. Big friendly type, a coloured module banner, soft round cards, raspberry accent. */
+:root[data-style="d"] { --bg: #ffffff; --surface: #f5f6fa; --sunk: #e9ecf4; --fg: #151a2d; --muted: #565d78; --line: #dfe3ee; --accent: #c2255c; --accent-ink: #ffffff; --accent-soft: #fde8f0;
+  --t-in: #2a66b3; --t-out: #c2255c; --t-cw: #7446bd; --t-cr: #25784c;
+  --font-display: "Nunito", "Segoe UI", system-ui, sans-serif; }
+:root[data-style="d"][data-mode="dark"] { --bg: #16141c; --surface: #201d29; --sunk: #110f16; --fg: #f1eef7; --muted: #a8a2b8; --line: #342f42; --accent: #ff7aa8; --accent-ink: #2a0a17; --accent-soft: #3d1c2b;
+  --t-in: #6ea9ee; --t-out: #ff7aa8; --t-cw: #b396f0; --t-cr: #6cc795; }
+:root[data-style="d"] body { font-size: 17px; }
+:root[data-style="d"] :is(h1, h2, h3, h4) { font-weight: 800; }
+:root[data-style="d"] h2 { font-size: 2rem; }
+:root[data-style="d"] .mhead { background: var(--accent); color: var(--accent-ink); padding: 26px 28px; border-radius: 20px; }
+:root[data-style="d"] .mhead :is(.kicker, .meta) { color: inherit; opacity: 0.9; }
+:root[data-style="d"] .mhead .chip { color: inherit; border-color: currentColor; }
+:root[data-style="d"] :is(.lab, .tool, .panel, .q, .mcard, figure.diagram, .recap) { border: 0; border-radius: 20px; padding: 22px 24px; }
+:root[data-style="d"] .navlink { border-radius: 999px; padding: 6px 12px; }
+:root[data-style="d"] .tick { width: 36px; height: 36px; } :root[data-style="d"] ol.steps > li { grid-template-columns: 40px minmax(0, 1fr); }
+:root[data-style="d"] .bar { height: 30px; border-radius: 999px; }
+:root[data-style="d"] .btn { border-radius: 999px; }
+
+/* e: Console. Everything monospaced, hard rules, amber accent, no rounding, headings marked like Markdown. */
+:root[data-style="e"] { --r: 0px; --bg: #f5f5f2; --surface: #f5f5f2; --sunk: #e9e9e4; --fg: #141414; --muted: #5c5c55; --line: #2a2a28; --accent: #8a5a00; --accent-ink: #ffffff; --accent-soft: #f1e6c8;
+  --t-in: #1f5fa8; --t-out: #b34700; --t-cw: #7a3fb5; --t-cr: #1f7a4a; --good: #1f7a4a; --good-soft: #dcefe2; --bad: #a8372f; --bad-soft: #f6dedb;
+  --font-display: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; --font-body: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; }
+:root[data-style="e"][data-mode="dark"] { --bg: #141210; --surface: #141210; --sunk: #1e1b17; --fg: #f2e9d8; --muted: #a89c86; --line: #5a5246; --accent: #ffb000; --accent-ink: #141210; --accent-soft: #3a2c0a;
+  --t-in: #7ab8ff; --t-out: #ff8f4d; --t-cw: #c79bff; --t-cr: #7ee0a0; --good: #7ee0a0; --good-soft: #1b3324; --bad: #ff9d94; --bad-soft: #3d201d; }
+:root[data-style="e"] body { font-size: 14px; }
+:root[data-style="e"] :is(h1, h2, h3, h4) { font-weight: 600; letter-spacing: 0; }
+:root[data-style="e"] h1 { font-size: clamp(1.4rem, 3.4vw, 1.9rem); }
+:root[data-style="e"] h2 { font-size: 1.3rem; } :root[data-style="e"] h3 { font-size: 1rem; }
+:root[data-style="e"] .mhead h2::before, :root[data-style="e"] .mhead h1::before { content: "# "; color: var(--accent); }
+:root[data-style="e"] :is(.lesson, .overview, .reference) h3::before { content: "## "; color: var(--accent); }
+:root[data-style="e"] .tick { border-radius: 0; border-width: 1px; border-color: var(--line); }
+:root[data-style="e"] .bar { height: 18px; border: 1px solid var(--line); }
+:root[data-style="e"] .navlink.active { background: var(--fg); color: var(--bg); } :root[data-style="e"] .navlink.active .n { color: inherit; }
+
+/* ---------- Mermaid diagrams, pre-rendered to SVG at build time. Layout is Mermaid's; every colour is the theme's. ---------- */
+figure.diagram svg.mm { font-family: "Segoe UI", system-ui, Arial, sans-serif; min-width: 0; max-height: 620px; }
+figure.diagram.map svg.mm { max-width: 1000px; max-height: 1150px; }
+svg.mm text, svg.mm tspan { fill: var(--fg) !important; stroke: none !important; }
+svg.mm .node > :is(rect, circle, ellipse, polygon, path), svg.mm .label-container, svg.mm :is(rect.actor, .actor-box, .labelBox, .activation0, .activation1, .activation2), svg.mm .statediagram-state :is(rect, path).basic, svg.mm .classGroup rect, svg.mm .er.entityBox { fill: var(--sunk) !important; stroke: var(--muted) !important; }
+svg.mm .node .label rect, svg.mm .cluster-label rect { fill: none !important; stroke: none !important; }
+svg.mm :is(.edgeLabel rect, rect.background, .labelBkg, .edgeLabel .label rect) { fill: var(--surface) !important; stroke: none !important; opacity: 1 !important; }
+svg.mm :is(.flowchart-link, .transition, .relation, .messageLine0, .messageLine1, .edgePath path, .actor-line, .loopLine, line.divider, .edge-thickness-normal) { stroke: var(--muted) !important; }
+svg.mm :is(.flowchart-link, .transition, .relation, .edgePath path) { fill: none !important; }
+svg.mm marker :is(path, circle, polygon), svg.mm :is(.arrowMarkerPath, .arrowheadPath) { fill: var(--muted) !important; stroke: var(--muted) !important; }
+svg.mm .cluster > :is(rect, polygon, path), svg.mm .statediagram-cluster rect, svg.mm rect.rect { fill: color-mix(in srgb, var(--surface) 55%, transparent) !important; stroke: var(--line) !important; }
+svg.mm :is(.note, .state-note) :is(rect, path), svg.mm rect.note, svg.mm g.note > rect { fill: var(--accent-soft) !important; stroke: var(--accent) !important; }
+svg.mm :is(.state-start, .start-state, circle.state-start) { fill: var(--fg) !important; stroke: var(--fg) !important; }
+svg.mm :is(.end-state-outer, .state-end) { fill: var(--surface) !important; stroke: var(--fg) !important; }
+svg.mm .end-state-inner { fill: var(--fg) !important; stroke: var(--fg) !important; }
+svg.mm .node:is(.hot) > :is(rect, circle, ellipse, polygon, path) { fill: var(--accent-soft) !important; stroke: var(--accent) !important; }
+svg.mm .node:is(.good, .found) > :is(rect, circle, ellipse, polygon, path) { fill: var(--good-soft) !important; stroke: var(--good) !important; }
+svg.mm .node.bad > :is(rect, circle, ellipse, polygon, path) { fill: var(--bad-soft) !important; stroke: var(--bad) !important; }
+svg.mm .node:is(.info, .prac) > :is(rect, circle, ellipse, polygon, path) { fill: color-mix(in srgb, var(--t-in) 14%, var(--surface)) !important; stroke: var(--t-in) !important; }
+svg.mm .node:is(.alt, .adv) > :is(rect, circle, ellipse, polygon, path) { fill: color-mix(in srgb, var(--t-cw) 14%, var(--surface)) !important; stroke: var(--t-cw) !important; }
+svg.mm .node.ghost > :is(rect, circle, ellipse, polygon, path) { fill: none !important; stroke: var(--line) !important; stroke-dasharray: 6 4; }
+
+</style>
+</head>
+<body>
+<div class="top">
+  <a class="brand" href="index.html">AI/LLM Bootcamp</a>
+  <span class="crumb" id="crumb"></span>
+  <label class="themepick">Theme: <select id="theme" aria-label="Theme"></select></label>
+</div>
+<div class="app">
+  <aside class="side">
+    <nav id="nav" aria-label="Parts of this module"></nav>
+    <div class="side-foot">
+      
+      <a href="index.html">All modules</a>
+    </div>
+  </aside>
+  <main>
+<section class="module" id="m9" data-title="Telemetry" data-sub="See tokens, cache and cost as they happen" data-level="practitioner" data-prereq="m2" data-minutes="255">
+  <div class="overview">
+    <p class="lede">Claude Code already counts every token it sends and receives. This module shows you the four places those counts surface, how to switch on OpenTelemetry export and send it somewhere you control, and which handful of ratios tell you that a session, a team or a pipeline has started to waste money or plan allowance.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Pick the right source for a question: the <code>-p</code> result JSON, the stream-json event stream, OpenTelemetry export, or <code>/usage</code>.</li>
+      <li>Turn on OpenTelemetry with the console, OTLP or Prometheus exporter, tag the data with team and cost-centre attributes, and say exactly what leaves the machine by default.</li>
+      <li>Name the metrics and events that carry tokens and cost, with their attributes, and sum them correctly.</li>
+      <li>Compute cache hit ratio, cost per session, output share, subagent share, error rate and tokens per request, and set an alert threshold for each.</li>
+      <li>Explain what a cost figure means on a subscription plan and on an API key, and what a plan user watches instead.</li>
+      <li>Take one expensive session apart request by request and say where the money went.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key). Labs were verified on 2.1.322.</li>
+      <li>Windows PowerShell 5.1 or PowerShell 7. No collector, container or backend is needed: the labs build a 25-line receiver.</li>
+      <li>A free local port, 4318, bound to 127.0.0.1 only.</li>
+      <li>About 20 small Haiku runs. On an API key the whole module costs well under a cent; on a plan it uses a sliver of your 5-hour window.</li>
+    </ul>
+    <div class="recap"><h3>If you skipped the prerequisites</h3>
+      <p>From <i>Tokens and their price</i>: every API response reports four token counts. <span class="tok in">input</span> (<code>input_tokens</code>) is only the part after the last cache breakpoint; <span class="tok cw">cache write</span> (<code>cache_creation_input_tokens</code>) is prefix written to the prompt cache; <span class="tok cr">cache read</span> (<code>cache_read_input_tokens</code>) is prefix served from it; <span class="tok out">output</span> (<code>output_tokens</code>) is what the model generated, thinking included. Total input is read plus write plus input. On the API a cache write costs 1.25 times the base input price with the 5-minute lifetime or 2 times with the 1-hour lifetime, a cache read costs 0.1 times (0.05 on Opus 5.5 and Sonnet 5.5), and output costs 5 times input on every current model. Haiku 5.5 is $0.10 in and $0.50 out per million tokens for prompts up to 100k tokens, and $0.50 and $2.50 above that. Claude Code re-sends the whole conversation on every request, so a healthy session is mostly cache reads. A subscription plan charges a flat fee and meters usage against a 5-hour window and weekly limits; an API key pays per token.</p>
+    </div>
+  </div>
+
+  <div class="lesson" id="m9-l1" data-title="Four places the numbers come from" data-minutes="20">
+    <h3>The same counts, four views</h3>
+    <p>Every number in this module starts as the <code>usage</code> block on an API response. Claude Code adds them up and exposes them in four places. They differ in grain (per request, per run, per session, per fleet), in who can see them, and in whether they survive after the process exits.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Source</th><th>How you get it</th><th>Grain</th><th>Good for</th></tr>
+      <tr><td>Result JSON</td><td><code>claude -p "…" --output-format json</code></td><td>One run, summed</td><td>Scripts and CI: one object with <code>total_cost_usd</code>, <code>usage</code>, <code>modelUsage</code>, <code>num_turns</code>, <code>duration_ms</code>. Store it next to the job log.</td></tr>
+      <tr><td>stream-json</td><td><code>--output-format stream-json --verbose</code></td><td>Each API response, as it happens</td><td>Explaining one run: per-request cache reads and writes, tool results, the <code>rate_limit_event</code> on a plan.</td></tr>
+      <tr><td>OpenTelemetry</td><td><code>CLAUDE_CODE_ENABLE_TELEMETRY=1</code> plus exporters</td><td>Per request (events) and per export interval (metrics), every session</td><td>Dashboards, alerts and chargeback across people, teams and machines, interactive sessions included.</td></tr>
+      <tr><td><code>/usage</code></td><td>Typed in a session, or <code>claude -p "/usage"</code></td><td>Current session plus recent local history</td><td>A person checking their own session cost, cache line and plan windows.</td></tr>
+    </table></div>
+    <figure class="diagram">
+<svg class="mm mm-flowchart" role="img" id="mm841b2239a9f8" width="100%" xmlns="http://www.w3.org/2000/svg" style="max-width: 360px;" viewBox="4 4 360 386.4000244140625"><style>#mm841b2239a9f8{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;fill:#000000;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#mm841b2239a9f8 .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#mm841b2239a9f8 .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#mm841b2239a9f8 .error-icon{fill:#552222;}#mm841b2239a9f8 .error-text{fill:#552222;stroke:#552222;}#mm841b2239a9f8 .edge-thickness-normal{stroke-width:1px;}#mm841b2239a9f8 .edge-thickness-thick{stroke-width:3.5px;}#mm841b2239a9f8 .edge-pattern-solid{stroke-dasharray:0;}#mm841b2239a9f8 .edge-thickness-invisible{stroke-width:0;fill:none;}#mm841b2239a9f8 .edge-pattern-dashed{stroke-dasharray:3;}#mm841b2239a9f8 .edge-pattern-dotted{stroke-dasharray:2;}#mm841b2239a9f8 .marker{fill:#666;stroke:#666;}#mm841b2239a9f8 .marker.cross{stroke:#666;}#mm841b2239a9f8 svg{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;}#mm841b2239a9f8 p{margin:0;}#mm841b2239a9f8 .label{font-family:"Segoe UI",Arial,sans-serif;color:#000000;}#mm841b2239a9f8 .cluster-label text{fill:#333;}#mm841b2239a9f8 .cluster-label span{color:#333;}#mm841b2239a9f8 .cluster-label span p{background-color:transparent;}#mm841b2239a9f8 .label text,#mm841b2239a9f8 span{fill:#000000;color:#000000;}#mm841b2239a9f8 .node rect,#mm841b2239a9f8 .node circle,#mm841b2239a9f8 .node ellipse,#mm841b2239a9f8 .node polygon,#mm841b2239a9f8 .node path{fill:#eee;stroke:#999;stroke-width:1px;}#mm841b2239a9f8 .rough-node .label text,#mm841b2239a9f8 .node .label text,#mm841b2239a9f8 .image-shape .label,#mm841b2239a9f8 .icon-shape .label{text-anchor:middle;}#mm841b2239a9f8 .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#mm841b2239a9f8 .rough-node .label,#mm841b2239a9f8 .node .label,#mm841b2239a9f8 .image-shape .label,#mm841b2239a9f8 .icon-shape .label{text-align:center;}#mm841b2239a9f8 .node.clickable{cursor:pointer;}#mm841b2239a9f8 .root .anchor path{fill:#666!important;stroke-width:0;stroke:#666;}#mm841b2239a9f8 .arrowheadPath{fill:#333333;}#mm841b2239a9f8 .edgePaths .path{stroke:#666;stroke-width:1px;}#mm841b2239a9f8 .flowchart-link{stroke:#666;fill:none;}#mm841b2239a9f8 .edgeLabel{background-color:white;text-align:center;}#mm841b2239a9f8 .edgeLabel p{background-color:white;}#mm841b2239a9f8 .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mm841b2239a9f8 .labelBkg{background-color:rgba(255, 255, 255, 0.5);}#mm841b2239a9f8 .cluster rect{fill:hsl(0, 0%, 98.9215686275%);stroke:#707070;stroke-width:1px;}#mm841b2239a9f8 .cluster text{fill:#333;}#mm841b2239a9f8 .cluster span{color:#333;}#mm841b2239a9f8 .node .collapsed-indicator{fill:#707070;stroke:none;opacity:0.6;}#mm841b2239a9f8 .node .collapsed-separator{stroke:#707070;stroke-width:0.75px;}#mm841b2239a9f8 div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"Segoe UI",Arial,sans-serif;font-size:12px;background:hsl(-160, 0%, 93.3333333333%);border:1px solid #707070;border-radius:2px;pointer-events:none;z-index:100;}#mm841b2239a9f8 .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mm841b2239a9f8 rect.text{fill:none;stroke-width:0;}#mm841b2239a9f8 .icon-shape,#mm841b2239a9f8 .image-shape{background-color:white;text-align:center;}#mm841b2239a9f8 .icon-shape p,#mm841b2239a9f8 .image-shape p{background-color:white;padding:2px;}#mm841b2239a9f8 .icon-shape .label rect,#mm841b2239a9f8 .image-shape .label rect{opacity:0.5;background-color:white;fill:white;}#mm841b2239a9f8 .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#mm841b2239a9f8 .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#mm841b2239a9f8 .node .neo-node{stroke:#999;}#mm841b2239a9f8 [data-look="neo"].node rect,#mm841b2239a9f8 [data-look="neo"].cluster rect,#mm841b2239a9f8 [data-look="neo"].node polygon{stroke:url(#mm841b2239a9f8-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm841b2239a9f8 [data-look="neo"].swimlane.cluster rect{filter:none;}#mm841b2239a9f8 [data-look="neo"].node path{stroke:url(#mm841b2239a9f8-gradient);stroke-width:1px;}#mm841b2239a9f8 [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm841b2239a9f8 [data-look="neo"].node .neo-line path{stroke:#999;filter:none;}#mm841b2239a9f8 [data-look="neo"].node circle{stroke:url(#mm841b2239a9f8-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm841b2239a9f8 [data-look="neo"].node circle .state-start{fill:#000000;}#mm841b2239a9f8 [data-look="neo"].icon-shape .icon{fill:url(#mm841b2239a9f8-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm841b2239a9f8 [data-look="neo"].icon-shape .icon-neo path{stroke:url(#mm841b2239a9f8-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mm841b2239a9f8 :root{--mermaid-font-family:"Segoe UI",Arial,sans-serif;}</style><g><marker id="mm841b2239a9f8_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mm841b2239a9f8_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mm841b2239a9f8_flowchart-v2-pointEnd-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="11.5" refY="7" markerUnits="userSpaceOnUse" markerWidth="10.5" markerHeight="14" orient="auto"><path d="M 0 0 L 11.5 7 L 0 14 z" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></path></marker><marker id="mm841b2239a9f8_flowchart-v2-pointStart-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="1" refY="7" markerUnits="userSpaceOnUse" markerWidth="11.5" markerHeight="14" orient="auto"><polygon points="0,7 11.5,14 11.5,0" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></polygon></marker><marker id="mm841b2239a9f8_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm841b2239a9f8_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm841b2239a9f8_flowchart-v2-circleEnd-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refY="5" refX="12.25" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm841b2239a9f8_flowchart-v2-circleStart-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-2" refY="5" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mm841b2239a9f8_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mm841b2239a9f8_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mm841b2239a9f8_flowchart-v2-crossEnd-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="17.7" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5;"></path></marker><marker id="mm841b2239a9f8_flowchart-v2-crossStart-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="-3.5" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edges edgePaths"><path d="M164,43.29999923706055L200,43.29999923706055" id="mm841b2239a9f8-L_q1_s1_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_q1_s1_0" data-points="W3sieCI6MTY0LCJ5Ijo0My4yOTk5OTkyMzcwNjA1NX0seyJ4IjoyMDQsInkiOjQzLjI5OTk5OTIzNzA2MDU1fV0=" data-look="neo" marker-end="url(#mm841b2239a9f8_flowchart-v2-pointEnd-margin)"></path><path d="M164,145.89999771118164L200,145.89999771118164" id="mm841b2239a9f8-L_q2_s2_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_q2_s2_0" data-points="W3sieCI6MTY0LCJ5IjoxNDUuODk5OTk3NzExMTgxNjR9LHsieCI6MjA0LCJ5IjoxNDUuODk5OTk3NzExMTgxNjR9XQ==" data-look="neo" marker-end="url(#mm841b2239a9f8_flowchart-v2-pointEnd-margin)"></path><path d="M164,248.49999618530273L200,248.49999618530273" id="mm841b2239a9f8-L_q3_s3_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_q3_s3_0" data-points="W3sieCI6MTY0LCJ5IjoyNDguNDk5OTk2MTg1MzAyNzN9LHsieCI6MjA0LCJ5IjoyNDguNDk5OTk2MTg1MzAyNzN9XQ==" data-look="neo" marker-end="url(#mm841b2239a9f8_flowchart-v2-pointEnd-margin)"></path><path d="M164,351.0999946594238L200,351.0999946594238" id="mm841b2239a9f8-L_q4_s4_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_q4_s4_0" data-points="W3sieCI6MTY0LCJ5IjozNTEuMDk5OTk0NjU5NDIzOH0seyJ4IjoyMDQsInkiOjM1MS4wOTk5OTQ2NTk0MjM4fV0=" data-look="neo" marker-end="url(#mm841b2239a9f8_flowchart-v2-pointEnd-margin)"></path></g><g class="edgeLabels"></g><g class="nodes"><g class="node default" id="mm841b2239a9f8-flowchart-q1-0" data-look="neo" transform="translate(88, 43.29999923706055)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">What</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> did</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> this</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">script</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> run</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> cost?</tspan></tspan></text></g></g></g><g class="node default good" id="mm841b2239a9f8-flowchart-s1-1" data-look="neo" transform="translate(280, 43.29999923706055)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Result</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> JSON</tspan></tspan></text></g></g></g><g class="node default" id="mm841b2239a9f8-flowchart-q2-2" data-look="neo" transform="translate(88, 145.89999771118164)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Why</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> was</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> this</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">run</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> expensive?</tspan></tspan></text></g></g></g><g class="node default good" id="mm841b2239a9f8-flowchart-s2-3" data-look="neo" transform="translate(280, 145.89999771118164)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">stream-json</tspan></tspan></text></g></g></g><g class="node default" id="mm841b2239a9f8-flowchart-q3-4" data-look="neo" transform="translate(88, 248.49999618530273)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">What</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> happens</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">over</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> time?</tspan></tspan></text></g></g></g><g class="node default good" id="mm841b2239a9f8-flowchart-s3-5" data-look="neo" transform="translate(280, 248.49999618530273)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">OpenTelemetry</tspan></tspan></text></g></g></g><g class="node default" id="mm841b2239a9f8-flowchart-q4-6" data-look="neo" transform="translate(88, 351.0999946594238)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">What</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> is</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> my</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">session</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> at</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> now?</tspan></tspan></text></g></g></g><g class="node default good" id="mm841b2239a9f8-flowchart-s4-7" data-look="neo" transform="translate(280, 351.0999946594238)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">/usage</tspan></tspan></text></g></g></g></g></g></g><defs><filter id="mm841b2239a9f8-drop-shadow" height="130%" width="130%"><feDropShadow dx="4" dy="4" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><defs><filter id="mm841b2239a9f8-drop-shadow-small" height="150%" width="150%"><feDropShadow dx="2" dy="2" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><linearGradient id="mm841b2239a9f8-gradient" gradientUnits="objectBoundingBox" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="hsl(0, 0%, 83.3333333333%)" stop-opacity="1"></stop><stop offset="100%" stop-color="hsl(0, 0%, 88.9215686275%)" stop-opacity="1"></stop></linearGradient></svg>
+      <figcaption>Pick the source by the question: one run, one run explained, everything over time, or yourself right now.</figcaption>
+    </figure>
+
+    <h3>Result JSON</h3>
+    <p>A one-word Haiku run on a plan login returned this (trimmed):</p>
+    <pre data-cap="output"><code>{"type":"result","subtype":"success","is_error":false,"num_turns":1,
+ "duration_ms":1583,"duration_api_ms":1369,"total_cost_usd":0.00158857,
+ "usage":{"input_tokens":2,"cache_creation_input_tokens":7206,
+          "cache_read_input_tokens":14517,"output_tokens":4,
+          "cache_creation":{"ephemeral_1h_input_tokens":7206,"ephemeral_5m_input_tokens":0},
+          "service_tier":"standard"},
+ "modelUsage":{"claude-haiku-5-5":{"inputTokens":2,"outputTokens":4,
+          "cacheReadInputTokens":14517,"cacheCreationInputTokens":7206,
+          "costUSD":0.00158857,"costBasis":"list"}},
+ "subagent_stats":{"spawned":0, …},"result":"ready"}</code></pre>
+    <p>Check the arithmetic once so you trust it: 2 × $0.10 + 4 × $0.50 + 14,517 × $0.01 + 7,206 × $0.20 (the 1-hour write rate), all per million, is $0.00158857. The figure is computed locally from a bundled price table. <code>costBasis</code> says <code>list</code>: list price, not your bill. <code>modelUsage</code> splits the run by model, which matters as soon as a subagent runs on a different model from the main loop.</p>
+    <h3>stream-json</h3>
+    <p>The stream emits one JSON object per line: a <code>system</code>/<code>init</code> line with the tools, model and <code>apiKeySource</code>, then <code>assistant</code> and <code>user</code> lines as the loop runs, and a final <code>result</code> line identical to the JSON above. Each <code>assistant</code> line carries <code>message.id</code>, <code>request_id</code> and <code>message.usage</code>. One API response can arrive as several lines (one per content block) with the same <code>message.id</code>, so you count usage once per id. On a plan login the stream also carries a <code>rate_limit_event</code> line; Lesson 5 reads it.</p>
+    <h3>OpenTelemetry</h3>
+    <p>This is the only source that covers interactive sessions without anyone pasting anything, and the only one that aggregates across machines. Lessons 2 and 3 cover it.</p>
+    <h3><code>/usage</code></h3>
+    <p><code>/usage</code> (aliases <code>/cost</code> and <code>/stats</code>) shows a Session block with total cost, API and wall duration, code changes, tokens by model, and a <code>Prompt cache (main)</code> line with the request count, the share of input served from cache, misses and whether the cache is warm. On a Pro, Max, Ultra, Team or Enterprise plan it adds usage bars and a breakdown of what drew on your limits over the last 24 hours or 7 days, computed from this machine's local history only. It runs headless: <code>claude -p "/usage"</code> returned this on a plan login, with no API call and <code>total_cost_usd</code> 0:</p>
+    <pre data-cap="output"><code>You are currently using your subscription to power your Claude Code usage
+
+Current session: 35% used · resets Nov 11, 6:30pm
+Current week (all models): 79% used · resets Nov 12, 1am
+
+What's contributing to your usage?
+Approximate · sessions on this machine only · shares overlap
+
+Last 24h · 4499 requests · 113 sessions
+  59%  Run fewer sessions at once · up to 23 at once
+  30%  See what fills your context · run /context
+  20%  Give simple subagents a cheaper model</code></pre>
+    <aside class="rule">Use the result JSON for one run, stream-json to explain one run, OpenTelemetry for everything over time, and <code>/usage</code> for yourself right now.</aside>
+    <aside class="trap">Every dollar figure in all four sources is an estimate at list price unless an administrator set <code>modelPricing</code> in managed settings. On a plan it is notional: nobody bills you that amount.</aside>
+  </div>
+
+  <div class="lesson" id="m9-l2" data-title="Turning on OpenTelemetry" data-minutes="25">
+    <h3>The switches</h3>
+    <p>Export is off until <code>CLAUDE_CODE_ENABLE_TELEMETRY=1</code>. Then you pick an exporter per signal. Metrics are counters exported on an interval; events (OpenTelemetry calls them logs) are one record per prompt, API request, tool call and so on.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Variable</th><th>Values</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>CLAUDE_CODE_ENABLE_TELEMETRY</code></td><td><code>1</code></td><td>off</td><td>Required for anything below to happen.</td></tr>
+      <tr><td><code>OTEL_METRICS_EXPORTER</code></td><td><code>console</code>, <code>otlp</code>, <code>prometheus</code>, <code>none</code></td><td>none set</td><td>Comma-separated for several, e.g. <code>console,otlp</code>.</td></tr>
+      <tr><td><code>OTEL_LOGS_EXPORTER</code></td><td><code>console</code>, <code>otlp</code>, <code>none</code></td><td>none set</td><td>Carries the events, including <code>api_request</code>.</td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_PROTOCOL</code></td><td><code>grpc</code>, <code>http/json</code>, <code>http/protobuf</code></td><td>no default</td><td>You must set it (or the per-signal variant) for every <code>otlp</code> exporter.</td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_ENDPOINT</code></td><td>URL</td><td>none</td><td>Conventionally port 4317 for gRPC, 4318 for HTTP. With HTTP the SDK appends <code>/v1/metrics</code> and <code>/v1/logs</code>.</td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_HEADERS</code></td><td><code>Authorization=Bearer …</code></td><td>none</td><td>Collector credential.</td></tr>
+      <tr><td><code>OTEL_METRIC_EXPORT_INTERVAL</code></td><td>ms</td><td>60000</td><td>Shorten to 1000 to 10000 for debugging only.</td></tr>
+      <tr><td><code>OTEL_LOGS_EXPORT_INTERVAL</code></td><td>ms</td><td>5000</td><td></td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE</code></td><td><code>delta</code>, <code>cumulative</code></td><td>delta</td><td>Set <code>cumulative</code> if your backend expects it.</td></tr>
+      <tr><td><code>OTEL_RESOURCE_ATTRIBUTES</code></td><td><code>k=v,k=v</code></td><td>none</td><td>Your own tags. See below.</td></tr>
+    </table></div>
+    <p>Per-signal variants exist for endpoint, protocol and headers (<code>OTEL_EXPORTER_OTLP_METRICS_ENDPOINT</code>, <code>OTEL_EXPORTER_OTLP_LOGS_PROTOCOL</code> and so on), so metrics can go to a time-series store and events to a log store. A Prometheus exporter serves a scrape endpoint at <code>http://localhost:9464/metrics</code> instead of pushing.</p>
+    <figure class="diagram">
+<svg class="mm mm-flowchart" role="img" id="mmbb7fa0e4464c" width="100%" xmlns="http://www.w3.org/2000/svg" style="max-width: 1232.7093505859375px;" viewBox="4 4 1232.7093505859375 204.60000610351562"><style>#mmbb7fa0e4464c{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;fill:#000000;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#mmbb7fa0e4464c .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#mmbb7fa0e4464c .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#mmbb7fa0e4464c .error-icon{fill:#552222;}#mmbb7fa0e4464c .error-text{fill:#552222;stroke:#552222;}#mmbb7fa0e4464c .edge-thickness-normal{stroke-width:1px;}#mmbb7fa0e4464c .edge-thickness-thick{stroke-width:3.5px;}#mmbb7fa0e4464c .edge-pattern-solid{stroke-dasharray:0;}#mmbb7fa0e4464c .edge-thickness-invisible{stroke-width:0;fill:none;}#mmbb7fa0e4464c .edge-pattern-dashed{stroke-dasharray:3;}#mmbb7fa0e4464c .edge-pattern-dotted{stroke-dasharray:2;}#mmbb7fa0e4464c .marker{fill:#666;stroke:#666;}#mmbb7fa0e4464c .marker.cross{stroke:#666;}#mmbb7fa0e4464c svg{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;}#mmbb7fa0e4464c p{margin:0;}#mmbb7fa0e4464c .label{font-family:"Segoe UI",Arial,sans-serif;color:#000000;}#mmbb7fa0e4464c .cluster-label text{fill:#333;}#mmbb7fa0e4464c .cluster-label span{color:#333;}#mmbb7fa0e4464c .cluster-label span p{background-color:transparent;}#mmbb7fa0e4464c .label text,#mmbb7fa0e4464c span{fill:#000000;color:#000000;}#mmbb7fa0e4464c .node rect,#mmbb7fa0e4464c .node circle,#mmbb7fa0e4464c .node ellipse,#mmbb7fa0e4464c .node polygon,#mmbb7fa0e4464c .node path{fill:#eee;stroke:#999;stroke-width:1px;}#mmbb7fa0e4464c .rough-node .label text,#mmbb7fa0e4464c .node .label text,#mmbb7fa0e4464c .image-shape .label,#mmbb7fa0e4464c .icon-shape .label{text-anchor:middle;}#mmbb7fa0e4464c .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#mmbb7fa0e4464c .rough-node .label,#mmbb7fa0e4464c .node .label,#mmbb7fa0e4464c .image-shape .label,#mmbb7fa0e4464c .icon-shape .label{text-align:center;}#mmbb7fa0e4464c .node.clickable{cursor:pointer;}#mmbb7fa0e4464c .root .anchor path{fill:#666!important;stroke-width:0;stroke:#666;}#mmbb7fa0e4464c .arrowheadPath{fill:#333333;}#mmbb7fa0e4464c .edgePaths .path{stroke:#666;stroke-width:1px;}#mmbb7fa0e4464c .flowchart-link{stroke:#666;fill:none;}#mmbb7fa0e4464c .edgeLabel{background-color:white;text-align:center;}#mmbb7fa0e4464c .edgeLabel p{background-color:white;}#mmbb7fa0e4464c .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mmbb7fa0e4464c .labelBkg{background-color:rgba(255, 255, 255, 0.5);}#mmbb7fa0e4464c .cluster rect{fill:hsl(0, 0%, 98.9215686275%);stroke:#707070;stroke-width:1px;}#mmbb7fa0e4464c .cluster text{fill:#333;}#mmbb7fa0e4464c .cluster span{color:#333;}#mmbb7fa0e4464c .node .collapsed-indicator{fill:#707070;stroke:none;opacity:0.6;}#mmbb7fa0e4464c .node .collapsed-separator{stroke:#707070;stroke-width:0.75px;}#mmbb7fa0e4464c div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"Segoe UI",Arial,sans-serif;font-size:12px;background:hsl(-160, 0%, 93.3333333333%);border:1px solid #707070;border-radius:2px;pointer-events:none;z-index:100;}#mmbb7fa0e4464c .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mmbb7fa0e4464c rect.text{fill:none;stroke-width:0;}#mmbb7fa0e4464c .icon-shape,#mmbb7fa0e4464c .image-shape{background-color:white;text-align:center;}#mmbb7fa0e4464c .icon-shape p,#mmbb7fa0e4464c .image-shape p{background-color:white;padding:2px;}#mmbb7fa0e4464c .icon-shape .label rect,#mmbb7fa0e4464c .image-shape .label rect{opacity:0.5;background-color:white;fill:white;}#mmbb7fa0e4464c .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#mmbb7fa0e4464c .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#mmbb7fa0e4464c .node .neo-node{stroke:#999;}#mmbb7fa0e4464c [data-look="neo"].node rect,#mmbb7fa0e4464c [data-look="neo"].cluster rect,#mmbb7fa0e4464c [data-look="neo"].node polygon{stroke:url(#mmbb7fa0e4464c-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmbb7fa0e4464c [data-look="neo"].swimlane.cluster rect{filter:none;}#mmbb7fa0e4464c [data-look="neo"].node path{stroke:url(#mmbb7fa0e4464c-gradient);stroke-width:1px;}#mmbb7fa0e4464c [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmbb7fa0e4464c [data-look="neo"].node .neo-line path{stroke:#999;filter:none;}#mmbb7fa0e4464c [data-look="neo"].node circle{stroke:url(#mmbb7fa0e4464c-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmbb7fa0e4464c [data-look="neo"].node circle .state-start{fill:#000000;}#mmbb7fa0e4464c [data-look="neo"].icon-shape .icon{fill:url(#mmbb7fa0e4464c-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmbb7fa0e4464c [data-look="neo"].icon-shape .icon-neo path{stroke:url(#mmbb7fa0e4464c-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmbb7fa0e4464c :root{--mermaid-font-family:"Segoe UI",Arial,sans-serif;}</style><g><marker id="mmbb7fa0e4464c_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mmbb7fa0e4464c_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mmbb7fa0e4464c_flowchart-v2-pointEnd-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="11.5" refY="7" markerUnits="userSpaceOnUse" markerWidth="10.5" markerHeight="14" orient="auto"><path d="M 0 0 L 11.5 7 L 0 14 z" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></path></marker><marker id="mmbb7fa0e4464c_flowchart-v2-pointStart-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="1" refY="7" markerUnits="userSpaceOnUse" markerWidth="11.5" markerHeight="14" orient="auto"><polygon points="0,7 11.5,14 11.5,0" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></polygon></marker><marker id="mmbb7fa0e4464c_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmbb7fa0e4464c_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmbb7fa0e4464c_flowchart-v2-circleEnd-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refY="5" refX="12.25" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmbb7fa0e4464c_flowchart-v2-circleStart-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-2" refY="5" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmbb7fa0e4464c_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mmbb7fa0e4464c_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mmbb7fa0e4464c_flowchart-v2-crossEnd-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="17.7" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5;"></path></marker><marker id="mmbb7fa0e4464c_flowchart-v2-crossStart-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="-3.5" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edges edgePaths"><path d="M164,106.30000305175781L200,106.30000305175781" id="mmbb7fa0e4464c-L_cc_sw_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_cc_sw_0" data-points="W3sieCI6MTY0LCJ5IjoxMDYuMzAwMDAzMDUxNzU3ODF9LHsieCI6MjA0LCJ5IjoxMDYuMzAwMDAzMDUxNzU3ODF9XQ==" data-look="neo" marker-end="url(#mmbb7fa0e4464c_flowchart-v2-pointEnd-margin)"></path><path d="M364.4999225105712,78.20000203450522L392.6000061035156,78.20000203450522L405.52893829165015,78.20000203450522Q412.6000061035156,78.20000203450522 412.6000061035156,71.12893422263974L412.6000061035156,66.47107124509303Q412.6000061035156,59.40000343322755 419.6710739153811,59.40000343322755L496.7093811035156,59.40000343322755" id="mmbb7fa0e4464c-L_sw_none_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 141.68121337890625 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_sw_none_0" data-points="W3sieCI6MzY0LjQ5OTkyMjUxMDU3MTIsInkiOjc4LjIwMDAwMjAzNDUwNTIyfSx7IngiOjM5Mi42MDAwMDYxMDM1MTU2LCJ5Ijo3OC4yMDAwMDIwMzQ1MDUyMn0seyJ4Ijo0MTIuNjAwMDA2MTAzNTE1NiwieSI6NzguMjAwMDAyMDM0NTA1MjJ9LHsieCI6NDEyLjYwMDAwNjEwMzUxNTYsInkiOjU5LjQwMDAwMzQzMzIyNzU1fSx7IngiOjUwMC43MDkzODExMDM1MTU2LCJ5Ijo1OS40MDAwMDM0MzMyMjc1NX1d" data-look="neo" marker-end="url(#mmbb7fa0e4464c_flowchart-v2-pointEnd-margin)"></path><path d="M364.4999225105712,134.40000406901044L392.6000061035156,134.40000406901044L405.52893829165015,134.40000406901044Q412.6000061035156,134.40000406901044 412.6000061035156,141.4710718808759L412.6000061035156,146.12893485842264Q412.6000061035156,153.20000267028811 419.6710739153811,153.20000267028811L496.7093811035156,153.20000267028811" id="mmbb7fa0e4464c-L_sw_ex_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 141.68118286132812 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_sw_ex_0" data-points="W3sieCI6MzY0LjQ5OTkyMjUxMDU3MTIsInkiOjEzNC40MDAwMDQwNjkwMTA0NH0seyJ4IjozOTIuNjAwMDA2MTAzNTE1NiwieSI6MTM0LjQwMDAwNDA2OTAxMDQ0fSx7IngiOjQxMi42MDAwMDYxMDM1MTU2LCJ5IjoxMzQuNDAwMDA0MDY5MDEwNDR9LHsieCI6NDEyLjYwMDAwNjEwMzUxNTYsInkiOjE1My4yMDAwMDI2NzAyODgxMX0seyJ4Ijo1MDAuNzA5MzgxMTAzNTE1NiwieSI6MTUzLjIwMDAwMjY3MDI4ODExfV0=" data-look="neo" marker-end="url(#mmbb7fa0e4464c_flowchart-v2-pointEnd-margin)"></path><path d="M652.7093811035156,153.20000267028811L688.7093811035156,153.20000267028811" id="mmbb7fa0e4464c-L_ex_co_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_ex_co_0" data-points="W3sieCI6NjUyLjcwOTM4MTEwMzUxNTYsInkiOjE1My4yMDAwMDI2NzAyODgxMX0seyJ4Ijo2OTIuNzA5MzgxMTAzNTE1NiwieSI6MTUzLjIwMDAwMjY3MDI4ODExfV0=" data-look="neo" marker-end="url(#mmbb7fa0e4464c_flowchart-v2-pointEnd-margin)"></path><path d="M844.7093811035156,153.20000267028811L880.7093811035156,153.20000267028811" id="mmbb7fa0e4464c-L_co_st_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_co_st_0" data-points="W3sieCI6ODQ0LjcwOTM4MTEwMzUxNTYsInkiOjE1My4yMDAwMDI2NzAyODgxMX0seyJ4Ijo4ODQuNzA5MzgxMTAzNTE1NiwieSI6MTUzLjIwMDAwMjY3MDI4ODExfV0=" data-look="neo" marker-end="url(#mmbb7fa0e4464c_flowchart-v2-pointEnd-margin)"></path><path d="M1036.7093811035156,153.20000267028811L1072.7093811035156,153.20000267028811" id="mmbb7fa0e4464c-L_st_qu_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_st_qu_0" data-points="W3sieCI6MTAzNi43MDkzODExMDM1MTU2LCJ5IjoxNTMuMjAwMDAyNjcwMjg4MTF9LHsieCI6MTA3Ni43MDkzODExMDM1MTU2LCJ5IjoxNTMuMjAwMDAyNjcwMjg4MTF9XQ==" data-look="neo" marker-end="url(#mmbb7fa0e4464c_flowchart-v2-pointEnd-margin)"></path></g><g class="edgeLabels"><g class="edgeLabel" transform="translate(446.6546936035156, 58.90000343322755)"><g class="label" data-id="L_sw_none_0" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-11.21875" y="-3" width="22.4375" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">no</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(446.6546936035156, 152.7000026702881)"><g class="label" data-id="L_sw_ex_0" transform="translate(0.3984375, -9.5)"><g><rect class="background" style="" x="-14.453125" y="-3" width="28.109375" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">yes</tspan></tspan></text></g></g></g></g><g class="nodes"><g class="node default hot" id="mmbb7fa0e4464c-flowchart-cc-0" data-look="neo" transform="translate(88, 106.30000305175781)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Claude</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Code</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">session</tspan></tspan></text></g></g></g><g class="node default" id="mmbb7fa0e4464c-flowchart-sw-1" data-look="neo" transform="translate(298.3000030517578, 106.30000305175781)"><polygon points="94.29999923706055,0 188.5999984741211,-94.29999923706055 94.29999923706055,-188.5999984741211 0,-94.29999923706055" class="label-container" transform="translate(-93.79999923706055, 94.29999923706055)"></polygon><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Telemetry</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> switch</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">on?</tspan></tspan></text></g></g></g><g class="node default ghost" id="mmbb7fa0e4464c-flowchart-none-2" data-look="neo" transform="translate(576.7093811035156, 59.40000343322755)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Nothing</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> is</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">exported</tspan></tspan></text></g></g></g><g class="node default info" id="mmbb7fa0e4464c-flowchart-ex-3" data-look="neo" transform="translate(576.7093811035156, 153.2000026702881)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">OTLP</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> exporter</tspan></tspan></text></g></g></g><g class="node default info" id="mmbb7fa0e4464c-flowchart-co-4" data-look="neo" transform="translate(768.7093811035156, 153.2000026702881)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Collector</tspan></tspan></text></g></g></g><g class="node default" id="mmbb7fa0e4464c-flowchart-st-5" data-look="neo" transform="translate(960.7093811035156, 153.2000026702881)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Metric</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> and</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> log</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">stores</tspan></tspan></text></g></g></g><g class="node default good" id="mmbb7fa0e4464c-flowchart-qu-6" data-look="neo" transform="translate(1152.7093811035156, 153.2000026702881)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Your</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> query</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> or</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">dashboard</tspan></tspan></text></g></g></g></g></g></g><defs><filter id="mmbb7fa0e4464c-drop-shadow" height="130%" width="130%"><feDropShadow dx="4" dy="4" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><defs><filter id="mmbb7fa0e4464c-drop-shadow-small" height="150%" width="150%"><feDropShadow dx="2" dy="2" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><linearGradient id="mmbb7fa0e4464c-gradient" gradientUnits="objectBoundingBox" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="hsl(0, 0%, 83.3333333333%)" stop-opacity="1"></stop><stop offset="100%" stop-color="hsl(0, 0%, 88.9215686275%)" stop-opacity="1"></stop></linearGradient></svg>
+      <figcaption>Nothing leaves the machine until the switch is on, and then only to the endpoint you configured.</figcaption>
+    </figure>
+
+    <h3>Will it flush before a short run exits</h3>
+    <p>Yes, in 2.1.322. A headless run that lasted under two seconds exported its metrics at exit even with the default 60-second interval left alone. The short interval matters for long interactive sessions, where you want to see numbers before the session ends. What did stop output was <code>--output-format json</code>: with the console exporter, the JSON run printed only its result object and no telemetry, while the same run in text mode printed about 600 lines of metric and event records to stdout. OTLP export is not affected, because it goes over the network.</p>
+    <h3>Tagging: team and cost centre</h3>
+    <pre><code>$env:OTEL_RESOURCE_ATTRIBUTES = 'department=engineering,team.id=platform,cost_center=eng-123'</code></pre>
+    <p>The keys go into the OTLP resource block and onto every metric datapoint and event, so a backend can group by them as ordinary labels. Format is strict: comma-separated <code>key=value</code>, no spaces, no quotes, commas, semicolons or backslashes in values. Percent-encode anything else. A value with a space silently drops every key and raises no error. Each key becomes a label on every series; if a value is high-cardinality, set <code>OTEL_METRICS_INCLUDE_RESOURCE_ATTRIBUTES=false</code> to keep it in the resource block only.</p>
+    <h3>What leaves the machine by default</h3>
+    <p>Export goes only to the endpoint you configure. It is separate from Anthropic's own operational telemetry.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Data</th><th>Default</th><th>Switch</th></tr>
+      <tr><td>Token counts, cost, durations, model, tool names (built-in), success flags, sizes</td><td>Sent</td><td>Exporter selectors</td></tr>
+      <tr><td><code>session.id</code>, <code>user.account_uuid</code>, <code>user.account_id</code>, <code>organization.id</code></td><td>Sent</td><td><code>OTEL_METRICS_INCLUDE_SESSION_ID</code>, <code>OTEL_METRICS_INCLUDE_ACCOUNT_UUID</code></td></tr>
+      <tr><td><code>user.email</code> (on an OAuth login)</td><td>Sent</td><td>No switch: filter it in your collector</td></tr>
+      <tr><td>Prompt text</td><td>Not sent; only <code>prompt_length</code>, value shows <code>&lt;REDACTED&gt;</code></td><td><code>OTEL_LOG_USER_PROMPTS=1</code></td></tr>
+      <tr><td>Assistant response text</td><td>Not sent; only length</td><td><code>OTEL_LOG_ASSISTANT_RESPONSES=1</code> (falls back to the prompt switch when unset)</td></tr>
+      <tr><td>Bash commands, file paths, tool arguments, MCP server and tool names, custom skill and agent names</td><td>Not sent; MCP tools show as <code>mcp_tool</code>, custom names as <code>custom</code></td><td><code>OTEL_LOG_TOOL_DETAILS=1</code></td></tr>
+      <tr><td>Full API request and response bodies</td><td>Not sent</td><td><code>OTEL_LOG_RAW_API_BODIES=1</code> or <code>file:&lt;dir&gt;</code>; implies everything above</td></tr>
+    </table></div>
+    <h3>Who can turn it on</h3>
+    <p>Claude Code ignores the OTel exporter variables in a repository's <code>.claude/settings.json</code> and <code>.claude/settings.local.json</code>, so a cloned repo cannot start exporting your work or capture content. A repository can only turn a signal off. Set the variables in your shell, in your user settings <code>env</code> block, or, for a team, in managed settings (next lessons). Claude Code also does not pass <code>OTEL_*</code> to the Bash tool, hooks or MCP servers.</p>
+    <aside class="rule">Leave the content switches off unless the collector is approved to hold source code and prompts; the counters answer every cost question without them.</aside>
+    <aside class="trap">Setting <code>OTEL_EXPORTER_OTLP_PROTOCOL</code> is easy to forget because most SDKs default it. Claude Code has no default, so an <code>otlp</code> exporter without it sends nothing. Run with <code>--debug-file &lt;path&gt;</code> and look for <code>[3P telemetry]</code> lines; a good setup logs <code>First metrics export: SUCCESS</code>.</aside>
+  </div>
+
+  <div class="lesson" id="m9-l3" data-title="Metrics and events" data-minutes="25">
+    <h3>Metrics</h3>
+    <p>Metrics are counters. Every one carries the standard attributes (<code>session.id</code>, <code>user.id</code>, <code>organization.id</code>, <code>user.account_uuid</code>, <code>terminal.type</code>, your resource attributes) plus its own.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Metric</th><th>Unit</th><th>Own attributes</th><th>Incremented</th></tr>
+      <tr><td><code>claude_code.token.usage</code></td><td>tokens</td><td><code>type</code> = <code>input</code> | <code>output</code> | <code>cacheRead</code> | <code>cacheCreation</code>; <code>model</code>; <code>query_source</code> = <code>main</code> | <code>subagent</code> | <code>auxiliary</code>; <code>effort</code>; <code>speed</code>; <code>agent.name</code>, <code>skill.name</code>, <code>plugin.name</code>, <code>mcp_server.name</code></td><td>After each API request</td></tr>
+      <tr><td><code>claude_code.cost.usage</code></td><td>USD</td><td>Same as token usage, without <code>type</code></td><td>After each API request</td></tr>
+      <tr><td><code>claude_code.session.count</code></td><td></td><td><code>start_type</code> = <code>fresh</code> | <code>resume</code> | <code>continue</code> | <code>agents_view</code></td><td>Session start</td></tr>
+      <tr><td><code>claude_code.lines_of_code.count</code></td><td></td><td><code>type</code> = <code>added</code> | <code>removed</code>; <code>model</code></td><td>Code edits</td></tr>
+      <tr><td><code>claude_code.active_time.total</code></td><td>s</td><td><code>type</code> = <code>user</code> | <code>cli</code></td><td>While typing or while the CLI works; idle excluded</td></tr>
+      <tr><td><code>claude_code.commit.count</code>, <code>.pull_request.count</code>, <code>.code_edit_tool.decision</code></td><td></td><td>Decision counter: <code>tool_name</code>, <code>decision</code>, <code>source</code>, <code>language</code></td><td>Commits, PRs, Edit/Write accept or reject</td></tr>
+    </table></div>
+    <p><code>cacheCreation</code> lumps the 5-minute and 1-hour writes together. <code>input</code> excludes cache reads and writes, as in the API usage block; add the three to get total input. Custom agent, skill and MCP names are replaced with <code>custom</code> or <code>third-party</code> unless <code>OTEL_LOG_TOOL_DETAILS=1</code>.</p>
+    <h3>Delta, not running totals</h3>
+    <p>The default temporality is delta: each export carries only what happened since the last one. The OTLP payload shows <code>"aggregationTemporality":1</code> (delta). To get a run's total you sum every datapoint across every export. If you switch to <code>cumulative</code>, you take the last value per series instead. Summing cumulative points is the commonest way to report a cost ten times too high.</p>
+    <p>One token datapoint from the console exporter, trimmed:</p>
+    <pre data-cap="output"><code>descriptor: { name: "claude_code.token.usage", type: "COUNTER", unit: "tokens" },
+dataPoints: [ {
+  attributes: { "session.id": "1250…", "organization.id": "…",
+                model: "claude-haiku-5-5", query_source: "main",
+                effort: "medium", type: "cacheRead" },
+  value: 17191 }, … ]</code></pre>
+    <h3>Events</h3>
+    <p>Events need <code>OTEL_LOGS_EXPORTER</code>. Each has <code>event.name</code>, <code>event.timestamp</code>, <code>event.sequence</code> and <code>prompt.id</code>, which ties every event caused by one prompt together.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Event</th><th>Key attributes</th><th>Use</th></tr>
+      <tr><td><code>claude_code.api_request</code></td><td><code>model</code>, <code>cost_usd</code>, <code>cost_usd_micros</code>, <code>duration_ms</code>, <code>input_tokens</code>, <code>output_tokens</code>, <code>cache_read_tokens</code>, <code>cache_creation_tokens</code>, <code>cache_creation_5m_tokens</code>, <code>cache_creation_1h_tokens</code>, <code>request_id</code>, <code>query_source</code>, <code>effort</code></td><td>Per-request cost and cache; the richest single record</td></tr>
+      <tr><td><code>claude_code.api_error</code></td><td><code>model</code>, <code>error</code>, <code>status_code</code>, <code>attempt</code>, <code>duration_ms</code></td><td>Emitted once, after retries give up; <code>attempt</code> counts tries (default retry limit 10)</td></tr>
+      <tr><td><code>claude_code.tool_result</code></td><td><code>tool_name</code>, <code>tool_use_id</code>, <code>success</code>, <code>duration_ms</code>, <code>error_type</code>, <code>decision_source</code>, <code>tool_input_size_bytes</code>, <code>tool_result_size_bytes</code></td><td>Which tools feed the context and how much</td></tr>
+      <tr><td><code>claude_code.tool_decision</code></td><td><code>tool_name</code>, <code>decision</code> (accept/reject), <code>source</code> (config, hook, user_…), <code>tool_source</code></td><td>Permission audit</td></tr>
+      <tr><td><code>claude_code.user_prompt</code></td><td><code>prompt_length</code>, <code>prompt</code> (redacted by default), <code>command_name</code></td><td>Turns per session; prompts only if you opt in</td></tr>
+    </table></div>
+    <p>Others appear too: <code>assistant_response</code>, <code>api_retries_exhausted</code>, <code>plugin_loaded</code>, <code>managed_settings_resolved</code>, <code>compaction</code>, <code>subagent_completed</code>. A one-word headless run produced <code>managed_settings_resolved</code>, four <code>plugin_loaded</code>, then <code>user_prompt</code>, <code>api_request</code> and <code>assistant_response</code>.</p>
+    <h3>Two spellings of <code>query_source</code></h3>
+    <p>On the two counters it is a bounded category: <code>main</code>, <code>subagent</code> or <code>auxiliary</code>. On events it is the raw subsystem name: the same headless run showed <code>main</code> on its metrics and <code>sdk</code> on its <code>api_request</code> event; interactive sessions report names such as <code>repl_main_thread</code> or <code>compact</code>. Build subagent share from the metric, and use the event value to drill in.</p>
+    <p>Version 2.1.322 also attached <code>anthropic.plan</code> (<code>pro</code> on the test login) and <code>anthropic.provider</code> to every record. They are not in the documented attribute list, so treat them as handy but unstable.</p>
+    <aside class="rule">Totals come from the counters, explanations come from the events; join the two on <code>session.id</code>.</aside>
+    <aside class="trap"><code>request_id</code> on <code>api_request</code> matches <code>request_id</code> on stream-json <code>assistant</code> lines and <code>requestId</code> in the local transcript. The transcript format is internal and changes between versions, so a pipeline that joins on it breaks without warning.</aside>
+  </div>
+
+  <div class="lesson" id="m9-l4" data-title="Ratios worth a dashboard" data-minutes="25">
+    <h3>Why ratios</h3>
+    <p>Raw token totals grow with adoption and tell you nothing. A ratio stays flat while usage is healthy and moves when someone's habits or a pipeline's design change. Six cover almost every cost incident.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Ratio</th><th>Formula</th><th>Source</th><th>Healthy looks like</th><th>Starting alert</th></tr>
+      <tr><td>Cache hit ratio</td><td>cacheRead ÷ (input + cacheRead + cacheCreation)</td><td><code>token.usage</code> by <code>type</code>, per session</td><td>Labs: 79% on a cold first request, 98 to 100% after</td><td>Below 70% for a session with more than 5 requests</td></tr>
+      <tr><td>Cost per session</td><td>sum <code>cost.usage</code> by <code>session.id</code></td><td><code>cost.usage</code></td><td>Your own baseline</td><td>Above 2 × your 95th percentile</td></tr>
+      <tr><td>Cost per task</td><td>sum <code>cost_usd</code> by <code>prompt.id</code>, or per pipeline run by a resource attribute</td><td><code>api_request</code></td><td>Stable per task type</td><td>Above 2 × the median for that task type</td></tr>
+      <tr><td>Output share</td><td>output cost ÷ total cost</td><td><code>token.usage</code> priced, or <code>cost.usage</code> with output tokens × output price</td><td>Labs: 1% (one word) to 11% (a short list)</td><td>Above 40%: long generations or high effort</td></tr>
+      <tr><td>Subagent share</td><td>cost where <code>query_source</code>=<code>subagent</code> ÷ total</td><td><code>cost.usage</code></td><td>0 unless you use subagents on purpose</td><td>Above 50%, or any rise after a config change</td></tr>
+      <tr><td>Error and retry rate</td><td><code>api_error</code> ÷ (<code>api_request</code> + <code>api_error</code>)</td><td>events</td><td>Near 0</td><td>Above 2% over an hour, or any <code>api_retries_exhausted</code></td></tr>
+      <tr><td>Tokens per request growth</td><td>total input of request n ÷ request 1, per session</td><td><code>api_request</code> ordered by <code>event.timestamp</code></td><td>Grows slowly; a fresh headless run starts near 22k</td><td>Above 5 × the first request, or any Haiku 5.5 request over 100k (price step)</td></tr>
+    </table></div>
+    <h3>Reading each one</h3>
+    <h4>Cache hit ratio</h4>
+    <p>Claude Code re-sends the whole conversation, so after the first request almost everything should be a <span class="tok cr">cache read</span>. A low ratio means the prefix keeps changing (tool definitions, MCP servers connecting late, a model or effort switch) or the cache expired between turns. On a plan within its usage the main conversation gets a 1-hour cache lifetime; on an API key, usage credits or a cloud provider it gets 5 minutes. A person who pauses 10 minutes between prompts on an API key pays a <span class="tok cw">cache write</span> on every prompt.</p>
+    <h4>Cost per session and per task</h4>
+    <p>Sessions are the unit people control (<code>/clear</code> starts a new <code>session.id</code>). Tasks are the unit your business cares about. For pipelines, put a run id or job name in <code>OTEL_RESOURCE_ATTRIBUTES</code> so cost per run is a single group-by. Do not use a per-run id as a metric label on a busy system; keep it on events, or set <code>OTEL_METRICS_INCLUDE_RESOURCE_ATTRIBUTES=false</code>.</p>
+    <h4>Output share</h4>
+    <p>Output is 5 times input on every current model and includes thinking. Output share climbs when effort is raised, when a prompt asks for full files back instead of edits, or when a loop writes long reports nobody reads.</p>
+    <h4>Subagent share</h4>
+    <p>Each subagent starts a fresh context and pays its own cache write. A rising subagent share with flat task counts usually means a skill or agent definition started fanning out. <code>agent.name</code> tells you which one (real names need <code>OTEL_LOG_TOOL_DETAILS=1</code>).</p>
+    <h4>Error and retry rate</h4>
+    <p>Claude Code retries internally and logs <code>api_error</code> only when it gives up, so every error event is a request that failed for good. Group by <code>status_code</code>: 429 points at rate limits, 5xx at the service, connection errors at your proxy.</p>
+    <h4>Tokens per request growth</h4>
+    <p>The context only grows until compaction. Watch the ratio, not the absolute value: a session at 5 times its starting size is paying for history it probably no longer needs, and the person should <code>/clear</code> or <code>/compact</code>.</p>
+    <aside class="rule">Set each threshold from two weeks of your own data, then alert on change against that baseline, not on a number from a slide.</aside>
+    <aside class="trap">Averages hide the problem. One runaway loop at $40 disappears in a team average of $3 per session; alert on per-session maxima and percentiles.</aside>
+  </div>
+
+  <div class="lesson" id="m9-l5" data-title="Where to send it, and what the numbers mean on a plan" data-minutes="20">
+    <h3>Three destinations</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Setup</th><th>Variables</th><th>When</th></tr>
+      <tr><td>Plain file, one machine</td><td><code>console</code> exporter redirected to a file, or OTLP <code>http/json</code> to a tiny local receiver that appends each POST (Lab 2)</td><td>You, a build agent, a short study</td></tr>
+      <tr><td>Prometheus scrape</td><td><code>OTEL_METRICS_EXPORTER=prometheus</code>, scrape <code>:9464/metrics</code></td><td>One long-lived host you already scrape; metrics only</td></tr>
+      <tr><td>Collector, any backend</td><td><code>otlp</code> for both signals, protocol, endpoint, headers</td><td>A team: the collector filters <code>user.email</code>, drops content attributes, and fans out to a metrics store and a log store</td></tr>
+    </table></div>
+    <h3>Turning it on for a team</h3>
+    <p>Put the variables in the <code>env</code> block of managed settings, delivered through a <code>managed-settings.json</code> file in the system directory, MDM, or server-managed settings from the admin console:</p>
+    <pre data-file="managed-settings.json"><code>{
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_LOGS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector.example.com:4317",
+    "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer example-token",
+    "OTEL_RESOURCE_ATTRIBUTES": "department=engineering,team.id=platform"
+  }
+}</code></pre>
+    <p>When managed settings set the endpoint, protocol or headers, Claude Code removes conflicting developer-set per-signal variables at startup, so nobody can point one signal elsewhere. The exporter selectors follow normal precedence: a developer can still set <code>OTEL_LOGS_EXPORTER=none</code> unless managed settings set it too. For API-key logins there is no account identity on the records (only <code>user.id</code> and <code>session.id</code>), so set an identity attribute per user in the managed file or a launch wrapper.</p>
+    <h3>Subscription versus API key</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Question</th><th>Subscription plan</th><th>API key</th></tr>
+      <tr><td>What does <code>cost.usage</code> / <code>total_cost_usd</code> mean</td><td>A notional list-price estimate. You pay the flat fee whatever it says</td><td>An estimate of what you will be billed at list price; contracted rates differ unless <code>modelPricing</code> is set</td></tr>
+      <tr><td>The number that limits you</td><td>Share of the 5-hour window and the weekly limits</td><td>Dollars, workspace spend limits, and per-minute rate limits</td></tr>
+      <tr><td>Where you see it</td><td><code>/usage</code> bars, status line <code>rate_limits.five_hour.used_percentage</code> and <code>seven_day</code>, the stream-json <code>rate_limit_event</code></td><td>Console Cost page, workspace limits, Claude Code dashboard and Analytics API</td></tr>
+      <tr><td>Cache lifetime Claude Code asks for</td><td>1 hour on the main conversation within plan usage</td><td>5 minutes unless overridden</td></tr>
+      <tr><td>Use for the cost metrics</td><td>Relative comparison: which sessions, skills and habits draw most</td><td>Budget, chargeback and alerting in dollars</td></tr>
+    </table></div>
+    <p>A plan user watches window share. The stream-json <code>rate_limit_event</code> on a plan login looked like this in 2.1.322 (the field layout is not documented, so read it defensively):</p>
+    <pre data-cap="output"><code>{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning",
+ "rateLimitType":"seven_day","utilization":0.79,"surpassedThreshold":0.75,
+ "unifiedWindows":{"five_hour":{"utilization":0.42,"status":"allowed"},
+                   "seven_day":{"utilization":0.79,"status":"allowed_warning"}}}}</code></pre>
+    <p>The cost metrics still help a plan user: cached tokens count less against limits, and the plan breakdown in <code>/usage</code> flags the same patterns (cache misses, long context, subagents) that the ratios in Lesson 4 catch.</p>
+    <h3>What the admin consoles add</h3>
+    <p>OpenTelemetry gives you raw counts as they happen. The consoles give you the billing view and data you cannot compute locally.</p>
+    <ul>
+      <li><b>Team and Enterprise plans</b> (claude.ai admin): a Claude Code analytics dashboard with lines accepted, suggestion accept rate, daily active users and sessions, contribution metrics from merged PRs through a GitHub integration, a leaderboard, and a spend report CSV for usage-credit spend. Enterprise adds an Analytics API.</li>
+      <li><b>API organizations</b> (Claude Console): the Cost page, a dedicated workspace for Claude Code with spend and rate limits, a per-member dashboard of spend and lines accepted, and the Claude Code Analytics API for daily per-user metrics with an Admin API key.</li>
+    </ul>
+    <aside class="rule">Reconcile against the console monthly; run dashboards and alerts off OpenTelemetry daily.</aside>
+    <aside class="trap">An <code>ANTHROPIC_API_KEY</code> left in the environment makes <code>-p</code> runs bill the API even on a plan login. The <code>system</code>/<code>init</code> line shows <code>apiKeySource</code>; on a plan login it reads <code>none</code>.</aside>
+  </div>
+
+  <div class="lesson" id="m9-l6" data-title="Explaining one expensive session" data-minutes="20">
+    <h3>The method</h3>
+    <p>A dashboard tells you a session cost five times the norm. To say why, you need it request by request. For a headless run, capture stream-json. For an interactive session, use the <code>api_request</code> events filtered by its <code>session.id</code> (Claude Code also keeps a local transcript per session, but its format is internal). Then build one row per API request.</p>
+    <ol>
+      <li><b>One row per response.</b> Keep the last <code>assistant</code> line per <code>message.id</code>; take <code>input_tokens</code>, <code>cache_creation_input_tokens</code>, <code>cache_read_input_tokens</code>.</li>
+      <li><b>Price each row</b> with the model's rates, or take <code>cost_usd</code> from the matching <code>api_request</code> event via <code>request_id</code>.</li>
+      <li><b>Look at the shape</b>, not the total. Four shapes explain most expensive sessions.</li>
+    </ol>
+    <div class="tablewrap"><table>
+      <tr><th>Shape in the rows</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>Large <span class="tok cw">cache write</span> on many rows, not just the first</td><td>Cache misses: prefix changed or the cache expired between turns</td><td>Stop switching model or tools mid-session; on an API key keep turns inside 5 minutes or ask for the 1-hour lifetime</td></tr>
+      <tr><td><span class="tok cr">Cache read</span> climbing steadily into the hundreds of thousands</td><td>Context growth: big tool results kept in history</td><td><code>/compact</code> or <code>/clear</code>; narrower reads; check <code>tool_result_size_bytes</code></td></tr>
+      <tr><td>Many rows, small growth each</td><td>A tool loop: retries, polling, one-file-at-a-time edits</td><td>Lower <code>--max-turns</code>, better instructions, batch the work</td></tr>
+      <tr><td>Few rows, high output</td><td>Long generations or high effort</td><td>Ask for diffs, lower <code>/effort</code></td></tr>
+    </table></div>
+    <h3>A real two-request run</h3>
+    <p>A Haiku run that read a 30-line CSV and answered one question made two API requests. Lab 3's script printed:</p>
+    <pre data-cap="output"><code>req input cacheWrite cacheRead output hitPct  costUsd
+--- ----- ---------- --------- ------ ------  -------
+  1     2       4552     17191     16   79.1 0.001091
+  2     2        500     21743      8   97.7 0.000322
+
+requests:            2
+cache hit ratio:     88.5%
+computed cost:       0.001413 USD
+result total_cost:   0.001481 USD
+output, stream lines: 24
+output, result:       161</code></pre>
+    <p>Read it like this. Request 1 paid a 4,552-token <span class="tok cw">cache write</span>: part of the system prompt was not cached yet. Request 2 re-sent everything plus the tool result; only the new 500 tokens were written and the rest was read at a tenth of the price. Three-quarters of the run's cost sat in request 1. A second run minutes later showed 0 cache writes and 100% hit on both requests, at a third of the cost: the cache was warm.</p>
+    <h3>The output gap</h3>
+    <p>The computed total came out about 5% low. The <code>output_tokens</code> on stream-json <code>assistant</code> lines is the count when the message started streaming (16 and 8 here), not the final count; the <code>result</code> line's <code>modelUsage</code> had 161 output tokens, thinking included. Take input and cache figures per request from the stream, and output totals from the result line or from the <code>api_request</code> events.</p>
+    <h3>Other clues in the stream</h3>
+    <ul>
+      <li><code>user</code> lines hold the tool results the model saw; their size explains growth in the next row.</li>
+      <li>The result line's <code>subagent_stats</code> counts subagents spawned, completed and failed; <code>modelUsage</code> splits cost by model.</li>
+      <li><code>system</code> lines with subtype <code>thinking_tokens</code> give a running estimate of thinking.</li>
+    </ul>
+    <aside class="rule">Explain a cost by its worst request and the reason for it, not by the session total.</aside>
+    <aside class="trap">Summing every <code>assistant</code> line double-counts responses that span several content blocks. Deduplicate on <code>message.id</code> first.</aside>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m9-lab1" data-title="Find tokens and cost in the console exporter" data-minutes="15">
+      <p class="goal">Run one headless prompt with the console exporter and pull the four token counts and the cost out of its output, then compare with <code>/usage</code>.</p>
+      <ol class="steps">
+        <li><p>Make the lab folder. Every headless run in this module carries <code>--setting-sources project --strict-mcp-config</code>: the first keeps your user settings and hooks out of the run, the second ignores every MCP server not passed on the command line. Together they make the numbers you measure reproducible and keep your personal tools out of them.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m9 | Out-Null
+Set-Location ~/bootcamp-labs/m9</code></pre>
+          <p class="expect"><b>Expected:</b> no output; your prompt is in the lab folder.</p></li>
+        <li><p>Turn telemetry on for this PowerShell window only, with the console exporter and short intervals.</p>
+          <pre><code>$env:CLAUDE_CODE_ENABLE_TELEMETRY = '1'
+$env:OTEL_METRICS_EXPORTER = 'console'
+$env:OTEL_LOGS_EXPORTER = 'console'
+$env:OTEL_METRIC_EXPORT_INTERVAL = '1000'
+$env:OTEL_LOGS_EXPORT_INTERVAL = '1000'</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Run one prompt in text mode and send everything to a file.</p>
+          <pre><code>claude -p "Reply with the single word: ready" --model haiku --setting-sources project --strict-mcp-config --max-turns 1 &gt; console.txt
+(Get-Content console.txt).Count</code></pre>
+          <p class="expect"><b>Expected:</b> about 600 lines. The word <code>ready</code> is in there among JavaScript-style object dumps.</p></li>
+        <li><p>List the metric and event names.</p>
+          <pre><code>Select-String -Path console.txt -Pattern 'name: "claude_code\.', 'body: "claude_code\.' | ForEach-Object { $_.Line.Trim() }</code></pre>
+          <p class="expect"><b>Expected:</b> events <code>managed_settings_resolved</code>, <code>plugin_loaded</code> (several), <code>user_prompt</code>, <code>api_request</code>, <code>assistant_response</code>; metrics <code>session.count</code>, <code>cost.usage</code>, <code>token.usage</code>, <code>active_time.total</code>.</p></li>
+        <li><p>Pull out the four token types and the cost.</p>
+          <pre><code>Select-String -Path console.txt -Pattern 'type: "(input|output|cacheRead|cacheCreation)"' -Context 0,4 |
+  ForEach-Object { '{0,-30} {1}' -f $_.Line.Trim(), ($_.Context.PostContext | Where-Object { $_ -match 'value:' }).Trim() }
+Select-String -Path console.txt -Pattern 'cost_usd:' | ForEach-Object { $_.Line.Trim() }</code></pre>
+          <p class="expect"><b>Expected:</b> <code>input</code> 2, <code>output</code> 4, <code>cacheRead</code> about 17,000 to 22,000, <code>cacheCreation</code> 0 to about 7,000 depending on whether the cache was warm; <code>cost_usd</code> about 0.0002 warm or 0.001 to 0.0016 cold.</p></li>
+        <li><p>Run the same prompt with <code>--output-format json</code> and count the telemetry lines.</p>
+          <pre><code>claude -p "Reply with the single word: ready" --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format json &gt; console-json.txt
+(Get-Content console-json.txt).Count
+(Select-String -Path console-json.txt -Pattern 'claude_code\.').Count</code></pre>
+          <p class="expect"><b>Expected:</b> 1 line, 0 telemetry mentions. The JSON output mode keeps stdout clean and the console exporter prints nothing. Use text mode with the console exporter.</p></li>
+        <li><p>Check <code>/usage</code> headless, then close this PowerShell window to drop the variables (or set each one to <code>$null</code>).</p>
+          <pre><code>claude -p "/usage" --model haiku --setting-sources project --strict-mcp-config --max-turns 1</code></pre>
+          <p class="expect"><b>Expected:</b> on a plan login, <code>You are currently using your subscription…</code>, then <code>Current session: N% used</code> and weekly lines with reset times, then the 24-hour and 7-day breakdown. It makes no API call.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>1. Add your <code>input</code>, <code>cacheRead</code> and <code>cacheCreation</code>. What is the total input of that one request, and what share was cache read? <i>About 22,000 tokens in total; on a warm cache nearly all of it is cache read, on a cold one about two-thirds.</i></p>
+        <p>2. You left <code>OTEL_METRIC_EXPORT_INTERVAL</code> at 1000 ms. Was it what made the metrics appear? <i>No. In 2.1.322 a run with the default 60-second interval also flushed at exit. The interval matters for seeing numbers during a long interactive session.</i></p>
+        <p>3. Price your cold-run figures at Haiku 5.5 rates with a 1-hour write ($0.20 per million) and a read at $0.01 per million. Does it match <code>cost_usd</code>? <i>It should match to the last digit; the figure is list price computed locally.</i></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m9-lab2" data-title="Build a local OTLP receiver and sum tokens by type" data-minutes="30">
+      <p class="goal">Run a 25-line OTLP/HTTP receiver on 127.0.0.1, export one run to it, stop it, and sum <code>claude_code.token.usage</code> by type from the file it wrote.</p>
+      <ol class="steps">
+        <li><p>Write the receiver. It accepts POSTs on <code>/v1/metrics</code> and <code>/v1/logs</code>, appends each body as one line to <code>metrics.jsonl</code> or <code>logs.jsonl</code>, and exits on a request to <code>/stop</code>.</p>
+          <pre data-file="~/bootcamp-labs/m9/otlp-sink.ps1"><code>param([int]$Port = 4318, [string]$OutDir = '.')
+$l = [System.Net.HttpListener]::new()
+$l.Prefixes.Add("http://127.0.0.1:$Port/")
+$l.Start()
+while ($l.IsListening) {
+  $ctx = $l.GetContext()
+  $path = $ctx.Request.Url.AbsolutePath
+  if ($path -eq '/stop') { $ctx.Response.StatusCode = 200; $ctx.Response.Close(); break }
+  $reader = [IO.StreamReader]::new($ctx.Request.InputStream, [Text.Encoding]::UTF8)
+  $body = $reader.ReadToEnd() -replace "`r?`n", ' '
+  $file = switch ($path) { '/v1/metrics' { 'metrics.jsonl' } '/v1/logs' { 'logs.jsonl' } default { 'other.jsonl' } }
+  Add-Content -Path (Join-Path $OutDir $file) -Value $body -Encoding utf8
+  $bytes = [Text.Encoding]::UTF8.GetBytes('{}')
+  $ctx.Response.StatusCode = 200
+  $ctx.Response.ContentType = 'application/json'
+  $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)
+  $ctx.Response.Close()
+}
+$l.Close()</code></pre>
+          <p>Save it with <code>Set-Content -Encoding utf8 otlp-sink.ps1</code> from a here-string, or in your editor.</p>
+          <p class="expect"><b>Expected:</b> the file <code>otlp-sink.ps1</code> in <code>~/bootcamp-labs/m9</code>.</p></li>
+        <li><p>Start it as a background job.</p>
+          <pre><code>Set-Location ~/bootcamp-labs/m9
+$sink = Start-Job -FilePath .\otlp-sink.ps1 -ArgumentList 4318, (Get-Location).Path
+Start-Sleep -Seconds 3
+$sink.State</code></pre>
+          <p class="expect"><b>Expected:</b> <code>Running</code>.</p></li>
+        <li><p>Point both signals at it over <code>http/json</code> and run one prompt.</p>
+          <pre><code>$env:CLAUDE_CODE_ENABLE_TELEMETRY = '1'
+$env:OTEL_METRICS_EXPORTER = 'otlp'
+$env:OTEL_LOGS_EXPORTER = 'otlp'
+$env:OTEL_EXPORTER_OTLP_PROTOCOL = 'http/json'
+$env:OTEL_EXPORTER_OTLP_ENDPOINT = 'http://127.0.0.1:4318'
+claude -p "Reply with the single word: ready" --model haiku --setting-sources project --strict-mcp-config --max-turns 1</code></pre>
+          <p class="expect"><b>Expected:</b> <code>ready</code>. Nothing else on screen: the telemetry went to the receiver.</p></li>
+        <li><p>Stop the receiver and confirm the port is free.</p>
+          <pre><code>Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:4318/stop' | Out-Null
+Wait-Job $sink -Timeout 10 | Out-Null; Remove-Job $sink -Force
+Get-ChildItem *.jsonl | ForEach-Object { '{0}: {1} POSTs' -f $_.Name, (Get-Content $_.FullName).Count }
+[bool](Get-NetTCPConnection -LocalPort 4318 -State Listen -ErrorAction SilentlyContinue)</code></pre>
+          <p class="expect"><b>Expected:</b> <code>logs.jsonl: 1 POSTs</code>, <code>metrics.jsonl: 2 POSTs</code>, then <code>False</code>.</p></li>
+        <li><p>Write the summing script and run it. Datapoints are delta, so the script adds every one.</p>
+          <pre data-file="~/bootcamp-labs/m9/sum-tokens.ps1"><code>param([string]$File = 'metrics.jsonl', [string]$GroupBy = 'type')
+$sum = @{}
+foreach ($line in Get-Content $File) {
+  $doc = $line | ConvertFrom-Json
+  foreach ($rm in $doc.resourceMetrics) { foreach ($sm in $rm.scopeMetrics) { foreach ($m in $sm.metrics) {
+    if ($m.name -ne 'claude_code.token.usage') { continue }
+    foreach ($dp in $m.sum.dataPoints) {
+      $key = ($dp.attributes | Where-Object { $_.key -eq $GroupBy }).value.stringValue
+      $v = if ($null -ne $dp.asDouble) { [double]$dp.asDouble } else { [double]$dp.asInt }
+      $sum[$key] = $sum[$key] + $v
+    }
+  } } }
+}
+$sum.GetEnumerator() | Sort-Object Name | ForEach-Object { '{0,-14} {1,10:N0}' -f $_.Name, $_.Value }</code></pre>
+          <pre><code>.\sum-tokens.ps1 -File metrics.jsonl
+Get-Content logs.jsonl | ForEach-Object { ($_ | ConvertFrom-Json).resourceLogs.scopeLogs.logRecords.body.stringValue } | Group-Object | ForEach-Object { '{0} x{1}' -f $_.Name, $_.Count }</code></pre>
+          <p class="expect"><b>Expected:</b> four lines such as <code>cacheCreation 0</code>, <code>cacheRead 21,723</code>, <code>input 2</code>, <code>output 4</code>; then events <code>managed_settings_resolved x1</code>, <code>plugin_loaded x4</code>, <code>user_prompt x1</code>, <code>api_request x1</code>, <code>assistant_response x1</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>1. Run <code>.\sum-tokens.ps1 -GroupBy model</code>. What do you get and why is it one row? <i>One row for <code>claude-haiku-5-5</code> with the four types added together: the run used one model.</i></p>
+        <p>2. Open <code>metrics.jsonl</code> and find <code>aggregationTemporality</code>. What value, and what does it mean for summing? <i><code>1</code>, delta: each export holds only new counts, so you sum them. With cumulative you would take the last value.</i></p>
+        <p>3. Find <code>user.email</code> in the file. What would you do about it before sending this to a shared backend? <i>It is sent on an OAuth login with no switch to turn it off; drop or hash it in a collector processor.</i></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m9-lab3" data-title="Compute cache hit ratio and cost per request from stream-json" data-minutes="25">
+      <p class="goal">Capture a two-request run as stream-json and turn it into a per-request table of cache use and cost, checked against the result line.</p>
+      <ol class="steps">
+        <li><p>Make a small input file.</p>
+          <pre><code>Set-Location ~/bootcamp-labs/m9
+1..30 | ForEach-Object { "web-0$($_ % 5 + 1),host-$_,ok" } | Set-Content -Encoding utf8 hosts.csv</code></pre>
+          <p class="expect"><b>Expected:</b> <code>hosts.csv</code> with 30 rows.</p></li>
+        <li><p>Run a prompt that needs one tool call, so the loop makes two API requests.</p>
+          <pre><code>claude -p "Read hosts.csv and tell me how many rows mention web-03. Answer with the number only." --model haiku --setting-sources project --strict-mcp-config --allowedTools Read --max-turns 4 --output-format stream-json --verbose &gt; run.jsonl
+Get-Content run.jsonl | ForEach-Object { ($_ | ConvertFrom-Json).type } | Group-Object | ForEach-Object { "$($_.Name)=$($_.Count)" }</code></pre>
+          <p class="expect"><b>Expected:</b> about 7 to 9 lines: <code>system</code> 1 to 3, <code>assistant</code> 3, <code>user</code> 1, <code>result</code> 1, and on a plan login <code>rate_limit_event</code> 1.</p></li>
+        <li><p>Write the analysis script. Rates default to Haiku 5.5 per million tokens; pass others for another model.</p>
+          <pre data-file="~/bootcamp-labs/m9/stream-stats.ps1"><code>param([string]$File = 'run.jsonl', [double]$In = 0.10, [double]$Out = 0.50, [double]$CacheWrite1h = 0.20, [double]$CacheWrite5m = 0.125, [double]$CacheRead = 0.01)
+$seen = @{}; $rows = @(); $result = $null
+foreach ($line in Get-Content $File) {
+  $e = $line | ConvertFrom-Json
+  if ($e.type -eq 'result') { $result = $e }
+  if ($e.type -ne 'assistant') { continue }
+  $id = $e.message.id
+  if ($seen.ContainsKey($id)) { continue }   # one API response can arrive as several lines
+  $seen[$id] = $true
+  $u = $e.message.usage
+  $cw1h = [double]$u.cache_creation.ephemeral_1h_input_tokens
+  $cw5m = [double]$u.cache_creation.ephemeral_5m_input_tokens
+  $allIn = $u.input_tokens + $u.cache_read_input_tokens + $u.cache_creation_input_tokens
+  $cost = ($u.input_tokens * $In + $u.output_tokens * $Out + $cw1h * $CacheWrite1h + $cw5m * $CacheWrite5m + $u.cache_read_input_tokens * $CacheRead) / 1e6
+  $rows += [pscustomobject]@{
+    req = $rows.Count + 1; input = $u.input_tokens; cacheWrite = $u.cache_creation_input_tokens; cacheRead = $u.cache_read_input_tokens; output = $u.output_tokens
+    hitPct = [math]::Round(100 * $u.cache_read_input_tokens / [math]::Max($allIn, 1), 1); costUsd = [math]::Round($cost, 6)
+  }
+}
+$rows | Format-Table -AutoSize | Out-String -Width 200
+$tin = ($rows | Measure-Object input -Sum).Sum; $tcw = ($rows | Measure-Object cacheWrite -Sum).Sum; $tcr = ($rows | Measure-Object cacheRead -Sum).Sum
+'requests:            {0}' -f $rows.Count
+'cache hit ratio:     {0:P1}' -f ($tcr / ($tin + $tcw + $tcr))
+'computed cost:       {0:N6} USD' -f ($rows | Measure-Object costUsd -Sum).Sum
+'result total_cost:   {0:N6} USD' -f $result.total_cost_usd
+'cost per request:    {0:N6} USD' -f ($result.total_cost_usd / $rows.Count)
+$mu = $result.modelUsage.PSObject.Properties | ForEach-Object { $_.Value }
+'output, stream lines: {0}' -f ($rows | Measure-Object output -Sum).Sum
+'output, result:       {0}' -f ($mu | Measure-Object outputTokens -Sum).Sum
+foreach ($line in Get-Content $File) {
+  $e = $line | ConvertFrom-Json
+  if ($e.type -eq 'rate_limit_event' -and $e.rate_limit_info.unifiedWindows) {
+    $w = $e.rate_limit_info.unifiedWindows
+    '5-hour window used: {0:P0}   7-day window used: {1:P0}' -f $w.five_hour.utilization, $w.seven_day.utilization
+  }
+}</code></pre>
+          <p class="expect"><b>Expected:</b> the file <code>stream-stats.ps1</code>.</p></li>
+        <li><p>Run it.</p>
+          <pre><code>.\stream-stats.ps1 -File run.jsonl</code></pre>
+          <p class="expect"><b>Expected:</b> two rows. Cold cache: request 1 with about 4,500 cache write and 17,000 cache read (about 79% hit), request 2 with about 500 written and 21,700 read (about 98%); about 88% overall and about $0.0015 total. Warm cache: 0 written and 100% on both, about $0.0005. Computed cost comes out a few percent below <code>total_cost_usd</code>, and <code>output, stream lines</code> is about 24 against about 130 to 160 from the result. On a plan login the last line shows your 5-hour and 7-day window use.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>1. Why is the computed cost lower than <code>total_cost_usd</code>? <i>The <code>output_tokens</code> on <code>assistant</code> lines is the count at stream start, not the final one; the result line has the true output, thinking included.</i></p>
+        <p>2. Which request cost more and why? <i>On a cold run request 1, because it wrote several thousand tokens to the cache at 2 times the input price; request 2 read nearly everything at a tenth.</i></p>
+        <p>3. Remove the <code>$seen</code> check and rerun. What changes? <i>Request 2 appears twice (thinking block and text block share one <code>message.id</code>) and its cost is double-counted.</i></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m9-lab4" data-title="Tag two runs and split the totals by tag" data-minutes="20">
+      <p class="goal">Export two runs with different <code>OTEL_RESOURCE_ATTRIBUTES</code> to the receiver from Lab 2 and produce a cost and token table per team and per cost centre.</p>
+      <ol class="steps">
+        <li><p>Start the receiver again with fresh files.</p>
+          <pre><code>Set-Location ~/bootcamp-labs/m9
+Remove-Item metrics.jsonl, logs.jsonl -ErrorAction SilentlyContinue
+$sink = Start-Job -FilePath .\otlp-sink.ps1 -ArgumentList 4318, (Get-Location).Path
+Start-Sleep -Seconds 3</code></pre>
+          <p class="expect"><b>Expected:</b> no output; <code>$sink.State</code> is <code>Running</code>.</p></li>
+        <li><p>Run two prompts under two tags.</p>
+          <pre><code>$env:CLAUDE_CODE_ENABLE_TELEMETRY = '1'
+$env:OTEL_METRICS_EXPORTER = 'otlp'
+$env:OTEL_LOGS_EXPORTER = 'otlp'
+$env:OTEL_EXPORTER_OTLP_PROTOCOL = 'http/json'
+$env:OTEL_EXPORTER_OTLP_ENDPOINT = 'http://127.0.0.1:4318'
+$env:OTEL_RESOURCE_ATTRIBUTES = 'team.id=alpha,cost_center=cc-100'
+claude -p "Reply with the single word: ready" --model haiku --setting-sources project --strict-mcp-config --max-turns 1
+$env:OTEL_RESOURCE_ATTRIBUTES = 'team.id=beta,cost_center=cc-200'
+claude -p "List the seven OSI layers, one per line, with a ten-word description each." --model haiku --setting-sources project --strict-mcp-config --max-turns 1 | Out-Null</code></pre>
+          <p class="expect"><b>Expected:</b> <code>ready</code> from the first run; the second prints nothing.</p></li>
+        <li><p>Stop the receiver.</p>
+          <pre><code>Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:4318/stop' | Out-Null
+Wait-Job $sink -Timeout 10 | Out-Null; Remove-Job $sink -Force</code></pre>
+          <p class="expect"><b>Expected:</b> no output; port 4318 is free.</p></li>
+        <li><p>Write the split script and run it for both tags.</p>
+          <pre data-file="~/bootcamp-labs/m9/split-by-tag.ps1"><code>param([string]$File = 'metrics.jsonl', [string]$Tag = 'team.id')
+$rows = @{}
+foreach ($line in Get-Content $File) {
+  $doc = $line | ConvertFrom-Json
+  foreach ($m in $doc.resourceMetrics.scopeMetrics.metrics) {
+    if ($m.name -notin 'claude_code.token.usage', 'claude_code.cost.usage') { continue }
+    foreach ($dp in $m.sum.dataPoints) {
+      $a = @{}; foreach ($kv in $dp.attributes) { $a[$kv.key] = $kv.value.stringValue }
+      $t = $a[$Tag]; if (-not $t) { $t = '(untagged)' }
+      if (-not $rows[$t]) { $rows[$t] = [ordered]@{ tag = $t; input = 0; output = 0; cacheRead = 0; cacheCreation = 0; costUsd = 0 } }
+      $v = if ($null -ne $dp.asDouble) { [double]$dp.asDouble } else { [double]$dp.asInt }
+      if ($m.name -eq 'claude_code.cost.usage') { $rows[$t].costUsd += $v } else { $rows[$t][$a['type']] += $v }
+    }
+  }
+}
+$rows.Values | ForEach-Object { [pscustomobject]$_ } | Sort-Object tag | Format-Table -AutoSize</code></pre>
+          <pre><code>.\split-by-tag.ps1 -Tag team.id
+.\split-by-tag.ps1 -Tag cost_center</code></pre>
+          <p class="expect"><b>Expected:</b> two rows each time, for example <code>alpha</code>: input 2, output 4, cacheRead about 21,700, cacheCreation 0, cost about $0.0002; <code>beta</code>: output about 250, cacheRead about 17,000, cacheCreation about 4,500, cost about $0.0012. The <code>cost_center</code> table has the same numbers under <code>cc-100</code> and <code>cc-200</code>.</p></li>
+        <li><p>Confirm the tags are in the resource block as well as on the datapoints, then close the window to drop the variables.</p>
+          <pre><code>((Get-Content metrics.jsonl -TotalCount 1 | ConvertFrom-Json).resourceMetrics[0].resource.attributes | ForEach-Object { "$($_.key)=$($_.value.stringValue)" }) -join ', '</code></pre>
+          <p class="expect"><b>Expected:</b> <code>team.id=alpha, cost_center=cc-100, host.arch=amd64, os.type=windows, …, service.name=claude-code, service.version=2.1.322</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>1. Why does beta have cache creation and alpha none, though beta ran second? <i>Alpha repeated a prompt already run earlier in the module, so its whole prefix (about 21,700 tokens) was still cached. Beta's prompt was new: the common prefix of about 17,200 tokens was read and the part from the first message on was written. Cache state, not the tag, decides it.</i></p>
+        <p>2. Set <code>OTEL_RESOURCE_ATTRIBUTES</code> to <code>team.id=alpha team</code> (with a space) and repeat one run. What do you expect? <i>No custom keys on the datapoints at all and no error: a value with a space drops every key. The run lands in <code>(untagged)</code>.</i></p>
+      </details>
+    </article>
+
+    <article class="lab" id="m9-lab5" data-title="Write three alert rules from your own measurements" data-minutes="30">
+      <p class="goal">Measure per-session ratios from captured events, choose three thresholds from your own numbers, and end with a checker that exits 1 when any rule fires.</p>
+      <ol class="steps">
+        <li><p>Write a per-session measurement script over the <code>api_request</code> and <code>api_error</code> events in <code>logs.jsonl</code> (from Lab 4, or a capture of your own work with the Lab 2 receiver).</p>
+          <pre data-file="~/bootcamp-labs/m9/session-stats.ps1"><code>param([string]$File = 'logs.jsonl')
+function Get-Attr($rec) { $a = @{}; foreach ($kv in $rec.attributes) { $v = $kv.value; $a[$kv.key] = if ($null -ne $v.stringValue) { $v.stringValue } elseif ($null -ne $v.intValue) { [double]$v.intValue } elseif ($null -ne $v.doubleValue) { [double]$v.doubleValue } else { $v.boolValue } }; $a }
+$s = @{}
+foreach ($line in Get-Content $File) {
+  foreach ($rec in ($line | ConvertFrom-Json).resourceLogs.scopeLogs.logRecords) {
+    $name = $rec.body.stringValue
+    if ($name -notin 'claude_code.api_request', 'claude_code.api_error') { continue }
+    $a = Get-Attr $rec; $id = $a['session.id']
+    if (-not $s[$id]) { $s[$id] = [ordered]@{ session = $id.Substring(0, 8); requests = 0; errors = 0; input = 0; cacheRead = 0; cacheWrite = 0; output = 0; costUsd = 0 } }
+    if ($name -eq 'claude_code.api_error') { $s[$id].errors++ ; continue }
+    $s[$id].requests++; $s[$id].input += $a.input_tokens; $s[$id].cacheRead += $a.cache_read_tokens
+    $s[$id].cacheWrite += $a.cache_creation_tokens; $s[$id].output += $a.output_tokens; $s[$id].costUsd += $a.cost_usd
+  }
+}
+foreach ($x in $s.Values) {
+  $allIn = $x.input + $x.cacheRead + $x.cacheWrite
+  [pscustomobject]@{
+    session = $x.session; requests = $x.requests
+    cacheHitRatio = [math]::Round($x.cacheRead / [math]::Max($allIn, 1), 3)
+    costPerSession = [math]::Round($x.costUsd, 6)
+    inputPerRequest = [math]::Round($allIn / [math]::Max($x.requests, 1))
+    errorRate = [math]::Round($x.errors / [math]::Max($x.requests + $x.errors, 1), 3)
+  }
+}</code></pre>
+          <pre><code>Set-Location ~/bootcamp-labs/m9
+.\session-stats.ps1 -File logs.jsonl | Format-Table -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> one row per session. From the Lab 4 capture: one session with <code>cacheHitRatio</code> about 0.79 and <code>costPerSession</code> about 0.0012, the other 1.0 and about 0.0002; <code>inputPerRequest</code> about 21,700 for both; <code>errorRate</code> 0.</p></li>
+        <li><p>Write three rules. The thresholds below were picked to sit between the two lab sessions so one rule fires; replace them with values from your own baseline.</p>
+          <pre data-file="~/bootcamp-labs/m9/alert-rules.json"><code>[
+  { "name": "cache-cold",      "field": "cacheHitRatio",   "op": "lt", "threshold": 0.70 },
+  { "name": "session-costly",  "field": "costPerSession",  "op": "gt", "threshold": 0.001 },
+  { "name": "context-bloated", "field": "inputPerRequest", "op": "gt", "threshold": 60000 }
+]</code></pre>
+          <p class="expect"><b>Expected:</b> the file <code>alert-rules.json</code>.</p></li>
+        <li><p>Write the checker. Note the variable name: a script parameter <code>[string]$Rules</code> and a variable <code>$rules</code> are the same variable in PowerShell, and assigning the parsed array to it turns the array into one string.</p>
+          <pre data-file="~/bootcamp-labs/m9/check-alerts.ps1"><code>param([string]$Rules = 'alert-rules.json', [string]$File = 'logs.jsonl')
+$ruleSet = Get-Content $Rules -Raw | ConvertFrom-Json
+$fired = 0
+foreach ($row in &amp; (Join-Path $PSScriptRoot 'session-stats.ps1') -File $File) {
+  foreach ($r in $ruleSet) {
+    $v = $row.($r.field)
+    $hit = if ($r.op -eq 'lt') { $v -lt $r.threshold } else { $v -gt $r.threshold }
+    if ($hit) { $fired++; 'ALERT {0} session {1}: {2} = {3} ({4} {5})' -f $r.name, $row.session, $r.field, $v, $r.op, $r.threshold }
+  }
+}
+'rules fired: ' + $fired
+if ($fired) { exit 1 } else { exit 0 }</code></pre>
+          <pre><code>.\check-alerts.ps1 -Rules alert-rules.json -File logs.jsonl
+$LASTEXITCODE</code></pre>
+          <p class="expect"><b>Expected:</b> with the Lab 4 data, <code>ALERT session-costly session …: costPerSession = 0.001208 (gt 0.001)</code>, <code>rules fired: 1</code>, exit code <code>1</code>.</p></li>
+        <li><p>Now do it on your own setup. Point the Lab 2 receiver at a day of your real work (set the variables in your user environment or user settings <code>env</code> block, not in a repository). Run <code>session-stats.ps1</code> over the capture, pick each threshold from your own distribution (for example 2 times your worst normal session, or 10 points under your typical hit ratio), and rewrite <code>alert-rules.json</code>. Swap a rule for <code>errorRate</code> if errors matter more to you than context size.</p>
+          <p class="expect"><b>Expected:</b> a rules file whose numbers you can justify from your own table.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check (done-test)</summary>
+        <p>You are done when <code>check-alerts.ps1</code> exits 0 against a normal day of your data and exits 1 against a session you deliberately made expensive (for example, one long session that reads several large files and never clears). If it fires on a normal day, the threshold is too tight; if the bad session passes, it is too loose.</p>
+        <p>Why per-session and not a daily total? <i>A daily total grows with how much you work; a per-session ratio moves only when a session behaves differently.</i></p>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Environment variables</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Variable</th><th>Values</th><th>Default</th></tr>
+      <tr><td><code>CLAUDE_CODE_ENABLE_TELEMETRY</code></td><td><code>1</code></td><td>off</td></tr>
+      <tr><td><code>OTEL_METRICS_EXPORTER</code></td><td><code>console</code>, <code>otlp</code>, <code>prometheus</code>, <code>none</code> (comma-separated)</td><td>unset</td></tr>
+      <tr><td><code>OTEL_LOGS_EXPORTER</code></td><td><code>console</code>, <code>otlp</code>, <code>none</code></td><td>unset</td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_PROTOCOL</code> (and <code>_METRICS_</code> / <code>_LOGS_</code> variants)</td><td><code>grpc</code>, <code>http/json</code>, <code>http/protobuf</code></td><td>none: required</td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_ENDPOINT</code> (and variants)</td><td>URL</td><td>unset</td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_HEADERS</code> (and variants)</td><td><code>Authorization=Bearer …</code></td><td>unset</td></tr>
+      <tr><td><code>OTEL_METRIC_EXPORT_INTERVAL</code></td><td>ms</td><td class="num">60000</td></tr>
+      <tr><td><code>OTEL_LOGS_EXPORT_INTERVAL</code></td><td>ms</td><td class="num">5000</td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE</code></td><td><code>delta</code>, <code>cumulative</code></td><td>delta</td></tr>
+      <tr><td><code>OTEL_RESOURCE_ATTRIBUTES</code></td><td><code>k=v,k=v</code>, no spaces</td><td>unset</td></tr>
+      <tr><td><code>OTEL_METRICS_INCLUDE_RESOURCE_ATTRIBUTES</code></td><td><code>true</code>, <code>false</code></td><td>true</td></tr>
+      <tr><td><code>OTEL_METRICS_INCLUDE_SESSION_ID</code> / <code>_ACCOUNT_UUID</code></td><td><code>true</code>, <code>false</code></td><td>true</td></tr>
+      <tr><td><code>OTEL_METRICS_INCLUDE_VERSION</code> / <code>_ENTRYPOINT</code> / <code>_REPOSITORY</code></td><td><code>true</code>, <code>false</code></td><td>false</td></tr>
+      <tr><td><code>OTEL_LOG_USER_PROMPTS</code></td><td><code>1</code></td><td>off</td></tr>
+      <tr><td><code>OTEL_LOG_ASSISTANT_RESPONSES</code></td><td><code>1</code>, <code>0</code></td><td>follows prompts switch</td></tr>
+      <tr><td><code>OTEL_LOG_TOOL_DETAILS</code></td><td><code>1</code></td><td>off</td></tr>
+      <tr><td><code>OTEL_LOG_RAW_API_BODIES</code></td><td><code>1</code>, <code>file:&lt;dir&gt;</code></td><td>off</td></tr>
+    </table></div>
+    <h3>Token fields by source</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Type</th><th>API / result <code>usage</code></th><th>Result <code>modelUsage</code></th><th><code>token.usage</code> <code>type</code></th><th><code>api_request</code> event</th></tr>
+      <tr><td><span class="tok in">input</span></td><td><code>input_tokens</code></td><td><code>inputTokens</code></td><td><code>input</code></td><td><code>input_tokens</code></td></tr>
+      <tr><td><span class="tok cw">cache write</span></td><td><code>cache_creation_input_tokens</code></td><td><code>cacheCreationInputTokens</code></td><td><code>cacheCreation</code></td><td><code>cache_creation_tokens</code> (+ <code>_5m_</code>, <code>_1h_</code>)</td></tr>
+      <tr><td><span class="tok cr">cache read</span></td><td><code>cache_read_input_tokens</code></td><td><code>cacheReadInputTokens</code></td><td><code>cacheRead</code></td><td><code>cache_read_tokens</code></td></tr>
+      <tr><td><span class="tok out">output</span></td><td><code>output_tokens</code></td><td><code>outputTokens</code></td><td><code>output</code></td><td><code>output_tokens</code></td></tr>
+      <tr><td>cost</td><td><code>total_cost_usd</code></td><td><code>costUSD</code>, <code>costBasis</code></td><td><code>claude_code.cost.usage</code></td><td><code>cost_usd</code>, <code>cost_usd_micros</code></td></tr>
+    </table></div>
+    <h3>Ratios and starting thresholds</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Ratio</th><th>Formula</th><th>Start alerting at</th></tr>
+      <tr><td>Cache hit ratio</td><td>cacheRead ÷ (input + cacheRead + cacheCreation)</td><td>&lt; 70% after 5 requests</td></tr>
+      <tr><td>Cost per session</td><td>sum <code>cost.usage</code> by <code>session.id</code></td><td>&gt; 2 × your p95</td></tr>
+      <tr><td>Cost per task</td><td>sum <code>cost_usd</code> by <code>prompt.id</code> or run tag</td><td>&gt; 2 × median for the task type</td></tr>
+      <tr><td>Output share</td><td>output cost ÷ total cost</td><td>&gt; 40%</td></tr>
+      <tr><td>Subagent share</td><td><code>query_source</code>=<code>subagent</code> cost ÷ total</td><td>&gt; 50% or a jump after a change</td></tr>
+      <tr><td>Error rate</td><td><code>api_error</code> ÷ (<code>api_request</code> + <code>api_error</code>)</td><td>&gt; 2% per hour</td></tr>
+      <tr><td>Tokens per request growth</td><td>input of request n ÷ request 1</td><td>&gt; 5×, or Haiku 5.5 &gt; 100k</td></tr>
+    </table></div>
+    <h3>Commands</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Command</th><th>What it gives</th></tr>
+      <tr><td><code>claude -p "…" --output-format json</code></td><td>One result object with totals</td></tr>
+      <tr><td><code>claude -p "…" --output-format stream-json --verbose</code></td><td>Per-response lines, then the result</td></tr>
+      <tr><td><code>claude -p "/usage"</code></td><td>Plan windows and usage breakdown, headless, no API call</td></tr>
+      <tr><td><code>/usage</code> (<code>/cost</code>, <code>/stats</code>)</td><td>Session block, <code>Prompt cache (main)</code> line, plan bars</td></tr>
+      <tr><td><code>claude --debug-file &lt;path&gt;</code></td><td><code>[3P telemetry]</code> lines showing exporter setup and export results</td></tr>
+    </table></div>
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>Console exporter prints nothing</td><td><code>--output-format json</code> or <code>stream-json</code> keeps stdout clean</td><td>Use text output, or an OTLP exporter</td></tr>
+      <tr><td>OTLP collector receives nothing</td><td>No <code>OTEL_EXPORTER_OTLP_PROTOCOL</code>; Claude Code has no default</td><td>Set it; check <code>--debug-file</code> for <code>[3P telemetry]</code> errors</td></tr>
+      <tr><td>Telemetry set in the repo's <code>.claude/settings.json</code> does nothing</td><td>Exporter variables are ignored in project and local settings</td><td>Shell, user settings, or managed settings</td></tr>
+      <tr><td>Custom tags missing from every datapoint</td><td>A space (or quote, comma, semicolon) in an <code>OTEL_RESOURCE_ATTRIBUTES</code> value</td><td>Use underscores or percent-encode</td></tr>
+      <tr><td>Totals far too high</td><td>Summing cumulative points, or counting stream-json lines without deduplicating <code>message.id</code></td><td>Sum deltas; take last value for cumulative; dedupe by id</td></tr>
+      <tr><td>Output tokens too low from stream-json</td><td><code>assistant</code> lines carry the count at stream start</td><td>Take output from the result line or <code>api_request</code> events</td></tr>
+      <tr><td>Cost figures do not match the invoice</td><td>List price; contracted rates differ</td><td>Set <code>modelPricing</code> in managed settings; reconcile with the console</td></tr>
+      <tr><td>A plan user sees large dollar figures</td><td>Notional list-price estimate</td><td>Watch window share in <code>/usage</code> or the status line instead</td></tr>
+      <tr><td>Developer redirects telemetry elsewhere</td><td>Endpoint not set in managed settings</td><td>Set endpoint, protocol and headers in managed settings; set exporter selectors there too</td></tr>
+      <tr><td>Metrics backend storage grows fast</td><td>High-cardinality resource attributes as labels</td><td><code>OTEL_METRICS_INCLUDE_RESOURCE_ATTRIBUTES=false</code>, or drop <code>session.id</code></td></tr>
+    </table></div>
+
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+        <li>Claude Code docs, "Monitoring": <a href="https://code.claude.com/docs/en/monitoring-usage" target="_blank" rel="noopener">code.claude.com/docs/en/monitoring-usage</a></li>
+        <li>Claude Code docs, "Customize your status line": <a href="https://code.claude.com/docs/en/statusline" target="_blank" rel="noopener">code.claude.com/docs/en/statusline</a></li>
+        <li>Claude Code docs, "How Claude Code uses prompt caching": <a href="https://code.claude.com/docs/en/prompt-caching" target="_blank" rel="noopener">code.claude.com/docs/en/prompt-caching</a></li>
+        <li>Claude Code docs, "Track cost and usage" (Agent SDK): <a href="https://code.claude.com/docs/en/agent-sdk/cost-tracking" target="_blank" rel="noopener">code.claude.com/docs/en/agent-sdk/cost-tracking</a></li>
+        <li>Claude Code docs, "Manage costs effectively": <a href="https://code.claude.com/docs/en/costs" target="_blank" rel="noopener">code.claude.com/docs/en/costs</a></li>
+        <li>Measured: every Expected line in the labs comes from a run on Claude Code 2.1.322 on 11 November 2026.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "Your team's dashboard shows one developer's daily cost at three times everyone else's, all on Sonnet. Their cache hit ratio is 55% while the team sits at 92%. They work on an API key and take long breaks to review diffs. What is the most likely cause?", "o": ["They write longer prompts than everyone else", "The 5-minute cache lifetime expires during their breaks, so each new prompt rewrites the prefix", "Their output share is too high", "Their subagents run on a more expensive model"], "a": 1, "why": "A low hit ratio with otherwise similar work points at cache writes replacing cache reads. On an API key Claude Code asks for a 5-minute lifetime by default, so a pause longer than that turns the next request into a full cache write. Longer prompts or output would not move the hit ratio this much."},
+    {"q": "You want per-team cost dashboards for 200 developers and must not collect source code or prompts. Which configuration fits?", "o": ["OTEL_LOG_TOOL_DETAILS=1 and OTEL_LOG_USER_PROMPTS=1 in managed settings, filter in the backend", "Ask each team to put the OTEL variables in their repositories' .claude/settings.json with their team.id", "Managed settings env with telemetry, otlp exporters, protocol, endpoint and OTEL_RESOURCE_ATTRIBUTES per team; content switches left off", "Have everyone paste /usage output into a shared sheet weekly"], "a": 2, "why": "Managed settings reach every machine and lock the endpoint; resource attributes give the team split; the counters and api_request events carry every cost figure with content switches off. Repository settings cannot turn exporters on, and collecting content just to drop it later breaks the requirement."},
+    {"q": "A pipeline exports with OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative. Your query sums every claude_code.cost.usage datapoint per run and reports $4.80 for a run whose result JSON said $0.40. What went wrong?", "o": ["The query summed running totals; with cumulative temporality you take the last value per series", "Cost metrics include thinking tokens and the result JSON does not", "The collector duplicated every export", "cost.usage is in micro-dollars"], "a": 0, "why": "Cumulative points each hold the total so far, so adding a dozen of them multiplies the figure. With the default delta temporality summing is correct; with cumulative you take the latest point per series. The unit is USD and both sources count thinking as output."},
+    {"q": "A colleague on a Max plan is alarmed that OpenTelemetry shows $60 of claude_code.cost.usage for yesterday. What do you tell them?", "o": ["They will be billed $60 in usage credits", "The figure is wrong because cost metrics do not work on plans", "Switch to an API key, which would be cheaper", "It is a list-price estimate and not a charge; watch 5-hour and weekly window share, and use the dollars only to compare sessions"], "a": 3, "why": "On a plan the flat fee covers usage inside the limits; the dollar figure is computed locally at list price and is notional. What limits a plan user is window share, visible in /usage, the status line rate_limits fields and the stream-json rate_limit_event. The dollars still rank sessions and habits against each other."},
+    {"q": "A headless job's cost doubled last week with the same prompts. Telemetry shows cache hit ratio unchanged, output share unchanged, and claude_code.cost.usage with query_source=subagent rising from 5% to 55%. Where do you look first?", "o": ["The model alias in the job's command line", "A recent change to a skill or agent definition that makes the job spawn subagents, using agent.name to find which", "The export interval", "The prompt cache lifetime"], "a": 1, "why": "Subagent share isolates the growth: the main loop costs the same and the new spend comes from subagents, each with a fresh context. agent.name on the cost counter names the agent type (real custom names need OTEL_LOG_TOOL_DETAILS=1). The export interval does not change cost, and unchanged hit ratio rules out the cache."}
+  ]</script>
+</section>
+
+    <section class="view" id="view-share" hidden>
+      <div>
+        <div class="kicker">Export and share</div>
+        <h2>Hand this module on</h2>
+        <p class="lede">This module is a complete page on its own: briefing, labs, judgment calls and cheat sheet. It names no organization, host, account or internal tool, and every lab runs on plain Claude Code in a scratch folder.</p>
+      </div>
+      <div class="panel">
+        <h3>1. The link</h3>
+        <p>When you are reading this on claude.ai, use Share on this page. A viewer needs only the link. Each module has its own link, so you can send one module to one person. Their progress stays in their own browser and is never visible to you.</p>
+        <h3>2. One HTML file</h3>
+        <p>This module is also the single self-contained file <code>m09-telemetry.html</code>. It needs no server and no network: mail it, put it on a file share, or open it from a USB stick. Offline it falls back to system fonts; everything else is identical, diagrams and instruments included.</p>
+        <div class="row"><button class="btn" type="button" data-save="m09-telemetry.html">Save this module as a file</button><span class="note"></span></div>
+        <h3>3. The whole set</h3>
+        <p>All modules plus the catalogue page (<code>index.html</code>) form one folder of files that link to each other. Keep them together and the links between modules work offline. The same folder works behind any static web server with nothing to configure.</p>
+        <h3>Moving progress between copies</h3>
+        <p>The link, the file and a hosted copy each keep their own progress. Use the progress code on this module's overview to carry it across.</p>
+        
+      </div>
+    </section>
+    <div class="pager" id="pager"></div>
+  </main>
+</div>
+
+<script type="application/json" id="manifest">{"edition":"portable","kind":"file","self":"m9","catalogue":"index.html","modules":[{"id":"m1","title":"Context","sub":"What the model sees, and what it costs to show it","level":"foundation","prereq":[],"minutes":240,"lessons":6,"labs":5,"calls":5,"href":"m01-context.html"},{"id":"m2","title":"Tokens and their price","sub":"Input, output, cache write, cache read","level":"foundation","prereq":[],"minutes":220,"lessons":6,"labs":5,"calls":5,"href":"m02-tokens.html"},{"id":"m3","title":"Skills","sub":"Instructions that load only when needed","level":"practitioner","prereq":["m1"],"minutes":230,"lessons":6,"labs":5,"calls":5,"href":"m03-skills.html"},{"id":"m4","title":"Commands","sub":"Built-in and your own","level":"practitioner","prereq":["m1"],"minutes":245,"lessons":6,"labs":5,"calls":5,"href":"m04-commands.html"},{"id":"m5","title":"Hooks","sub":"Rules the model cannot talk its way past","level":"practitioner","prereq":[],"minutes":200,"lessons":6,"labs":5,"calls":5,"href":"m05-hooks.html"},{"id":"m6","title":"Plugins and marketplaces","sub":"Package it, publish it, control it","level":"advanced","prereq":["m3","m5"],"minutes":255,"lessons":5,"labs":5,"calls":5,"href":"m06-marketplaces.html"},{"id":"m7","title":"Headless runs and subagents","sub":"Claude Code as a program, and as a team","level":"practitioner","prereq":["m1","m2"],"minutes":220,"lessons":6,"labs":5,"calls":5,"href":"m07-agents.html"},{"id":"m8","title":"Orchestration","sub":"Briefs, handoffs, queues and the ways they fail","level":"advanced","prereq":["m7"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m08-orchestration.html"},{"id":"m9","title":"Telemetry","sub":"See tokens, cache and cost as they happen","level":"practitioner","prereq":["m2"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m09-telemetry.html"},{"id":"m10","title":"Cutting cost","sub":"The levers, and proof that each one worked","level":"advanced","prereq":["m2","m9"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m10-cost.html"},{"id":"m11","title":"Evals and A/B testing","sub":"Compare prompts, models and setups without fooling yourself","level":"advanced","prereq":["m2","m7"],"minutes":250,"lessons":6,"labs":5,"calls":5,"href":"m11-ab-testing.html"},{"id":"m12","title":"Session transcripts","sub":"The anatomy of the JSONL behind every session","level":"practitioner","prereq":["m1","m2"],"minutes":215,"lessons":6,"labs":5,"calls":5,"href":"m12-transcripts.html"},{"id":"m13","title":"Models and ways to teach them","sub":"Model tiers, retrieval, ingestion, fine-tuning and what you will actually use","level":"foundation","prereq":[],"minutes":230,"lessons":6,"labs":5,"calls":5,"href":"m13-models.html"},{"id":"m14","title":"Agent SDK and agent teams","sub":"Your own agent loop, and sessions that message each other","level":"advanced","prereq":["m7"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m14-agent-sdk.html"},{"id":"m15","title":"The wider ecosystem","sub":"Multiplexers, community skills and how to vet them","level":"practitioner","prereq":["m3"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m15-ecosystem.html"},{"id":"m16","title":"Security","sub":"Permissions, sandboxing, prompt injection and what you install","level":"practitioner","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m16-security.html"},{"id":"m17","title":"Daily workflow","sub":"Plan mode, rewind, worktrees, effort and git habits","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m17-workflow.html"},{"id":"m18","title":"Unattended and CI","sub":"GitHub Actions, review in the pipeline, scheduled runs","level":"advanced","prereq":["m7","m16"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m18-ci.html"},{"id":"m19","title":"Claude API building blocks","sub":"Tool use, structured outputs, vision, citations, batch, computer use","level":"practitioner","prereq":["m2"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m19-api.html"},{"id":"m20","title":"Writing for agents","sub":"Briefs, specs, handoffs and CLAUDE.md design","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m20-writing.html"},{"id":"m21","title":"Where Claude Code runs","sub":"Terminal, VS Code, JetBrains, desktop and web compared","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m21-surfaces.html"},{"id":"m22","title":"Sensitive data","sub":"PHI, PII and secrets: what leaves the machine and how to stop it","level":"practitioner","prereq":["m5","m16"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m22-sensitive-data.html"},{"id":"m23","title":"MCP: anatomy of the protocol","sub":"JSON-RPC, capabilities, transports, auth, and a server you build","level":"practitioner","prereq":["m1"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m23-mcp.html"},{"id":"m24","title":"MCP server or CLI tool","sub":"The same job both ways, measured in tokens and turns","level":"advanced","prereq":["m2","m23"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m24-mcp-or-cli.html"}]}</script>
+<script>
+/* AI/LLM Bootcamp page script. One file for the catalogue page and every module page.
+   Reads the manifest (module list, links, edition) that the build embeds, then:
+   - theme: a "Theme:" dropdown at the top right, remembered per viewer; light or dark follows the host page or the system
+   - module page: part navigation on the hash (#overview, #l1.., #labs, #calls, #ref, #share), lab step ticks, lab done,
+     drill answers, progress code. State is kept per module in localStorage, so each module page stands alone.
+   - catalogue page: module cards with level, time and prerequisites, a level filter, and progress where it can be read. */
+(function () {
+  'use strict';
+  var PRISTINE = ''; try { PRISTINE = '<!doctype html>\n' + document.documentElement.outerHTML; } catch (e) {}
+  var root = document.documentElement;
+  var MAN = { modules: [] }; try { MAN = JSON.parse(document.getElementById('manifest').textContent); } catch (e) {}
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function put(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function modById(id) { return MAN.modules.filter(function (x) { return x.id === id; })[0]; }
+  function num(id) { return +id.slice(1); }
+  function mins(n) { n = +n || 0; return n >= 60 ? (Math.round(n / 6) / 10) + ' h' : n + ' min'; }
+  function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+  function link(a, href) { if (href) a.href = href; return a; }
+
+  /* ---- theme ---- */
+  var THEMES = [['a', 'Meter'], ['b', 'Workbench'], ['c', 'Blueprint'], ['d', 'Classroom'], ['e', 'Console']];
+  var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null, forced = null;
+  function mode() { var t = forced || root.getAttribute('data-theme'); root.setAttribute('data-mode', t === 'dark' || (t !== 'light' && mq && mq.matches) ? 'dark' : 'light'); }
+  var sel = document.getElementById('theme');
+  function pick(s, keep) { if (!/^[a-e]$/.test(s)) s = 'a'; root.setAttribute('data-style', s); if (sel) sel.value = s; if (keep) put('ai-bootcamp-theme', s); }
+  if (sel) {
+    THEMES.forEach(function (t) { var o = el('option', '', t[1]); o.value = t[0]; sel.appendChild(o); });
+    sel.addEventListener('change', function () { pick(sel.value, true); });
+  }
+  var qs = /[?&]style=([1-5a-e])/.exec(location.search), qm = /[?&]mode=(light|dark)/.exec(location.search);
+  if (qm) forced = qm[1];
+  pick(qs ? (/\d/.test(qs[1]) ? 'abcde'.charAt(+qs[1] - 1) : qs[1]) : (get('ai-bootcamp-theme') || 'a'), false);
+  mode();
+  if (mq && mq.addEventListener) mq.addEventListener('change', mode);
+  try { new MutationObserver(mode).observe(root, { attributes: true, attributeFilter: ['data-theme'] }); } catch (e) {}
+
+  /* ---- code blocks: caption with a file name or "shell", plus a copy button ---- */
+  [].forEach.call(document.querySelectorAll('pre'), function (pre) {
+    var box = el('div', 'codebox'), c = el('div', 'cap');
+    c.appendChild(el('span', '', pre.getAttribute('data-file') ? 'file  ' + pre.getAttribute('data-file') : (pre.getAttribute('data-cap') || 'shell')));
+    var b = el('button', 'copy', 'Copy'); b.type = 'button';
+    b.addEventListener('click', function () {
+      var t = pre.textContent;
+      function pickText() { try { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = 'Selected'; } catch (e) {} }
+      try { navigator.clipboard.writeText(t).then(function () { b.textContent = 'Copied'; }, pickText); } catch (e) { pickText(); }
+      setTimeout(function () { b.textContent = 'Copy'; }, 1600);
+    });
+    c.appendChild(b); pre.parentNode.insertBefore(box, pre); box.appendChild(c); box.appendChild(pre);
+  });
+
+  function levelChip(lv) { return el('span', 'chip lv-' + lv, lv); }
+  function readState(id) { var S = { labs: {}, steps: {}, drill: [], seen: {} }; try { var r = JSON.parse(get('ai-bootcamp-v2-' + id) || 'null'); if (r && typeof r === 'object') { ['labs', 'steps', 'seen'].forEach(function (k) { if (r[k] && typeof r[k] === 'object') S[k] = r[k]; }); if (r.drill && r.drill.length != null) S.drill = r.drill; } } catch (e) {} return S; }
+  function doneCount(S) { var n = 0, k; for (k in S.labs) if (S.labs[k]) n++; (S.drill || []).forEach(function (x) { if (x != null) n++; }); return n; }
+
+  var hn = document.getElementById('home-notes');
+  function homeNotes() { var off = get('ai-bootcamp-home') === '0'; if (hn) hn.checked = !off; document.body.classList.toggle('hide-home', off); }
+  if (hn) hn.addEventListener('change', function () { put('ai-bootcamp-home', hn.checked ? '1' : '0'); homeNotes(); });
+  homeNotes();
+
+  /* ---- save a copy of this page as one file ---- */
+  /* Inside a hosted viewer the page may be given a save function; it is asked for once, at load. Everywhere else
+     (a file on disk, a plain web server) it stays null and the button uses an ordinary download link. */
+  var DL = null;
+  try {
+    if (window.claude && typeof window.claude.use === 'function') {
+      Promise.resolve(window.claude.use('downloads')).then(function (d) { DL = d || null; }, function () { DL = null; });
+    }
+  } catch (e) { DL = null; }
+  [].forEach.call(document.querySelectorAll('[data-save]'), function (b) {
+    b.addEventListener('click', function () {
+      var msg = b.parentNode.querySelector('.note') || b;
+      var name = b.getAttribute('data-save');
+      function say(t) { if (msg !== b) msg.textContent = t; }
+      function viaLink() {
+        try {
+          var a = el('a'); a.href = URL.createObjectURL(new Blob([PRISTINE], { type: 'text/html' })); a.download = name;
+          document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+          say('Saved as ' + name + ' if your browser allows downloads from this page. If nothing happened, use the file from the export set instead.');
+        } catch (e) { say('This page cannot start a download here. Use the file from the export set instead.'); }
+      }
+      if (DL && typeof DL.save === 'function') {
+        DL.save({ filename: name, data: PRISTINE }).then(function () { say('Saved as ' + name + '.'); }, function (err) {
+          var code = err && err.code;
+          if (code === 'declined') return;
+          if (code === 'rate_limited') { say('A save is already waiting for your answer. Wait a moment, then try again.'); return; }
+          viaLink();
+        });
+      } else { viaLink(); }
+    });
+  });
+
+  /* ================= catalogue page ================= */
+  var cards = document.getElementById('cards');
+  if (cards) {
+    var filter = get('ai-bootcamp-level') || 'all', fbar = document.getElementById('levels');
+    var draw = function () {
+      cards.textContent = '';
+      MAN.modules.forEach(function (m) {
+        if (filter !== 'all' && m.level !== filter) return;
+        var c = link(el(m.href ? 'a' : 'div', 'mcard'), m.href);
+        var top = el('div', 'chips'); top.appendChild(el('span', 'n', 'MODULE ' + num(m.id))); top.appendChild(levelChip(m.level)); top.appendChild(el('span', 'chip', mins(m.minutes))); c.appendChild(top);
+        c.appendChild(el('span', 't', m.title)); c.appendChild(el('span', 's', m.sub));
+        c.appendChild(el('span', 'pre', (m.lessons || 0) + ' lessons · ' + (m.labs || 0) + ' labs · ' + (m.prereq.length ? 'after ' + m.prereq.map(function (p) { var x = modById(p); return x ? num(p) + ' ' + x.title : p; }).join(', ') : 'no prerequisites')));
+        if (!m.href) c.appendChild(el('span', 'pre', 'Published as its own page; ask for the link or use the file set.'));
+        var S = readState(m.id), d = doneCount(S), total = (m.labs || 0) + (m.calls || 0);
+        if (d && total) { var mt = el('div', 'meter'), sp = el('span'); sp.style.width = Math.min(100, Math.round(100 * d / total)) + '%'; mt.appendChild(sp); c.appendChild(mt); }
+        cards.appendChild(c);
+      });
+      if (fbar) [].forEach.call(fbar.children, function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-level') === filter ? 'true' : 'false'); });
+    };
+    if (fbar) ['all', 'foundation', 'practitioner', 'advanced'].forEach(function (lv) {
+      var b = el('button', 'btn', lv === 'all' ? 'All levels' : cap(lv)); b.type = 'button'; b.setAttribute('data-level', lv);
+      b.addEventListener('click', function () { filter = lv; put('ai-bootcamp-level', lv); draw(); }); fbar.appendChild(b);
+    });
+    draw();
+    [].forEach.call(document.querySelectorAll('[data-mod]'), function (a) { var m = modById(a.getAttribute('data-mod')); if (m) { if (!a.textContent) a.textContent = num(m.id) + '. ' + m.title; link(a, m.href); } });
+    var tot = document.getElementById('totals');
+    if (tot) { var tl = 0, tm = 0; MAN.modules.forEach(function (m) { tl += m.labs || 0; tm += +m.minutes || 0; }); tot.textContent = MAN.modules.length + ' modules, ' + tl + ' labs, about ' + Math.round(tm / 60) + ' hours in all'; }
+    return;
+  }
+
+  /* ================= module page ================= */
+  var m = document.querySelector('section.module'); if (!m) return;
+  var id = m.id, me = modById(id) || { prereq: [], level: m.getAttribute('data-level') || '', minutes: m.getAttribute('data-minutes') }, KEY = 'ai-bootcamp-v2-' + id;
+  var S = readState(id);
+  function save() { put(KEY, JSON.stringify(S)); }
+  var nav = document.getElementById('nav'), pager = document.getElementById('pager'), crumb = document.getElementById('crumb'), share = document.getElementById('view-share');
+  var overview = m.querySelector('.overview'), labsEl = m.querySelector('.labs'), ref = m.querySelector('.reference');
+  var lessons = [].slice.call(m.querySelectorAll('.lesson')), labEls = [].slice.call(m.querySelectorAll('article.lab'));
+  var drill = el('div', 'drill'); m.appendChild(drill);
+  var qsn = []; try { qsn = JSON.parse(m.querySelector('script.drill').textContent); } catch (e) {}
+
+  var parts = [];
+  if (overview) parts.push({ key: 'overview', n: '', title: 'Overview', el: overview });
+  lessons.forEach(function (l, i) { parts.push({ key: 'l' + (i + 1), n: String(i + 1), title: l.getAttribute('data-title') || 'Lesson ' + (i + 1), el: l, kind: 'Lesson ' + (i + 1) + ' of ' + lessons.length, min: l.getAttribute('data-minutes') }); });
+  if (labsEl && labEls.length) parts.push({ key: 'labs', n: 'L', title: 'Labs', el: labsEl, kind: labEls.length + ' labs' });
+  if (qsn.length) parts.push({ key: 'calls', n: '?', title: 'Calls', el: drill, kind: qsn.length + ' judgment calls' });
+  if (ref && ref.children.length) parts.push({ key: 'ref', n: '#', title: 'Cheat sheet', el: ref, kind: 'Reference' });
+
+  /* header: full on the overview, slim on the other parts */
+  var head = el('div', 'mhead'), kick = el('div', 'kicker'), h = el('h1', '', m.getAttribute('data-title')), meta = el('div', 'meta'), chips = el('div', 'chips');
+  head.appendChild(kick); head.appendChild(h); head.appendChild(meta); head.appendChild(chips); m.insertBefore(head, m.firstChild);
+  chips.appendChild(levelChip(me.level || 'practitioner')); chips.appendChild(el('span', 'chip', mins(m.getAttribute('data-minutes'))));
+  chips.appendChild(el('span', 'chip', lessons.length + ' lessons')); chips.appendChild(el('span', 'chip', labEls.length + ' labs'));
+  (me.prereq || []).forEach(function (p) { var x = modById(p); if (x) chips.appendChild(link(el(x.href ? 'a' : 'span', 'chip'), x.href)).textContent = 'after ' + num(p) + ' ' + x.title; });
+  if (!(me.prereq || []).length) chips.appendChild(el('span', 'chip', 'no prerequisites'));
+
+  /* overview extras: the parts of this module, what to take next, the progress code */
+  if (overview) {
+    var pl = el('div', 'panel'); pl.appendChild(el('div', 'kicker', 'In this module')); var ul = el('ol', 'partlist');
+    parts.forEach(function (p) { if (p.key === 'overview') return; var li = el('li'), a = el('a'); a.href = '#' + p.key; a.appendChild(el('span', 'n', p.n)); a.appendChild(el('span', '', p.title)); a.appendChild(el('span', 'm', p.min ? p.min + ' min' : (p.kind || ''))); li.appendChild(a); ul.appendChild(li); });
+    pl.appendChild(ul); overview.appendChild(pl);
+    var nexts = MAN.modules.filter(function (x) { return x.prereq.indexOf(id) >= 0; });
+    if (nexts.length || MAN.catalogue) {
+      var nx = el('div', 'panel'); nx.appendChild(el('div', 'kicker', 'Where to go from here')); var row = el('div', 'chips'); row.style.marginTop = '8px';
+      nexts.forEach(function (x) { var a = link(el(x.href ? 'a' : 'span', 'chip'), x.href); a.textContent = num(x.id) + ' ' + x.title; row.appendChild(a); });
+      if (MAN.catalogue) { var ca = link(el('a', 'chip'), MAN.catalogue); ca.textContent = 'All modules'; row.appendChild(ca); }
+      nx.appendChild(row); overview.appendChild(nx);
+    }
+    var pp = el('div', 'panel'); pp.appendChild(el('div', 'kicker', 'Progress code'));
+    var pd = el('p', 'muted', 'Progress for this module lives in this browser only. To move it to another device or another copy of this page, copy the code here and load it there.'); pd.style.marginTop = '6px'; pp.appendChild(pd);
+    var pr = el('div', 'row'), pc = el('input'); pc.type = 'text'; pc.setAttribute('aria-label', 'Progress code'); pc.style.cssText = 'flex:1;min-width:200px;font-family:var(--font-mono);font-size:0.8rem';
+    var b1 = el('button', 'btn', 'Copy mine'), b2 = el('button', 'btn', 'Load'), pm = el('p', 'note'); b1.type = b2.type = 'button'; pm.style.marginBottom = '0';
+    pr.appendChild(pc); pr.appendChild(b1); pr.appendChild(b2); pp.appendChild(pr); pp.appendChild(pm); overview.appendChild(pp);
+    b1.addEventListener('click', function () {
+      try { pc.value = 'AIB2.' + id + '.' + btoa(unescape(encodeURIComponent(JSON.stringify(S)))); } catch (e) { pm.textContent = 'Could not build the code.'; return; }
+      pc.select(); try { navigator.clipboard.writeText(pc.value).then(function () { pm.textContent = 'Copied.'; }, function () { pm.textContent = 'Selected. Copy it with Ctrl+C.'; }); } catch (e) { pm.textContent = 'Selected. Copy it with Ctrl+C.'; }
+    });
+    b2.addEventListener('click', function () {
+      try { var v = pc.value.trim(), pre = 'AIB2.' + id + '.'; if (v.indexOf(pre) !== 0) throw 0; var o = JSON.parse(decodeURIComponent(escape(atob(v.slice(pre.length))))); if (!o || typeof o !== 'object') throw 0; put(KEY, JSON.stringify(o)); location.reload(); }
+      catch (e) { pm.textContent = 'That is not a progress code for this module. It starts with AIB2.' + id + '.'; }
+    });
+  }
+
+  /* labs */
+  labEls.forEach(function (lab, li) {
+    var lh = el('div', 'labhead'); lh.appendChild(el('h3', '', 'Lab ' + (li + 1) + '  ' + lab.getAttribute('data-title'))); lh.appendChild(el('span', 'meta', lab.getAttribute('data-minutes') + ' min')); lab.insertBefore(lh, lab.firstChild);
+    [].forEach.call(lab.querySelectorAll('ol.steps > li'), function (step, si) {
+      var c = el('input', 'tick'); c.type = 'checkbox'; c.setAttribute('aria-label', 'Step ' + (si + 1) + ' done'); c.checked = (S.steps[lab.id] || []).indexOf(si) >= 0;
+      c.addEventListener('change', function () { var a = (S.steps[lab.id] || []).filter(function (x) { return x !== si; }); if (c.checked) a.push(si); S.steps[lab.id] = a; save(); });
+      step.insertBefore(c, step.firstChild);
+    });
+    var foot = el('div', 'labfoot'), btn = el('button', 'btn'); btn.type = 'button';
+    function paint() { var d = !!S.labs[lab.id]; lab.classList.toggle('done', d); btn.textContent = d ? 'Done. Undo' : 'Mark lab done'; }
+    btn.addEventListener('click', function () { if (S.labs[lab.id]) delete S.labs[lab.id]; else S.labs[lab.id] = 1; save(); paint(); progress(); });
+    foot.appendChild(btn); lab.appendChild(foot); paint();
+  });
+
+  /* calls */
+  qsn.forEach(function (q, qi) {
+    var box = el('div', 'q'); box.appendChild(el('div', 'qt', (qi + 1) + '. ' + q.q));
+    var opts = el('div', 'opts'), why = el('div', 'why', q.why); why.hidden = true;
+    var btns = q.o.map(function (o, oi) {
+      var b = el('button', 'opt'); b.type = 'button'; b.appendChild(el('span', 'k', 'ABCD'.charAt(oi))); b.appendChild(el('span', '', o));
+      b.addEventListener('click', function () { S.drill[qi] = oi; save(); mark(); progress(); }); opts.appendChild(b); return b;
+    });
+    function mark() { var a = S.drill[qi]; btns.forEach(function (b, oi) { b.classList.toggle('right', a != null && oi === q.a); b.classList.toggle('wrong', a === oi && oi !== q.a); }); why.hidden = a == null; }
+    box.appendChild(opts); box.appendChild(why); drill.appendChild(box); mark();
+  });
+  if (qsn.length) { var reset = el('button', 'btn', 'Clear my answers'); reset.type = 'button'; reset.style.justifySelf = 'start'; reset.addEventListener('click', function () { S.drill = []; save(); location.reload(); }); drill.appendChild(reset); }
+
+  /* navigation */
+  parts.forEach(function (p) {
+    var a = el('a', 'navlink'); a.href = '#' + p.key; a.appendChild(el('span', 'n', p.n || '·')); a.appendChild(el('span', '', p.title)); a.appendChild(el('span', 'p')); nav.appendChild(a); p.nav = a;
+  });
+  var shareNav = null;
+  if (share) { shareNav = el('a', 'navlink'); shareNav.href = '#share'; shareNav.appendChild(el('span', 'n', '\u2197')); shareNav.appendChild(el('span', '', 'Export and share')); shareNav.appendChild(el('span', 'p')); nav.appendChild(shareNav); }
+  function progress() {
+    parts.forEach(function (p) {
+      var t = p.nav.querySelector('.p'), txt = '', full = false;
+      if (p.key === 'labs') { var d = labEls.filter(function (l) { return S.labs[l.id]; }).length; txt = d ? d + '/' + labEls.length : ''; full = d === labEls.length; }
+      else if (p.key === 'calls') { var a = S.drill.filter(function (x) { return x != null; }).length; txt = a ? a + '/' + qsn.length : ''; full = a === qsn.length; }
+      else if (S.seen[p.key]) { txt = '✓'; full = true; }
+      t.textContent = txt; t.classList.toggle('full', full);
+    });
+  }
+  function route() {
+    var key = (location.hash || '#overview').slice(1), isShare = key === 'share' && share;
+    var cur = parts.filter(function (p) { return p.key === key; })[0]; if (!cur && !isShare) cur = parts[0];
+    m.hidden = !!isShare; if (share) share.hidden = !isShare;
+    if (shareNav) shareNav.classList.toggle('active', !!isShare);
+    parts.forEach(function (p) { p.el.hidden = p !== cur; p.nav.classList.toggle('active', p === cur); });
+    if (cur) {
+      var first = cur.key === 'overview';
+      kick.textContent = 'Module ' + num(id) + (first ? ' · ' + cap(me.level || '') : ' · ' + m.getAttribute('data-title'));
+      h.textContent = first ? m.getAttribute('data-title') : cur.title;
+      meta.textContent = first ? m.getAttribute('data-sub') : (cur.kind || '') + (cur.min ? ' · about ' + cur.min + ' min' : '');
+      chips.hidden = !first;
+      if (/^l\d+$/.test(cur.key) && !S.seen[cur.key]) { S.seen[cur.key] = 1; save(); }
+      if (crumb) crumb.textContent = 'Module ' + num(id) + ' · ' + m.getAttribute('data-title') + (first ? '' : ' · ' + cur.title);
+      var i = parts.indexOf(cur); pager.textContent = '';
+      if (i > 0) { var pv = el('a', 'btn', '← ' + parts[i - 1].title); pv.href = '#' + parts[i - 1].key; pager.appendChild(pv); }
+      if (i < parts.length - 1) { var nx2 = el('a', 'btn primary next', parts[i + 1].title + ' →'); nx2.href = '#' + parts[i + 1].key; pager.appendChild(nx2); }
+      try { cur.nav.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {}
+    } else { pager.textContent = ''; if (crumb) crumb.textContent = 'Export and share'; }
+    progress(); window.scrollTo(0, 0);
+  }
+  route(); window.addEventListener('hashchange', route);
+})();
+
+</script>
+<script>
+
+</script>
+
+</body>
+</html>

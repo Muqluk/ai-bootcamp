@@ -1,0 +1,720 @@
+<section class="module" id="m7" data-title="Headless runs and subagents" data-sub="Claude Code as a program, and as a team" data-level="practitioner" data-prereq="m1,m2" data-minutes="220">
+  <div class="overview">
+    <p class="lede">With <code>-p</code>, Claude Code becomes a command you can call from a script. It reads stdin, writes JSON, returns an exit code and can be capped by turns and dollars. Subagents run the same agent loop inside a session, each with its own context window, and hand back only a short report. This module covers both, so you can call an agent from a scheduled job, a pipeline or a wrapper script and trust what comes back.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Run <code>claude -p</code> with piped input and schema-checked JSON output, and branch on its exit code, <code>is_error</code>, <code>subtype</code> and <code>permission_denials</code>.</li>
+      <li>Grant exactly the tools an unattended run needs with <code>--allowedTools</code> and <code>--disallowedTools</code>, and explain why bypass mode is a last resort.</li>
+      <li>Resume, continue and fork a headless session, and predict what each resumed turn costs from its cache state.</li>
+      <li>Isolate a run from your personal settings, hooks and MCP servers, and pick the right credential for an unattended job on a plan or on an API key.</li>
+      <li>Define a subagent with its own tools and model, and prove from the stream which model did which work and how many tokens stayed out of the main context.</li>
+      <li>Write a subagent brief and a return contract that make the report usable without a follow-up.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key). The outputs shown were recorded on 2.1.322 with a subscription login.</li>
+      <li>Windows PowerShell 5.1 or PowerShell 7. All lab commands work in 5.1.</li>
+      <li>A lab folder, <code>{{LAB}}/m7</code>. The labs create everything inside it. Lab 4 runs Sonnet for its main session. Everything else runs on Haiku, and the whole module costs a few cents at API prices.</li>
+    </ul>
+    <div class="recap"><h3>If you skipped the prerequisites</h3>
+      <p>Every request sends the whole conversation to the model: tool definitions, then the system prompt, then the messages. That stack is the context, and on current models it can hold up to a million tokens. Each request is metered in four token types: <span class="tok in">input</span> (fresh prompt tokens after the last cache point), <span class="tok cw">cache write</span> (prompt tokens stored for reuse, 1.25x the input price for a 5-minute lifetime or 2x for one hour), <span class="tok cr">cache read</span> (stored tokens served again, 0.1x or less) and <span class="tok out">output</span> (5x input on every current model). The cache is a prefix cache: change anything early in the stack and everything after it is written again. A hit refreshes the lifetime for free. Per million tokens, input and output, Haiku 5.5 costs $0.10 and $0.50 (up to 100k-token prompts), Sonnet 5.5 $2 and $10, Opus 5.5 $4 and $20. On a subscription plan you pay a flat fee and usage draws down a 5-hour window and weekly limits. On an API key you pay per token. The <code>usage</code> block of a result reports the four types as <code>input_tokens</code>, <code>cache_creation_input_tokens</code>, <code>cache_read_input_tokens</code> and <code>output_tokens</code>.</p>
+    </div>
+  </div>
+
+  <div class="lesson" id="m7-l1" data-title="claude -p as a Unix-style program" data-minutes="20">
+    <h3>The mechanism</h3>
+    <p><code>claude -p "prompt"</code> (long form <code>--print</code>) runs the same agent loop as an interactive session: it calls tools, reads results and calls the model again until the model stops. Then it prints and exits. Nobody is there to answer a question or approve a tool call, and that one fact shapes everything in this module.</p>
+    <p>Input comes from the prompt argument and from stdin. Piped text is added to the prompt, so <code>Get-Content build.log | claude -p "explain the root cause"</code> needs no file permission at all. Piped stdin is capped at 10 MB. Above that the run exits non-zero with an error, so write big inputs to a file and name the path in the prompt instead.</p>
+
+    <h3>Three output formats</h3>
+    <div class="tablewrap"><table>
+      <tr><th><code>--output-format</code></th><th>What you get</th><th>Use it when</th></tr>
+      <tr><td><code>text</code> (default)</td><td>The final answer only, as plain text.</td><td>A person or a simple pipe reads the answer.</td></tr>
+      <tr><td><code>json</code></td><td>One JSON object when the run ends: the answer plus session, cost, usage and error fields.</td><td>A script needs to check the outcome and cost.</td></tr>
+      <tr><td><code>stream-json</code></td><td>One JSON event per line while the run works. Requires <code>--verbose</code>. The last line is the same result object.</td><td>You want progress, per-request usage, or to see subagents and tool calls.</td></tr>
+    </table></div>
+
+    <figure class="diagram">
+<pre class="mermaid">sequenceDiagram
+  participant S as Your script
+  participant C as claude -p
+  participant A as API
+  participant T as Tools
+  S->>C: prompt and stdin
+  loop until the model stops
+    C->>A: request
+    A-->>C: reply or tool call
+    C->>T: run the tool
+    T-->>C: tool result
+  end
+  C-->>S: result object and exit code
+</pre>
+      <figcaption>One headless run is the normal agent loop with no person in it, ending in one result and an exit code.</figcaption>
+    </figure>
+
+    <h3>The result object</h3>
+    <p>This is a real <code>json</code> result for a one-word Haiku reply, trimmed:</p>
+<pre data-cap="output"><code>{"type":"result","subtype":"success","is_error":false,"result":"OK",
+ "session_id":"0808f912-9b2e-46d7-b908-e16c367b0c49","num_turns":1,
+ "duration_ms":1028,"duration_api_ms":865,"total_cost_usd":0.00159,
+ "usage":{"input_tokens":2,"cache_creation_input_tokens":7211,
+          "cache_read_input_tokens":14517,"output_tokens":4,
+          "cache_creation":{"ephemeral_1h_input_tokens":7211,"ephemeral_5m_input_tokens":0}},
+ "modelUsage":{"claude-haiku-5-5":{"costUSD":0.00159,"contextWindow":1000000,"costBasis":"list"}},
+ "permission_denials":[],"terminal_reason":"completed","stop_reason":"end_turn",
+ "subagent_stats":{"spawned":0}}</code></pre>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>What it tells you</th></tr>
+      <tr><td><code>is_error</code></td><td>Whether the run failed. This is the field to branch on, together with the exit code.</td></tr>
+      <tr><td><code>subtype</code></td><td><code>success</code>, <code>error_max_turns</code> or <code>error_max_budget_usd</code> in the runs for this module.</td></tr>
+      <tr><td><code>terminal_reason</code></td><td>Why the loop stopped: <code>completed</code>, <code>max_turns</code>, <code>budget_exhausted</code>, <code>api_error</code>.</td></tr>
+      <tr><td><code>errors</code></td><td>Present on capped runs, for example <code>["Reached maximum number of turns (1)"]</code>.</td></tr>
+      <tr><td><code>result</code></td><td>The final text. On a failure inside the run it carries the message, such as <code>Not logged in · Please run /login</code>.</td></tr>
+      <tr><td><code>structured_output</code></td><td>The schema-checked object when you pass <code>--json-schema</code> (lesson 3). Absent if the run produced none.</td></tr>
+      <tr><td><code>session_id</code></td><td>The handle for <code>--resume</code> (lesson 4).</td></tr>
+      <tr><td><code>num_turns</code></td><td>Agentic turns used.</td></tr>
+      <tr><td><code>total_cost_usd</code></td><td>Client-side cost estimate at list prices, subagents included. On a resumed session it includes the earlier runs.</td></tr>
+      <tr><td><code>usage</code></td><td>Token counts for the main loop only. Subagent tokens are not in it.</td></tr>
+      <tr><td><code>modelUsage</code></td><td>Per-model tokens and <code>costUSD</code> for the whole tree, subagents included.</td></tr>
+      <tr><td><code>permission_denials</code></td><td>Every tool call that was refused (lesson 2).</td></tr>
+      <tr><td><code>subagent_stats</code></td><td>How many subagents were spawned, completed, failed or refused, broken down by type.</td></tr>
+    </table></div>
+
+    <h3>Exit codes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Situation</th><th class="num">Exit</th><th>Where the detail is</th></tr>
+      <tr><td>Run completed</td><td class="num">0</td><td><code>result</code></td></tr>
+      <tr><td>Run completed but some tool calls were denied</td><td class="num">0</td><td><code>permission_denials</code></td></tr>
+      <tr><td>Turn cap reached</td><td class="num">1</td><td><code>subtype</code> <code>error_max_turns</code></td></tr>
+      <tr><td>Budget cap reached</td><td class="num">1</td><td><code>subtype</code> <code>error_max_budget_usd</code></td></tr>
+      <tr><td>Not signed in, or another failure inside the run</td><td class="num">1</td><td><code>result</code> on stdout</td></tr>
+      <tr><td>Unknown flag or invalid schema, before the run starts</td><td class="num">1</td><td>stderr only, nothing on stdout</td></tr>
+      <tr><td>Stopped with SIGTERM (documented)</td><td class="num">143</td><td>No result is recorded for the unfinished turn</td></tr>
+    </table></div>
+    <aside class="trap">A run without credentials returned <code>"subtype":"success"</code> together with <code>"is_error":true</code> and exit 1. Do not branch on <code>subtype</code> alone. Check the exit code and <code>is_error</code>, then read <code>subtype</code> for the reason.</aside>
+
+    <h3>Caps: turns, dollars, model</h3>
+    <p><code>--max-turns N</code> limits agentic turns. There is no limit by default. With a cap of 1 on a task that needed two file reads, the run stopped with <code>num_turns</code> 2, <code>subtype</code> <code>error_max_turns</code> and exit 1. The count includes the turn that hit the cap, so read <code>num_turns</code> as "turns used", not as a hard ceiling.</p>
+    <p><code>--max-budget-usd X</code> stops the run once the estimated spend reaches X. The check runs between requests, so a request that is already in flight finishes. With a cap of $0.0001 the run spent $0.0011 on its first request and then stopped with <code>error_max_budget_usd</code>. Spend from subagents counts toward the cap. Once the cap is reached, spawning another subagent fails with <code>Budget limit reached</code>. On a subscription the dollar figure is notional, but the cap still stops the run, so it works as a runaway guard on either kind of account.</p>
+    <p><code>--fallback-model sonnet,haiku</code> names models to switch to when the primary is overloaded or unavailable, tried in order. It is not a cost control, and it is not restored when you resume a session.</p>
+
+    <h3>Timeouts you add yourself</h3>
+    <p>The CLI reference lists no wall-clock limit for a run. What exists is narrower. A foreground shell command inside the run times out after <code>BASH_DEFAULT_TIMEOUT_MS</code> (120,000 ms by default, and the model may ask for up to <code>BASH_MAX_TIMEOUT_MS</code>, 600,000 ms by default). After the last turn, a run that is still waiting on background work stops it after 10 idle minutes (<code>CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS</code>). For a hard limit on the whole run, start <code>claude</code> as a child process, wait with a timeout and kill the process tree. Lab 5 builds such a wrapper.</p>
+    <aside class="rule">Give every unattended run three caps (turns, dollars and seconds) and check three things after it: exit code, <code>is_error</code> and <code>permission_denials</code>.</aside>
+  </div>
+
+  <div class="lesson" id="m7-l2" data-title="Permissions with nobody to ask" data-minutes="20">
+    <h3>What a headless run may do by default</h3>
+    <p>In an interactive session, a tool call that needs approval stops and asks you. In <code>-p</code> nobody can answer. Since v2.1.302, a <code>-p</code> run with no permission mode set starts in Manual mode (config value <code>default</code>), and a call that needs approval is denied unless something approves it: an allow rule, a <code>PermissionRequest</code> hook or <code>--permission-prompt-tool</code>. Reads inside the working directory and the read-only command set need no approval, so they run anyway.</p>
+    <p>The denial does not end the run. The model is told the call was refused, it carries on, and the run finishes normally. This is the run from lab 2 with no permission flags, asked to write two files:</p>
+<pre data-cap="output"><code>exit 0  subtype success  is_error False  turns 3
+denials: 2
+"permission_denials": [
+  {"tool_name": "Write", "tool_use_id": "toolu_01ASki...",
+   "tool_input": {"file_path": "...\\lab2\\out\\a.txt", "content": "one"}},
+  {"tool_name": "Write", "tool_use_id": "toolu_011SNS...",
+   "tool_input": {"file_path": "...\\lab2\\keep\\b.txt", "content": "two"}}
+]</code></pre>
+    <aside class="trap">Exit 0 and <code>subtype</code> <code>success</code>, and nothing was written. A job that checks only the exit code reports success for work that never happened. Fail the job when <code>permission_denials</code> is not empty, unless you expected the denials.</aside>
+
+    <figure class="diagram">
+<pre class="mermaid">flowchart TD
+  a["Tool call"] --> b{"Deny rule matches?"}
+  b -- yes --> x["Denied"]:::bad
+  b -- no --> c{"Read-only or inside working directory?"}
+  c -- yes --> ok["Runs"]:::good
+  c -- no --> d{"Allow rule, hook or prompt tool approves?"}
+  d -- yes --> ok
+  d -- no --> x
+  x --> r["Listed in permission_denials"]:::hot
+</pre>
+      <figcaption>A call that nothing approves is denied, the run continues, and the denial appears in the result.</figcaption>
+    </figure>
+
+    <h3>Granting tools: rules</h3>
+    <p><code>--allowedTools</code> takes permission rules. A rule is a tool name, optionally with a specifier in parentheses. You can pass several, space- or comma-separated.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Rule</th><th>Matches</th></tr>
+      <tr><td><code>Read</code></td><td>Every call to the tool.</td></tr>
+      <tr><td><code>Bash(git diff *)</code></td><td>Commands that start with <code>git diff</code>. The space before <code>*</code> matters: <code>Bash(git diff*)</code> also matches <code>git diff-index</code>.</td></tr>
+      <tr><td><code>PowerShell(Get-ChildItem *)</code></td><td>Same shape for the PowerShell tool. Aliases are canonicalized, so <code>ls</code>, <code>dir</code> and <code>gci</code> match too.</td></tr>
+      <tr><td><code>Edit(out/**)</code></td><td>File writes and edits under <code>out/</code> relative to the working directory. The <code>Write</code> tool is checked against <code>Edit</code> rules, so write <code>Edit(...)</code>, not <code>Write(...)</code>.</td></tr>
+      <tr><td><code>mcp__acme__deploy</code></td><td>One MCP tool. MCP tools are named <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>.</td></tr>
+    </table></div>
+    <p><code>--disallowedTools</code> takes deny rules, and they act in two ways. A bare tool name removes the tool from the model's context entirely: with <code>--disallowedTools "Write"</code>, the <code>tools</code> list in the stream's init event no longer contains <code>Write</code>. A scoped rule such as <code>Edit(keep/**)</code> leaves the tool available and denies only matching calls. Deny rules win in every mode, including bypass. To shrink the built-in tool set instead, use <code>--tools "Read,Grep"</code>. <code>--tools</code> does not touch MCP tools. Deny those with <code>--disallowedTools "mcp__*"</code>.</p>
+
+    <h3>Permission modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th><code>--permission-mode</code></th><th>Runs without asking</th><th>Headless use</th></tr>
+      <tr><td><code>default</code> (alias <code>manual</code>)</td><td>Reads only. Anything else needs a rule, or is denied.</td><td>The baseline. Add an exact allowlist.</td></tr>
+      <tr><td><code>dontAsk</code></td><td>Working-directory reads and pre-approved tools. Everything that would prompt is denied.</td><td>Locked-down CI with an exact allowlist.</td></tr>
+      <tr><td><code>acceptEdits</code></td><td>Reads, file edits and common filesystem commands (<code>mkdir</code>, <code>touch</code>, <code>mv</code>, <code>cp</code>) in the working directory.</td><td>Jobs that edit files but run no other commands.</td></tr>
+      <tr><td><code>plan</code></td><td>Reads. Edits stay blocked in <code>-p</code>.</td><td>Read-only analysis.</td></tr>
+      <tr><td><code>auto</code></td><td>Most actions, each reviewed by a classifier.</td><td>Long tasks where you cannot list the commands in advance. Only some models support it.</td></tr>
+      <tr><td><code>bypassPermissions</code></td><td>Everything. Allow rules have no effect.</td><td>Only inside a disposable container or VM.</td></tr>
+    </table></div>
+    <p><code>--permission-prompts none</code> (v2.1.259 and later) tells the run that nobody can answer. Requests that nothing else resolves are denied, the model is told not to retry them, and tools that need a person, such as <code>AskUserQuestion</code>, are removed. In <code>stream-json</code>, each denial also appears as a <code>permission_denied</code> system event as it happens.</p>
+
+    <h3>Why bypass mode is a last resort</h3>
+    <p><code>bypassPermissions</code> (same as <code>--dangerously-skip-permissions</code>) skips the safety checks too, including writes to protected paths. A model that misreads a task, or that reads a hostile instruction in a file or web page, acts with your full rights. The documentation pairs this mode with one setup only: a container, VM or sandbox runtime. Even there, deny rules still apply and a short list of actions is still refused. For almost every scripted job, <code>dontAsk</code> or the default mode with an exact <code>--allowedTools</code> list does the same work, and its denials show up in the result where you can see them.</p>
+    <aside class="trap">Without <code>--bare</code> or the isolation flags, a <code>-p</code> run in a folder runs the hooks in that folder's <code>.claude/settings.json</code> and starts the servers in its <code>.mcp.json</code>. It shows no trust dialog first. Running <code>claude -p</code> inside a repository you did not write means running that repository's hooks. Lesson 5 shows how to keep them out.</aside>
+    <aside class="rule">Start from nothing and allow the narrowest rule that lets the job finish. Prefer a scoped rule, such as <code>Bash(npm test)</code> or <code>Edit(out/**)</code>, to a bare tool name.</aside>
+  </div>
+
+  <div class="lesson" id="m7-l3" data-title="Structured output and the event stream" data-minutes="15">
+    <h3>Schema-checked output</h3>
+    <p>Asking for JSON in the prompt gets you JSON most of the time. <code>--json-schema '&lt;schema&gt;'</code> together with <code>--output-format json</code> gets you an object that has been checked against your schema, in the <code>structured_output</code> field of the result. Under the hood the run gives the model a <code>StructuredOutput</code> tool whose input is your schema. In a stream of the lab 1 run, the model first answered with a Markdown table. Claude Code then sent <code>[structured-output-enforce] You MUST call the StructuredOutput tool</code>, and the model called the tool. That took 3 turns for a task that needs 1 without a schema, so give schema runs some turn headroom.</p>
+    <ul>
+      <li>If the run ends without valid output, for example because the model declined, the result has no <code>structured_output</code> field. Test for it before you use it.</li>
+      <li>An invalid schema stops the run before it starts, with <code>Error: --json-schema is not a valid JSON Schema</code> on stderr and exit 1.</li>
+      <li>The <code>format</code> keyword (<code>"format":"email"</code>) is accepted as an annotation and not enforced.</li>
+      <li>The <code>result</code> field also holds the same object as text.</li>
+    </ul>
+    <aside class="trap">Windows PowerShell 5.1 strips embedded double quotes when it passes an argument to a native program. <code>--json-schema $schema</code> arrives as <code>{type:object,...}</code> and fails with <code>Error: --json-schema is not valid JSON: JSON Parse error: Expected '}'</code>. Pass <code>($schema -replace '"','\"')</code>, or put the JSON in a file where the flag accepts a path (<code>--settings</code>, and <code>--agents</code> with <code>-p</code>).</aside>
+
+    <h3>The stream</h3>
+    <p><code>--output-format stream-json --verbose</code> writes one event per line. These are the event types a small run produced, plus two that the documentation describes:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Event</th><th>What to read from it</th></tr>
+      <tr><td><code>system</code> / <code>init</code></td><td>The first line. <code>model</code>, <code>permissionMode</code>, <code>tools</code>, <code>mcp_servers</code> (each with <code>status</code>), <code>agents</code>, <code>skills</code>, <code>plugins</code>, <code>apiKeySource</code>, <code>claude_code_version</code>, <code>cwd</code>. Assert on these before you trust the run.</td></tr>
+      <tr><td><code>assistant</code></td><td>One model response or part of one: <code>message.model</code>, <code>message.id</code>, <code>message.usage</code>, <code>message.content</code> (text, thinking, tool_use), and <code>parent_tool_use_id</code>, which is <code>null</code> for the main conversation and set for subagent messages.</td></tr>
+      <tr><td><code>user</code></td><td>Tool results going back to the model, including a subagent's final report.</td></tr>
+      <tr><td><code>rate_limit_event</code></td><td>On a subscription: <code>rate_limit_info.unifiedWindows.five_hour.utilization</code> and <code>.seven_day.utilization</code> (fractions such as 0.39) and their <code>resetsAt</code> times.</td></tr>
+      <tr><td><code>system</code> / <code>api_retry</code></td><td>Documented: a retryable API error, with <code>attempt</code>, <code>retry_delay_ms</code> and an <code>error</code> category such as <code>rate_limit</code> or <code>overloaded</code>.</td></tr>
+      <tr><td><code>system</code> / <code>permission_denied</code></td><td>Documented: a denial as it happens.</td></tr>
+      <tr><td><code>result</code></td><td>The last line, the same object <code>json</code> prints. Streams also carry <code>model_usage_since_last_result</code>.</td></tr>
+    </table></div>
+    <p>Add <code>--include-partial-messages</code> to also get <code>stream_event</code> lines carrying text deltas as tokens arrive. That is only worth it for a live display.</p>
+
+    <h3>Per-request usage from the stream</h3>
+    <p>Each <code>assistant</code> event carries the <code>usage</code> of the API request that produced it. When the model calls several tools in one response, those events share the same <code>message.id</code> and the same usage, so count each id once. The sum of input, cache write and cache read on a request is the context size the model saw. That makes the stream the place to watch a context grow. The documentation warns that per-step <code>output_tokens</code> is a placeholder, so take output totals from the result.</p>
+<pre><code>$seen = @{}
+claude -p "..." --output-format stream-json --verbose | ForEach-Object {
+  $e = $_ | ConvertFrom-Json
+  if ($e.type -eq 'assistant' -and -not $seen.ContainsKey($e.message.id)) {
+    $seen[$e.message.id] = 1
+    $u = $e.message.usage
+    '{0,-8} {1,-18} context {2,7}' -f $(if ($e.parent_tool_use_id) {'sub'} else {'main'}), $e.message.model, ($u.input_tokens + $u.cache_creation_input_tokens + $u.cache_read_input_tokens)
+  }
+  if ($e.type -eq 'result') { 'done: {0} cost {1:N4}' -f $e.subtype, $e.total_cost_usd }
+}</code></pre>
+    <aside class="rule">Read <code>structured_output</code> for data, <code>init</code> to check what loaded, <code>assistant</code> usage for growth, and the <code>result</code> line for totals.</aside>
+  </div>
+
+  <div class="lesson" id="m7-l4" data-title="Sessions: resume, continue, fork" data-minutes="15">
+    <h3>Every run is a session</h3>
+    <p>Each <code>-p</code> run gets a <code>session_id</code>, and its conversation is saved as a JSONL transcript. By default that is <code>~/.claude/projects/&lt;project&gt;/&lt;session-id&gt;.jsonl</code>, where <code>&lt;project&gt;</code> is the working directory path with every non-alphanumeric character replaced by <code>-</code>. Subagent transcripts sit beside it in <code>&lt;session-id&gt;/subagents/agent-&lt;agentId&gt;.jsonl</code>. <code>CLAUDE_CONFIG_DIR</code> moves the whole tree.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Flag</th><th>Effect</th></tr>
+      <tr><td><code>--session-id &lt;uuid&gt;</code></td><td>Start a new session with an ID you chose, so a script knows it before the run.</td></tr>
+      <tr><td><code>--resume &lt;id|name|path&gt;</code></td><td>Continue a specific session. The ID is found in any project on the machine. An absolute path to a <code>.jsonl</code> transcript also works.</td></tr>
+      <tr><td><code>--continue</code></td><td>Continue the most recent conversation in the current directory. With <code>-p</code> it includes earlier <code>-p</code> sessions. Interactive <code>--continue</code> skips them.</td></tr>
+      <tr><td><code>--fork-session</code></td><td>With <code>--resume</code> or <code>--continue</code>: load the history but write to a new session ID, leaving the original untouched.</td></tr>
+      <tr><td><code>--no-session-persistence</code></td><td>Save nothing. Resuming that ID later fails with <code>No conversation found with session ID: ...</code> and exit 1.</td></tr>
+      <tr><td><code>-n &lt;name&gt;</code></td><td>Give the session a display name you can resume by.</td></tr>
+    </table></div>
+
+    <h3>What a resumed turn costs</h3>
+    <p>Resuming sends the whole conversation again. Whatever part of the prefix is unchanged and still within its cache lifetime is a <span class="tok cr">cache read</span>. Everything else is written again at the <span class="tok cw">cache write</span> rate. The lifetime depends on the account. On a subscription within plan usage, the main conversation gets a one-hour cache. On an API key, usage credits or a cloud provider it gets five minutes, unless you set <code>CLAUDE_CODE_PROMPT_CACHE_TTL=1h</code> or the <code>promptCacheTtl</code> setting. These are three Haiku runs from lab 3, each a few seconds after the last:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Turn</th><th>How</th><th class="num"><span class="tok in">input</span></th><th class="num"><span class="tok cw">cache write</span></th><th class="num"><span class="tok cr">cache read</span></th><th class="num"><span class="tok out">output</span></th><th class="num"><code>total_cost_usd</code></th></tr>
+      <tr><td>1</td><td><code>--session-id</code></td><td class="num">2</td><td class="num">7,222</td><td class="num">14,517</td><td class="num">4</td><td class="num">0.00159</td></tr>
+      <tr><td>2</td><td><code>--resume</code></td><td class="num">2</td><td class="num">4,100</td><td class="num">17,678</td><td class="num">5</td><td class="num">0.00259</td></tr>
+      <tr><td>3</td><td><code>--continue</code></td><td class="num">2</td><td class="num">69</td><td class="num">21,753</td><td class="num">7</td><td class="num">0.00283</td></tr>
+    </table></div>
+    <p>Two things to read from this. First, <code>usage</code> covers only that run, while <code>total_cost_usd</code> is the running total for the conversation. Turn 3 itself cost about $0.00024, not $0.00283. To get a per-run cost, subtract the previous total. Second, the first resume wrote about 4,100 tokens again, but the second wrote only 69. Budget for one partial rewrite on the first resume, then near-pure cache reads while the cache is warm. <code>--max-budget-usd</code> counts only the new run's spend, not the restored total.</p>
+
+    <h3>What resuming does not bring back</h3>
+    <ul>
+      <li>Launch flags: <code>--mcp-config</code>, <code>--settings</code>, <code>--plugin-dir</code>, <code>--fallback-model</code> and <code>--add-dir</code> must be passed again. Settings files are re-read.</li>
+      <li>Permission mode: a <code>-p</code> resume starts in the mode a new <code>-p</code> run would start in. The exception is a session that ended in plan mode, under narrow conditions. Pass your permission flags again.</li>
+      <li>System prompt: the prompt recorded on the conversation's first request is kept. New <code>--append-system-prompt</code> text takes effect only after compaction or in a new session.</li>
+    </ul>
+    <aside class="trap">Resuming a long conversation after its cache has expired rewrites the whole history at the cache-write rate. On an API key with the 5-minute default, a 300,000-token conversation resumed an hour later costs that full write before the model reads your new prompt. On a plan, the same rewrite draws down the 5-hour window, and an interactive resume may warn you with a "Resume this conversation?" estimate.</aside>
+    <aside class="rule">Resume when the next step needs the history. When it needs only the result, start a fresh session and pass it the result, for example the previous run's <code>structured_output</code>.</aside>
+  </div>
+
+  <div class="lesson" id="m7-l5" data-title="Isolation, environment and unattended authentication" data-minutes="20">
+    <h3>What a headless run loads</h3>
+    <p>Without extra flags, <code>claude -p</code> discovers and loads everything an interactive session would. That covers user, project and local settings, hooks, skills, plugins, MCP servers, <code>CLAUDE.md</code> and auto memory, from the working directory and from your home configuration. That is convenient on your own machine. For a measurement or a shared job it is a problem: your personal hooks and servers change the result, and a teammate gets a different run.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Flag</th><th>What it does</th></tr>
+      <tr><td><code>--setting-sources project</code></td><td>Loads only the listed setting sources (<code>user</code>, <code>project</code>, <code>local</code>). <code>project</code> alone keeps your user settings and their hooks out, and still loads the folder's own <code>.claude/</code>, such as its agents.</td></tr>
+      <tr><td><code>--strict-mcp-config</code></td><td>Uses only MCP servers given with <code>--mcp-config</code> and ignores every other MCP configuration. With no <code>--mcp-config</code>, that means no servers. The init event showed <code>"mcp_servers":[]</code>.</td></tr>
+      <tr><td><code>--settings &lt;file|json&gt;</code></td><td>Overrides settings keys for this run. Keys you omit keep their file values.</td></tr>
+      <tr><td><code>--bare</code></td><td>Skips discovery of hooks, skills, commands, subagents, plugins, MCP servers, auto memory and <code>CLAUDE.md</code>. Only Bash, file read and file edit tools are available. Load what you need with <code>--settings</code>, <code>--mcp-config</code>, <code>--agents</code>, <code>--append-system-prompt</code>. Hooks never run, even ones passed in <code>--settings</code>.</td></tr>
+      <tr><td><code>--tools</code>, <code>--disallowedTools</code></td><td>Shrink the tool set (lesson 2).</td></tr>
+      <tr><td><code>--no-session-persistence</code></td><td>Leaves no transcript behind.</td></tr>
+    </table></div>
+    <p>The documentation recommends <code>--bare</code> for scripted calls and says it will become the default for <code>-p</code> in a future release. It has one hard requirement: it never reads OAuth credentials, the keychain or <code>CLAUDE_CODE_OAUTH_TOKEN</code>. It needs <code>ANTHROPIC_API_KEY</code> or an <code>apiKeyHelper</code> in <code>--settings</code>. Run on a subscription login, it fails at once:</p>
+<pre data-cap="output"><code>exit 1
+{"type":"result","subtype":"success","is_error":true,"terminal_reason":"api_error",
+ "result":"Not logged in · Please run /login","total_cost_usd":0,...}</code></pre>
+    <p>On a plan, use <code>--setting-sources project --strict-mcp-config</code> for isolation instead. That is what every lab here does.</p>
+
+    <h3>What a child session inherits</h3>
+    <p>A <code>claude</code> process inherits the environment of whatever started it: a scheduled task, a CI runner, or a Bash or PowerShell tool call inside another Claude session. Every variable that steers Claude Code comes along. Claude Code also marks its own subprocesses: <code>CLAUDECODE=1</code> and <code>CLAUDE_CODE_CHILD_SESSION=1</code> are set in commands its shell tools, hooks and status line run, so a script can tell it was started from inside a session.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Variable in the parent</th><th>Effect on a child <code>claude -p</code></th></tr>
+      <tr><td><code>ANTHROPIC_API_KEY</code></td><td>Always used in <code>-p</code> when present, ahead of your plan login. The run is billed per token.</td></tr>
+      <tr><td><code>CLAUDE_CODE_OAUTH_TOKEN</code></td><td>Authenticates against your plan, unless a key or <code>ANTHROPIC_AUTH_TOKEN</code> outranks it.</td></tr>
+      <tr><td><code>CLAUDE_CONFIG_DIR</code></td><td>A different settings, plugin and transcript tree, and possibly a different login.</td></tr>
+      <tr><td><code>CLAUDE_CODE_SUBAGENT_MODEL</code>, <code>CLAUDE_CODE_EFFORT_LEVEL</code> and similar</td><td>Change model and behaviour silently.</td></tr>
+    </table></div>
+    <p><code>CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1</code> removes credentials (by name or by value shape) from the environment of the subprocesses Claude Code starts, which limits what a prompt-injected command can read. For a job you schedule yourself, start it from a known, minimal environment rather than from your interactive shell.</p>
+
+    <h3>Credentials for unattended runs</h3>
+    <p>When several credentials are present, Claude Code takes the first in this order: cloud provider variables (<code>CLAUDE_CODE_USE_BEDROCK</code> and the like), <code>ANTHROPIC_AUTH_TOKEN</code>, <code>ANTHROPIC_API_KEY</code>, an <code>apiKeyHelper</code> script, <code>CLAUDE_CODE_OAUTH_TOKEN</code>, Anthropic profile or federation credentials, and last the plan login from <code>/login</code>.</p>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>Subscription plan</th><th>API key</th></tr>
+      <tr><td>Credential for a job</td><td><code>claude setup-token</code> opens the browser sign-in and prints a one-year OAuth token once, without saving it. Set it as <code>CLAUDE_CODE_OAUTH_TOKEN</code>. Requires Pro, Max, Ultra, Team or Enterprise. Model requests only.</td><td>A Console key in <code>ANTHROPIC_API_KEY</code>, or an <code>apiKeyHelper</code> that fetches one.</td></tr>
+      <tr><td>Works with <code>--bare</code></td><td>No.</td><td>Yes.</td></tr>
+      <tr><td>What a run spends</td><td>Share of the 5-hour window and weekly limits, which the job shares with your interactive use.</td><td>Dollars per token.</td></tr>
+      <tr><td><code>total_cost_usd</code></td><td>A notional list-price estimate.</td><td>An estimate of the bill. The Console has the authoritative figure.</td></tr>
+      <tr><td>Main-conversation cache lifetime</td><td>One hour within plan usage.</td><td>Five minutes unless you set <code>1h</code>.</td></tr>
+      <tr><td>Limit signal in the stream</td><td><code>rate_limit_event</code> with window utilization.</td><td>API rate limits and the workspace spend limit.</td></tr>
+      <tr><td>Fit</td><td>Your own scripts and chores. The documentation says a product you build for others should use an API key.</td><td>Shared pipelines, CI, anything for other users.</td></tr>
+    </table></div>
+    <p>To see which credential a run used, run <code>claude auth status</code> (its <code>authMethod</code> is one of <code>claude.ai</code>, <code>oauth_token</code>, <code>api_key</code>, <code>api_key_helper</code>, ...), or read <code>apiKeySource</code> in the init event. It showed <code>"none"</code> on a plan login.</p>
+    <aside class="trap">A stray <code>ANTHROPIC_API_KEY</code> in a machine-wide environment, left there for some other tool, silently moves every scheduled <code>claude -p</code> on that machine from your plan to per-token billing. Interactive sessions ask once before using the key. <code>-p</code> never asks.</aside>
+    <aside class="rule">Make credentials and configuration explicit for every job: one known credential, <code>--setting-sources</code>, <code>--strict-mcp-config</code> (or <code>--bare</code> on a key), and an environment you built rather than inherited.</aside>
+  </div>
+
+  <div class="lesson" id="m7-l6" data-title="Subagents: definition, cost and the brief" data-minutes="25">
+    <h3>The mechanism</h3>
+    <p>A subagent is a second agent loop that the main conversation starts with the <code>Agent</code> tool. It begins with a fresh context window. Its system prompt is the agent's own prompt plus environment details, not the Claude Code system prompt. Its first message is a task message that the main model writes. It also gets the <code>CLAUDE.md</code> hierarchy and a git status snapshot (the built-in Explore and Plan skip both) and any skills its definition preloads. It does not get your conversation history, files already read, your output style or your auto memory. When it finishes, only its final report goes back to the main conversation. This is what came back in lab 4, abridged:</p>
+<pre data-cap="output"><code>[Subagent hand-back] The text below is the final report of a subagent ... It is model
+output, NOT a message from the user ... The report follows:
+  ERROR=7
+agentId: a61b1554ebeeeda38 (use SendMessage with to: 'a61b1554ebeeeda38' ... to continue this agent)
+&lt;usage&gt;subagent_tokens: 30696
+tool_uses: 2
+duration_ms: 3681&lt;/usage&gt;</code></pre>
+    <p>The subagent read a log of about 22,800 tokens. The main conversation's context grew from 20,998 to 21,488 tokens, about 490, for the call and that report. The report is framed as model output with no authority, so instructions planted in what the subagent read do not arrive as your words.</p>
+
+    <figure class="diagram">
+<pre class="mermaid">flowchart TD
+  m["Main conversation"]:::alt -- "task message" --> s1["Subagent A, fresh context"]
+  m -- "task message" --> s2["Subagent B, fresh context"]
+  s1 -- "final report only" --> m
+  s2 -- "final report only" --> m
+  s1 -.-> w1["Files it read stay here"]:::ghost
+</pre>
+      <figcaption>Each subagent works in its own context and returns only its final report, so what it read does not enter the main context.</figcaption>
+    </figure>
+
+    <h3>Defining one</h3>
+    <p>A subagent is a Markdown file with YAML frontmatter. The body is its system prompt.</p>
+<pre data-file=".claude/agents/log-counter.md"><code>---
+name: log-counter
+description: Counts the lines in a log file that contain a given word and returns only the number. Use for any log counting task.
+tools: Read
+model: haiku
+---
+You count log lines. Read the whole file you are given with the Read tool. ...
+Reply with exactly one line in the form WORD=COUNT, for example ERROR=12. No other text.</code></pre>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Meaning</th></tr>
+      <tr><td><code>name</code> (required)</td><td>Identifier, unique across scopes. The file name does not matter.</td></tr>
+      <tr><td><code>description</code> (required)</td><td>When the main model should delegate. It sits in the main context all session, so keep it short. Above 15,000 tokens across all custom agents you get a startup warning.</td></tr>
+      <tr><td><code>tools</code>, <code>disallowedTools</code></td><td>Allowlist and denylist. With no <code>tools</code>, it inherits every tool available to subagents. Leave out <code>Agent</code> to stop it spawning its own subagents.</td></tr>
+      <tr><td><code>model</code></td><td><code>haiku</code>, <code>sonnet</code>, <code>opus</code>, <code>fable</code>, a full ID, or <code>inherit</code>.</td></tr>
+      <tr><td><code>permissionMode</code>, <code>maxTurns</code>, <code>effort</code></td><td>Per-agent mode, turn cap (output comes back marked partial when hit) and effort.</td></tr>
+      <tr><td><code>skills</code>, <code>mcpServers</code>, <code>hooks</code>, <code>memory</code></td><td>Preloaded skills, scoped MCP servers, scoped hooks, persistent memory folder.</td></tr>
+      <tr><td><code>background</code>, <code>isolation: worktree</code>, <code>omitClaudeMd</code></td><td>Always run in the background. Run in a temporary git worktree. Skip user, project and local <code>CLAUDE.md</code>.</td></tr>
+    </table></div>
+    <p>Where a definition lives sets its scope. When names clash, the higher priority wins: managed settings, then <code>--agents</code>, then the project's <code>.claude/agents/</code>, then <code>~/.claude/agents/</code>, then a plugin's <code>agents/</code>. Plugin agents ignore <code>hooks</code>, <code>mcpServers</code> and <code>permissionMode</code>. <code>--agents '{"name":{"description":"...","prompt":"...","tools":["Read"],"model":"haiku"}}'</code> defines agents for one session only. With <code>-p</code> it also accepts a path to a JSON file, which avoids the quoting trap from lesson 3.</p>
+    <p>The model is resolved in this order: a <code>model</code> the main model passes on that call, the definition's <code>model</code>, <code>CLAUDE_CODE_SUBAGENT_MODEL</code>, and last the main conversation's model. The init event of the lab 4 run listed these agents: <code>claude, Explore, general-purpose, log-counter, Plan, statusline-setup</code>. Explore is read-only and built for search. Plan does research in plan mode. general-purpose has every tool and is the default when a call names no type. In <code>-p</code>, <code>CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS=1</code> removes the built-ins.</p>
+
+    <h3>Parallelism and nesting</h3>
+    <ul>
+      <li>Up to 20 subagents run at once by default (<code>CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS</code>). The 21st spawn fails with <code>Concurrent subagent limit reached</code>. There is no limit on the total over a session.</li>
+      <li>Subagents can spawn their own, up to three layers below the main conversation (<code>CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH</code>, where <code>1</code> turns nesting off).</li>
+      <li>A subagent spawned from the main conversation starts in the background by default. In <code>-p</code> the main model may wait for it, and the run waits for background subagents before it prints the result. Background subagents get a smaller tool set.</li>
+      <li><code>subagent_stats</code> in the result counts spawned, completed, failed and refused (depth, concurrency, budget) subagents, by type.</li>
+    </ul>
+
+    <h3>What a subagent costs</h3>
+    <p>A subagent has its own prefix: its own system prompt and tool set. Its first request cannot read the parent's cache, so it pays <span class="tok cw">cache write</span> on its own prefix and on everything it reads. Its requests use the 5-minute cache lifetime even on a subscription. The parent's cache is not affected. Lab 4 has the numbers (Sonnet main, Haiku subagent, second run with the main cache warm):</p>
+    <div class="tablewrap"><table>
+      <tr><th>Model</th><th class="num"><span class="tok cw">cache write</span></th><th class="num"><span class="tok cr">cache read</span></th><th class="num"><span class="tok out">output</span></th><th class="num"><code>costUSD</code></th></tr>
+      <tr><td><code>claude-sonnet-5-5</code> (main)</td><td class="num">490</td><td class="num">41,992</td><td class="num">184</td><td class="num">0.0080</td></tr>
+      <tr><td><code>claude-haiku-5-5</code> (subagent)</td><td class="num">28,527</td><td class="num">29,102</td><td class="num">343</td><td class="num">0.0040</td></tr>
+    </table></div>
+    <p>The subagent rewrote its whole cache on the second run because its 5-minute lifetime had passed. The main conversation had a one-hour lifetime and wrote only 490 tokens. The subagent started at about 2,100 tokens of context, its own small system prompt, compared with about 21,000 for the main conversation. The same read in the Sonnet main conversation would have stayed in its context for every later turn at Sonnet prices.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Delegation saves when</th><th>Delegation wastes when</th></tr>
+      <tr><td>The work reads or produces bulk you will not need again: logs, search results, test output, documentation.</td><td>The task is small. A spawn costs a fresh prefix and a brief, which can exceed the work itself.</td></tr>
+      <tr><td>The answer is small and checkable: a count, a list of paths, a verdict.</td><td>The main conversation will need the raw material anyway and re-reads it after the report.</td></tr>
+      <tr><td>A cheaper model can do the work (search, count, extract).</td><td>The task needs back-and-forth or the context the main conversation already holds.</td></tr>
+      <tr><td>Independent parts can run in parallel.</td><td>Many subagents each return long reports, which flood the main context after all.</td></tr>
+    </table></div>
+    <p>On a plan, subagent requests draw on the same limits as the main conversation. On an API key, they add to the same bill. Both show in <code>modelUsage</code> and <code>total_cost_usd</code>, but not in <code>usage</code>.</p>
+
+    <h3>Writing the brief and the return contract</h3>
+    <p>The subagent knows only its system prompt, <code>CLAUDE.md</code> and the task message. Anything else it has to rediscover at its own cost, or guess. A good brief states:</p>
+    <ol>
+      <li><b>Goal</b>, in one sentence, and why it matters to the caller.</li>
+      <li><b>Inputs</b>, by exact path, ID or command, plus what is already known, so the subagent does not repeat it.</li>
+      <li><b>Scope and limits</b>: what not to touch, what not to run, and when to stop and report instead of pressing on.</li>
+      <li><b>Done-test</b>: the observable condition that means finished.</li>
+      <li><b>Return contract</b>: the exact shape of the report, such as a fixed first line (<code>STATUS: done|blocked|partial</code>), the answer in a set format, evidence as paths or line numbers, and a length cap.</li>
+    </ol>
+    <p>Put the stable parts (role, method, report format) in the definition's body, where they cost nothing until the agent runs. Put the per-task parts in the brief. Then check the report against something cheap. In lab 4, PowerShell counts the same lines in one command.</p>
+    <aside class="trap">A report is a claim, not a result. A subagent that runs into its <code>maxTurns</code>, a denial or an API error can still return confident text. Ask for evidence the caller can check, and check it.</aside>
+    <aside class="rule">Delegate when the work is big and the answer is small. Brief it like a contractor who has never seen the repository, and specify the report format before the work starts.</aside>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m7-lab1" data-title="Pipe a file in and get schema-checked JSON out" data-minutes="15">
+      <p class="goal">Pipe a CSV into a headless run, get back an object that matches your schema, and use it from PowerShell. You end up holding a <code>hosts.json</code> file.</p>
+      <ol class="steps">
+        <li><p>Create the lab folder and a small ticket export.</p>
+<pre><code>New-Item -ItemType Directory -Force {{LAB}}/m7/lab1 | Set-Location
+@"
+id,host,summary
+101,web-01,disk 91 percent full on /var
+102,web-01,nginx 502 errors after deploy
+103,db-01,replication lag 40 seconds
+104,web-01,certificate expires in 6 days
+105,app-02,memory leak restarts every night
+106,db-01,backup job failed twice
+"@ | Set-Content -Encoding utf8 tickets.csv</code></pre>
+          <p class="expect"><b>Expected:</b> no output. <code>tickets.csv</code> exists with 7 lines.</p></li>
+        <li><p>Ask a question about the piped file in plain text. Every run in this module carries <code>--setting-sources project --strict-mcp-config</code>. Together they keep your personal settings, hooks and MCP servers out of the run, so what you measure is Claude Code itself and your numbers match the ones shown.</p>
+<pre><code>Get-Content tickets.csv | claude -p "Which host has the most tickets? Answer with the host name only." --model haiku --setting-sources project --strict-mcp-config --max-turns 1
+$LASTEXITCODE</code></pre>
+          <p class="expect"><b>Expected:</b> <code>web-01</code>, then <code>0</code>.</p></li>
+        <li><p>Run the same question with JSON output, and read the fields a script needs.</p>
+<pre><code>$raw = Get-Content tickets.csv | claude -p "Which host has the most tickets? Answer with the host name only." --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format json
+$r = $raw | ConvertFrom-Json
+$r | Select-Object result, is_error, subtype, num_turns, total_cost_usd, session_id | Format-List
+$r.usage | Select-Object input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens | Format-List</code></pre>
+          <p class="expect"><b>Expected:</b> <code>result</code> web-01, <code>is_error</code> False, <code>subtype</code> success, <code>num_turns</code> 1. The usage shows about 21,800 prompt tokens in total. Run right after step 2, nearly all of them were <span class="tok cr">cache read</span> (21,844 read, 0 written, 2 input, 5 output) and <code>total_cost_usd</code> was about $0.0002. A cold first run writes about 7,000 tokens and costs about $0.0016.</p></li>
+        <li><p>Define a schema and ask for structured output. The <code>-replace</code> is needed for Windows PowerShell 5.1, which strips the inner double quotes otherwise.</p>
+<pre><code>$schema = '{"type":"object","properties":{"hosts":{"type":"array","items":{"type":"object","properties":{"host":{"type":"string"},"tickets":{"type":"integer"},"worst":{"type":"string","enum":["low","medium","high"]}},"required":["host","tickets","worst"]}}},"required":["hosts"]}'
+$raw = Get-Content tickets.csv | claude -p "Group the piped tickets by host. For each host give the ticket count and the severity of its worst ticket." --model haiku --setting-sources project --strict-mcp-config --max-turns 3 --output-format json --json-schema ($schema -replace '"', '\"')
+$LASTEXITCODE
+$r = $raw | ConvertFrom-Json
+if ($null -eq $r.structured_output) { "NO structured_output: $($r.subtype) $($r.result)" } else { $r.structured_output.hosts | Sort-Object tickets -Descending | Format-Table host, tickets, worst }
+"num_turns $($r.num_turns)  cost $($r.total_cost_usd)"</code></pre>
+          <p class="expect"><b>Expected:</b> exit <code>0</code> and a table: web-01 3 high, db-01 2 high, app-02 1 medium (your severity labels may differ, the counts should not). <code>num_turns</code> was 3: the model answered in text first and was told to call the <code>StructuredOutput</code> tool. Cost was between about $0.0008 and $0.005, depending on the cache.</p></li>
+        <li><p>Use the object like any other PowerShell data and save it.</p>
+<pre><code>$top = $r.structured_output.hosts | Sort-Object tickets -Descending | Select-Object -First 1
+"Top host: $($top.host) with $($top.tickets) tickets"
+$r.structured_output | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 hosts.json
+(Get-Content hosts.json | ConvertFrom-Json).hosts.Count</code></pre>
+          <p class="expect"><b>Expected:</b> <code>Top host: web-01 with 3 tickets</code>, then <code>3</code>.</p></li>
+        <li><p>See the quoting trap once. Pass the schema without the <code>-replace</code>.</p>
+<pre><code>Get-Content tickets.csv | claude -p "Group by host." --model haiku --setting-sources project --strict-mcp-config --max-turns 3 --output-format json --json-schema $schema
+$LASTEXITCODE</code></pre>
+          <p class="expect"><b>Expected:</b> in Windows PowerShell 5.1, <code>Error: --json-schema is not valid JSON: JSON Parse error: Expected '}'</code> on stderr and exit <code>1</code>. Nothing reached the model, so this cost nothing.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Why did the schema run take more turns than the plain run?</b> The structured answer is delivered through a tool call (<code>StructuredOutput</code>). The model may answer in text first and get nudged, so a schema run needs <code>--max-turns</code> of at least 2 or 3.</p>
+        <p><b>Your step 3 showed almost no cache write. Why?</b> Step 2 had just written the same prefix, the system prompt and tools, to the cache. Within its lifetime (one hour on a plan, five minutes on an API key by default), step 3 read it back at the cache-read rate.</p>
+        <p><b>What should a script do if <code>structured_output</code> is missing?</b> Treat the run as failed, log <code>subtype</code> and <code>result</code>, and do not fall back to parsing <code>result</code> as if it were valid.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m7-lab2" data-title="Run the same task under three permission setups" data-minutes="20">
+      <p class="goal">Run one file-writing task with no grants, with a path-scoped allow rule, and with a deny rule, and read <code>permission_denials</code> each time. You end up with a denial count for each setup.</p>
+      <ol class="steps">
+        <li><p>Create the folder, two subfolders, the task, and a helper that prints the outcome and cleans up.</p>
+<pre><code>New-Item -ItemType Directory -Force {{LAB}}/m7/lab2 | Set-Location
+New-Item -ItemType Directory -Force out, keep | Out-Null
+$task = "Create two files with the Write tool: out/a.txt containing the word one, and keep/b.txt containing the word two. If a call is denied, do not retry it and do not try another tool; report which files you created."
+function Show-Run($raw) {
+  $code = $LASTEXITCODE
+  $r = $raw | ConvertFrom-Json
+  "exit $code  subtype $($r.subtype)  is_error $($r.is_error)  turns $($r.num_turns)"
+  "denials: $($r.permission_denials.Count)"
+  $r.permission_denials | ForEach-Object { "  $($_.tool_name)  $($_.tool_input.file_path)" }
+  "out/a.txt exists: $(Test-Path out/a.txt)   keep/b.txt exists: $(Test-Path keep/b.txt)"
+  Remove-Item out/a.txt, keep/b.txt -ErrorAction SilentlyContinue
+}</code></pre>
+          <p class="expect"><b>Expected:</b> no output.</p></li>
+        <li><p>Run A: no permission flags. This is Manual mode, the default for <code>-p</code>.</p>
+<pre><code>$raw = claude -p $task --model haiku --setting-sources project --strict-mcp-config --max-turns 4 --output-format json
+Show-Run $raw
+($raw | ConvertFrom-Json).permission_denials | ConvertTo-Json -Depth 4</code></pre>
+          <p class="expect"><b>Expected:</b> <code>exit 0  subtype success  is_error False  turns 3</code>, <code>denials: 2</code> (both <code>Write</code>, one per file), and neither file exists. The JSON shows each denial with <code>tool_name</code>, <code>tool_use_id</code> and the full <code>tool_input</code>, including the content it wanted to write.</p></li>
+        <li><p>Run B: allow writes under <code>out/</code> only. Write calls are checked against <code>Edit</code> rules.</p>
+<pre><code>$raw = claude -p $task --model haiku --setting-sources project --strict-mcp-config --max-turns 4 --output-format json --allowedTools "Edit(out/**)"
+Show-Run $raw</code></pre>
+          <p class="expect"><b>Expected:</b> <code>denials: 1</code> for <code>keep\b.txt</code>. <code>out/a.txt exists: True</code>, <code>keep/b.txt exists: False</code>. Still exit 0.</p></li>
+        <li><p>Run C: a broad mode with a narrow deny rule. <code>acceptEdits</code> would allow both writes, but the deny rule wins.</p>
+<pre><code>$raw = claude -p $task --model haiku --setting-sources project --strict-mcp-config --max-turns 4 --output-format json --permission-mode acceptEdits --disallowedTools "Edit(keep/**)"
+Show-Run $raw</code></pre>
+          <p class="expect"><b>Expected:</b> the same outcome as run B: one denial for <code>keep\b.txt</code>, <code>out/a.txt</code> created.</p></li>
+        <li><p>Run D: a bare tool name in <code>--disallowedTools</code> removes the tool. Check it in the init event.</p>
+<pre><code>$init = claude -p "Reply OK" --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format stream-json --verbose --disallowedTools "Write" | Select-Object -First 1 | ConvertFrom-Json
+"Write in tools: $($init.tools -contains 'Write')   Edit in tools: $($init.tools -contains 'Edit')   permissionMode: $($init.permissionMode)"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>Write in tools: False   Edit in tools: True   permissionMode: default</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Which run would a check on exit code alone have reported correctly?</b> None. All three file-writing runs exited 0, including run A, which wrote nothing.</p>
+        <p><b>What is the difference between <code>--disallowedTools "Write"</code> and <code>--disallowedTools "Edit(keep/**)"</code>?</b> The bare name removes the tool from the model's context (run D). The scoped rule leaves the tool in place and denies only matching calls, which then show up in <code>permission_denials</code> (run C).</p>
+        <p><b>Which setup would you ship for a nightly job that writes reports to <code>out/</code>?</b> Run B's: default mode plus <code>Edit(out/**)</code>, with the job failing on any denial. It grants exactly one path and makes surprises visible.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m7-lab3" data-title="Resume a session three times and tabulate the usage" data-minutes="15">
+      <p class="goal">Run a three-turn conversation across three separate processes, tabulate the four token types per turn, then fork it and prove that an unsaved session cannot be resumed. You end up with a per-turn usage table.</p>
+      <ol class="steps">
+        <li><p>Create the folder, choose a session ID up front, and define a row builder.</p>
+<pre><code>New-Item -ItemType Directory -Force {{LAB}}/m7/lab3 | Set-Location
+$id = [guid]::NewGuid().ToString()
+$rows = @()
+function Add-Row($n, $raw) {
+  $r = $raw | ConvertFrom-Json; $u = $r.usage
+  [pscustomobject]@{ turn = $n; session = $r.session_id.Substring(0,8); result = $r.result; input = $u.input_tokens; cache_write = $u.cache_creation_input_tokens; cache_read = $u.cache_read_input_tokens; output = $u.output_tokens; total_cost_usd = [math]::Round($r.total_cost_usd, 5) }
+}</code></pre>
+          <p class="expect"><b>Expected:</b> no output. <code>$id</code> holds a new GUID.</p></li>
+        <li><p>Turn 1 starts the session with your ID. Turn 2 resumes it by ID. Turn 3 uses <code>--continue</code>, which picks the most recent conversation in this folder.</p>
+<pre><code>$raw = claude -p "Remember the code word falcon. Reply with OK only." --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format json --session-id $id
+$rows += Add-Row 1 $raw
+$raw = claude -p "What is the code word? One word." --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format json --resume $id
+$rows += Add-Row 2 $raw
+$raw = claude -p "Spell the code word backwards. One word." --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format json --continue
+$rows += Add-Row 3 $raw
+$rows | Format-Table -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> all three rows show the same session prefix, and the results are <code>OK</code>, <code>falcon</code>, <code>nolcaf</code>. Observed usage (input, cache write, cache read, output, total): turn 1 about 2, 7,200, 14,500, 4, $0.0016. Turn 2 about 2, 4,100, 17,700, 5, $0.0026. Turn 3 about 2, 70, 21,750, 7, $0.0028.</p></li>
+        <li><p>Fork the session: same history, new ID.</p>
+<pre><code>$f = claude -p "What is the code word? One word." --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format json --resume $id --fork-session | ConvertFrom-Json
+"fork $($f.session_id)  same as original: $($f.session_id -eq $id)  result $($f.result)"</code></pre>
+          <p class="expect"><b>Expected:</b> a different session ID, <code>same as original: False</code>, result <code>falcon</code>.</p></li>
+        <li><p>Run once without persistence, then try to resume it.</p>
+<pre><code>$gone = (claude -p "Reply OK" --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format json --no-session-persistence | ConvertFrom-Json).session_id
+claude -p "Reply OK" --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --resume $gone
+$LASTEXITCODE</code></pre>
+          <p class="expect"><b>Expected:</b> <code>No conversation found with session ID: ...</code> on stderr and exit <code>1</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>What did turn 3 alone cost?</b> Its <code>total_cost_usd</code> minus turn 2's: about $0.0028 − $0.0026 = $0.0002. <code>total_cost_usd</code> accumulates across a resumed conversation, while <code>usage</code> is per run.</p>
+        <p><b>Why was turn 3's cache write so small?</b> The whole history was already cached from turn 2 and still inside its lifetime, so only the new prompt and reply were written.</p>
+        <p><b>If you ran turn 3 two hours later on an API key, what would change?</b> The 5-minute default cache would have expired, so the whole history (about 21,800 tokens) would be written again at the cache-write rate before the model answered.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m7-lab4" data-title="Delegate to a Haiku subagent and prove who did what" data-minutes="25">
+      <p class="goal">Define a project subagent on Haiku, have a Sonnet main session delegate a log count to it, and show from the stream and <code>modelUsage</code> which model did which work and how many tokens stayed out of the main context. You end up with a per-request table and a per-model cost split.</p>
+      <ol class="steps">
+        <li><p>Create a separate folder for this lab, so the agent does not load in the other labs, and write the agent definition.</p>
+<pre><code>New-Item -ItemType Directory -Force {{LAB}}/m7/team/.claude/agents | Out-Null
+Set-Location {{LAB}}/m7/team
+@"
+---
+name: log-counter
+description: Counts the lines in a log file that contain a given word and returns only the number. Use for any log counting task.
+tools: Read
+model: haiku
+---
+You count log lines. Read the whole file you are given with the Read tool. Count the lines that contain the word you were asked about, matching case exactly.
+Reply with exactly one line in the form WORD=COUNT, for example ERROR=12. No other text.
+"@ | Set-Content -Encoding utf8 .claude/agents/log-counter.md</code></pre>
+          <p class="expect"><b>Expected:</b> no output. <code>.claude/agents/log-counter.md</code> exists.</p></li>
+        <li><p>Generate an 800-line log and count the ERROR lines yourself, so you can check the subagent's answer.</p>
+<pre><code>$hosts = 'web-01','web-02','db-01','app-02'
+$lines = for ($i = 1; $i -le 800; $i++) {
+  $lvl = if ($i % 113 -eq 0) { 'ERROR' } elseif ($i % 17 -eq 0) { 'WARN' } else { 'INFO' }
+  '2026-11-11T10:{0:00}:{1:00} {2} {3} request id={4} took {5} ms' -f [int][math]::Floor($i / 60), ($i % 60), $lvl, $hosts[$i % 4], (1000 + $i), (($i * 7) % 300)
+}
+$lines | Set-Content -Encoding utf8 app.log
+@(Select-String -Path app.log -Pattern 'ERROR' -CaseSensitive).Count</code></pre>
+          <p class="expect"><b>Expected:</b> <code>7</code>.</p></li>
+        <li><p>Run the main session on Sonnet with a stream, a turn cap and a budget cap, and save the stream.</p>
+<pre><code>$stream = claude -p "Use the log-counter subagent to count the ERROR lines in app.log. Then reply with the number only." --model sonnet --setting-sources project --strict-mcp-config --max-turns 4 --max-budget-usd 0.50 --output-format stream-json --verbose
+$LASTEXITCODE
+$stream | Set-Content -Encoding utf8 run.jsonl
+$events = $stream | ForEach-Object { $_ | ConvertFrom-Json }
+($events | Where-Object { $_.subtype -eq 'init' }).agents -join ', '</code></pre>
+          <p class="expect"><b>Expected:</b> exit <code>0</code>, and an agent list that includes <code>log-counter</code> next to the built-ins (<code>claude, Explore, general-purpose, log-counter, Plan, statusline-setup</code>, and possibly others).</p></li>
+        <li><p>Tabulate each API request: who made it, on which model, and how big its context was. Count each <code>message.id</code> once.</p>
+<pre><code>$seen = @{}
+$events | Where-Object { $_.type -eq 'assistant' -and -not $seen.ContainsKey($_.message.id) } | ForEach-Object { $seen[$_.message.id] = 1; $_ } | ForEach-Object {
+  $u = $_.message.usage
+  $tool = ($_.message.content | Where-Object { $_.type -eq 'tool_use' } | ForEach-Object { $_.name }) -join ','
+  [pscustomobject]@{ who = $(if ($_.parent_tool_use_id) { 'subagent' } else { 'main' }); model = $_.message.model; context = $u.input_tokens + $u.cache_creation_input_tokens + $u.cache_read_input_tokens; tool = $tool }
+} | Format-Table -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> four rows. main <code>claude-sonnet-5-5</code> about 21,000 calling <code>Agent</code>. subagent <code>claude-haiku-5-5</code> about 2,100 calling <code>Read</code>. subagent <code>claude-haiku-5-5</code> about 24,900. main <code>claude-sonnet-5-5</code> about 21,500 with no tool.</p></li>
+        <li><p>Read the per-model split, the main-loop-only <code>usage</code>, <code>subagent_stats</code>, and what came back to the main conversation.</p>
+<pre><code>$res = $events | Where-Object { $_.type -eq 'result' }
+"result $($res.result)  total_cost_usd $([math]::Round($res.total_cost_usd,4))"
+$res.modelUsage.PSObject.Properties | ForEach-Object { [pscustomobject]@{ model = $_.Name; cache_write = $_.Value.cacheCreationInputTokens; cache_read = $_.Value.cacheReadInputTokens; output = $_.Value.outputTokens; costUSD = [math]::Round($_.Value.costUSD, 4) } } | Format-Table -AutoSize
+"usage (main loop only): cache_read $($res.usage.cache_read_input_tokens)"
+$res.subagent_stats | ConvertTo-Json -Depth 4 -Compress
+$events | Where-Object { $_.type -eq 'user' -and -not $_.parent_tool_use_id } | ForEach-Object { $_.message.content | Where-Object { $_.type -eq 'tool_result' } | ForEach-Object { $_.content.text } }</code></pre>
+          <p class="expect"><b>Expected:</b> <code>result 7</code>. Two models in <code>modelUsage</code>. Sonnet: about 490 cache write, 42,000 cache read, $0.008 on a warm run ($0.033 on the first, cold run). Haiku: about 28,500 cache write, 29,100 cache read, $0.004. <code>usage</code> shows only the Sonnet figures. <code>subagent_stats</code> shows <code>"spawned":1</code>, <code>"completed":1</code>, <code>"by_type":{"log-counter":1}</code>. The tool result is the hand-back frame with <code>ERROR=7</code>, an <code>agentId</code> and <code>subagent_tokens</code> of about 30,700.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>How many tokens stayed out of the main context?</b> The subagent's last request held about 24,900 tokens, about 22,800 of them the log. The main context grew by about 490 (21,000 to 21,500). Most of that log never entered the Sonnet conversation.</p>
+        <p><b>Which line proves the count came from Haiku?</b> The <code>assistant</code> events with a non-null <code>parent_tool_use_id</code> carry <code>message.model</code> <code>claude-haiku-5-5</code>, and <code>modelUsage</code> lists the Haiku spend separately.</p>
+        <p><b>Run it again after ten minutes. Which model's cache write stays small?</b> Sonnet's. The main conversation's cache lasts an hour on a plan, while subagent requests use five minutes, so Haiku writes its prefix and the log again. On an API key both use five minutes by default.</p>
+        <p><b>Was the subagent right?</b> Compare with step 2. If it was not, the report format worked but the brief or the model did not, and you only know because you checked.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m7-lab5" data-title="Wrap one of your own chores as a capped script" data-minutes="30">
+      <p class="goal">Build a wrapper that runs <code>claude -p</code> with a turn cap, a budget cap and a wall-clock timeout, and returns a distinct exit code for each kind of failure. Then point it at a real chore of your own. You end up with a script your scheduler can trust.</p>
+      <ol class="steps">
+        <li><p>Create the wrapper. It passes stdin from a file, kills the process tree on timeout and checks exit code, <code>is_error</code> and <code>permission_denials</code>.</p>
+<pre data-file="{{LAB}}/m7/lab5/Invoke-Chore.ps1"><code>param(
+  [Parameter(Mandatory)][string]$InputFile,
+  [Parameter(Mandatory)][string]$Prompt,
+  [int]$MaxTurns = 3,
+  [double]$BudgetUsd = 0.05,
+  [int]$TimeoutSec = 120,
+  [string]$Tools = 'Read'
+)
+$outFile = Join-Path $PWD 'chore-result.json'
+$errFile = Join-Path $PWD 'chore-stderr.txt'
+$argLine = "-p `"$Prompt`" --model haiku --setting-sources project --strict-mcp-config --max-turns $MaxTurns --max-budget-usd $BudgetUsd --allowedTools `"$Tools`" --output-format json"
+$p = Start-Process -FilePath claude -ArgumentList $argLine -RedirectStandardInput $InputFile -RedirectStandardOutput $outFile -RedirectStandardError $errFile -NoNewWindow -PassThru
+$null = $p.Handle
+if (-not $p.WaitForExit($TimeoutSec * 1000)) {
+  &amp; taskkill.exe /T /F /PID $p.Id | Out-Null
+  $null = $p.WaitForExit(5000)
+  Write-Output "TIMEOUT after $TimeoutSec s, process gone: $($p.HasExited)"
+  exit 3
+}
+$p.WaitForExit()
+$code = $p.ExitCode
+$r = $null
+try { $r = Get-Content $outFile -Raw | ConvertFrom-Json } catch { }
+if ($null -eq $r) { Write-Output "NO RESULT (exit $code): $(Get-Content $errFile -Raw)"; exit 4 }
+Write-Output ("exit {0}  subtype {1}  is_error {2}  turns {3}  cost {4:N4}  denials {5}" -f $code, $r.subtype, $r.is_error, $r.num_turns, $r.total_cost_usd, $r.permission_denials.Count)
+if ($code -ne 0 -or $r.is_error) { exit 2 }
+if ($r.permission_denials.Count -gt 0) { Write-Output 'DENIED tool calls, see chore-result.json'; exit 5 }
+Write-Output $r.result
+exit 0</code></pre>
+<pre><code>New-Item -ItemType Directory -Force {{LAB}}/m7/lab5 | Set-Location
+# paste the script above into Invoke-Chore.ps1 here, for example with notepad Invoke-Chore.ps1
+@"
+host    mount  size  used  pct
+web-01  /      40G   37G   92
+web-01  /var   80G   41G   51
+db-01   /      40G   12G   30
+db-01   /data  500G  441G  88
+app-02  /      40G   20G   50
+"@ | Set-Content -Encoding utf8 disk.txt</code></pre>
+          <p class="expect"><b>Expected:</b> <code>Invoke-Chore.ps1</code> and <code>disk.txt</code> exist in the folder. <code>$null = $p.Handle</code> is there because Windows PowerShell 5.1 can otherwise lose the exit code of a process started with <code>Start-Process -PassThru</code>.</p></li>
+        <li><p>Run the chore normally.</p>
+<pre><code>.\Invoke-Chore.ps1 -InputFile disk.txt -Prompt "From the piped disk report, list every filesystem at 85 percent or more as host:mount=pct, one per line, nothing else."
+"wrapper exit $LASTEXITCODE"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>exit 0  subtype success  is_error False  turns 1  cost 0.0017  denials 0</code> (about $0.0003 on a warm rerun), then <code>web-01:/=92</code> and <code>db-01:/data=88</code>, then <code>wrapper exit 0</code>.</p></li>
+        <li><p>Trip the turn cap with a task that needs a tool call.</p>
+<pre><code>.\Invoke-Chore.ps1 -InputFile disk.txt -Prompt "Read disk.txt with the Read tool, then list every filesystem at 85 percent or more." -MaxTurns 1
+"wrapper exit $LASTEXITCODE"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>exit 1  subtype error_max_turns  is_error True  turns 2</code>, then <code>wrapper exit 2</code>.</p></li>
+        <li><p>Trip the timeout.</p>
+<pre><code>.\Invoke-Chore.ps1 -InputFile disk.txt -Prompt "Summarize the piped report." -TimeoutSec 1
+"wrapper exit $LASTEXITCODE"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>TIMEOUT after 1 s, process gone: True</code>, then <code>wrapper exit 3</code>. No result file content is produced for a killed run.</p></li>
+        <li><p>Now do it on your own setup. Pick one recurring chore you currently do by hand, such as summarising a log, triaging an export or checking a config diff. Give it a real input file, the narrowest <code>-Tools</code> rule it needs (or <code>''</code> if stdin is enough), a turn cap of 2 to 4, a budget of a few cents and a timeout of a few minutes. Run it three times. If it needs a structured answer, add <code>--json-schema</code> to <code>$argLine</code> and read <code>structured_output</code> instead of <code>result</code>.</p>
+          <p class="expect"><b>Expected:</b> done when all of these hold. Three runs on real input exit 0 with zero denials. A run with <code>-MaxTurns 1</code> or <code>-BudgetUsd 0.0001</code> exits 2. A run with <code>-TimeoutSec 1</code> exits 3. You can state the cost of one run from <code>chore-result.json</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Why have separate wrapper exit codes for "run failed" (2) and "tool calls denied" (5)?</b> The fixes differ. A failed run needs more turns, more budget or a working credential. A denial needs a permission rule, or it reveals that the model tried something you did not intend.</p>
+        <p><b>Your scheduler runs as a service account with <code>ANTHROPIC_API_KEY</code> set machine-wide. What does the wrapper bill?</b> The API key, per token, because <code>-p</code> always uses the key when present. On a plan, set <code>CLAUDE_CODE_OAUTH_TOKEN</code> for that account and make sure no key is in its environment.</p>
+        <p><b>Why kill with <code>/T</code>?</b> <code>claude</code> may have started shell commands of its own. Killing only the top process can leave them running.</p>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Headless flags</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Flag</th><th>Purpose</th></tr>
+      <tr><td><code>-p</code>, <code>--print</code></td><td>Run non-interactively and exit. Reads stdin (10 MB cap).</td></tr>
+      <tr><td><code>--output-format text|json|stream-json</code></td><td>Output shape. <code>stream-json</code> needs <code>--verbose</code>.</td></tr>
+      <tr><td><code>--include-partial-messages</code></td><td>Token deltas in <code>stream-json</code>.</td></tr>
+      <tr><td><code>--json-schema '&lt;schema&gt;'</code></td><td>Validated <code>structured_output</code>. Needs turn headroom.</td></tr>
+      <tr><td><code>--max-turns N</code></td><td>Turn cap. No default. <code>error_max_turns</code>, exit 1.</td></tr>
+      <tr><td><code>--max-budget-usd X</code></td><td>Estimated-spend cap, checked between requests. <code>error_max_budget_usd</code>, exit 1.</td></tr>
+      <tr><td><code>--fallback-model a,b</code></td><td>Models to use when the primary is overloaded or unavailable.</td></tr>
+      <tr><td><code>--model</code></td><td>Alias (<code>haiku</code>, <code>sonnet</code>, <code>opus</code>, <code>fable</code>) or full ID.</td></tr>
+      <tr><td><code>--allowedTools</code>, <code>--disallowedTools</code>, <code>--tools</code></td><td>Allow rules, deny rules (a bare name removes the tool), built-in tool set.</td></tr>
+      <tr><td><code>--permission-mode</code></td><td><code>default</code>/<code>manual</code>, <code>acceptEdits</code>, <code>plan</code>, <code>auto</code>, <code>dontAsk</code>, <code>bypassPermissions</code>.</td></tr>
+      <tr><td><code>--permission-prompts none</code></td><td>Nobody can answer: deny, do not retry.</td></tr>
+      <tr><td><code>--session-id</code>, <code>--resume</code>, <code>--continue</code>, <code>--fork-session</code>, <code>--no-session-persistence</code></td><td>Session control.</td></tr>
+      <tr><td><code>--setting-sources</code>, <code>--strict-mcp-config</code>, <code>--mcp-config</code>, <code>--settings</code>, <code>--bare</code></td><td>Isolation. <code>--bare</code> needs an API key or <code>apiKeyHelper</code>.</td></tr>
+      <tr><td><code>--agents &lt;json|file&gt;</code>, <code>--agent &lt;name&gt;</code></td><td>Session-only subagents. Run the whole session as one agent.</td></tr>
+      <tr><td><code>--append-system-prompt</code>, <code>--system-prompt</code></td><td>Add to or replace the system prompt.</td></tr>
+    </table></div>
+
+    <h3>Result checks</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Check</th><th>Pass when</th></tr>
+      <tr><td>Exit code</td><td><code>0</code></td></tr>
+      <tr><td><code>is_error</code></td><td><code>false</code></td></tr>
+      <tr><td><code>permission_denials</code></td><td>Empty, or only the denials you expected</td></tr>
+      <tr><td><code>structured_output</code></td><td>Present, when you passed a schema</td></tr>
+      <tr><td>init <code>mcp_servers</code>, <code>plugins</code>, <code>apiKeySource</code></td><td>What you meant to load and bill</td></tr>
+      <tr><td>Cost</td><td><code>total_cost_usd</code> (whole tree, cumulative on resume). <code>modelUsage</code> per model. <code>usage</code> is the main loop only.</td></tr>
+    </table></div>
+
+    <h3>Subagent fields</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Values</th></tr>
+      <tr><td><code>name</code>, <code>description</code></td><td>Required. The description drives delegation and stays in the main context.</td></tr>
+      <tr><td><code>tools</code>, <code>disallowedTools</code></td><td>Comma list or YAML list. Omit <code>tools</code> to inherit all.</td></tr>
+      <tr><td><code>model</code></td><td><code>haiku</code>, <code>sonnet</code>, <code>opus</code>, <code>fable</code>, full ID, <code>inherit</code></td></tr>
+      <tr><td><code>permissionMode</code>, <code>maxTurns</code>, <code>effort</code>, <code>background</code>, <code>isolation</code></td><td>Per-agent behaviour</td></tr>
+      <tr><td><code>skills</code>, <code>mcpServers</code>, <code>hooks</code>, <code>memory</code>, <code>omitClaudeMd</code></td><td>Per-agent context and tooling</td></tr>
+    </table></div>
+
+    <h3>Locations and variables</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Item</th><th>Where or what</th></tr>
+      <tr><td>Transcript</td><td><code>~/.claude/projects/&lt;project&gt;/&lt;session-id&gt;.jsonl</code></td></tr>
+      <tr><td>Subagent transcript</td><td><code>~/.claude/projects/&lt;project&gt;/&lt;session-id&gt;/subagents/agent-&lt;agentId&gt;.jsonl</code></td></tr>
+      <tr><td>Agent definitions</td><td><code>.claude/agents/</code> (project), <code>~/.claude/agents/</code> (user), plugin <code>agents/</code></td></tr>
+      <tr><td><code>ANTHROPIC_API_KEY</code></td><td>Always used by <code>-p</code> when present</td></tr>
+      <tr><td><code>CLAUDE_CODE_OAUTH_TOKEN</code></td><td>Plan token from <code>claude setup-token</code>. Not read by <code>--bare</code>.</td></tr>
+      <tr><td><code>CLAUDE_CONFIG_DIR</code></td><td>Moves settings, sessions and plugins</td></tr>
+      <tr><td><code>CLAUDECODE</code>, <code>CLAUDE_CODE_CHILD_SESSION</code></td><td>Set to <code>1</code> in subprocesses Claude Code starts</td></tr>
+      <tr><td><code>CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1</code></td><td>Strip credentials from subprocess environments</td></tr>
+      <tr><td><code>CLAUDE_CODE_SUBAGENT_MODEL</code></td><td>Default subagent model (below per-call and definition)</td></tr>
+      <tr><td><code>CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS</code>, <code>CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH</code></td><td>20 at once, 3 layers deep by default</td></tr>
+      <tr><td><code>CLAUDE_CODE_PROMPT_CACHE_TTL</code>, <code>CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL</code></td><td><code>5m</code> or <code>1h</code>, for the main conversation and for subagents</td></tr>
+      <tr><td><code>BASH_DEFAULT_TIMEOUT_MS</code>, <code>CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS</code></td><td>Shell command timeout (120 s). Background wait after the last turn (10 min).</td></tr>
+    </table></div>
+
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>Exit 0, nothing changed</td><td>Tool calls denied in Manual mode</td><td>Read <code>permission_denials</code>. Add the narrowest allow rule. Fail the job on denials.</td></tr>
+      <tr><td><code>--json-schema is not valid JSON: ... Expected '}'</code></td><td>Windows PowerShell 5.1 stripped the inner quotes</td><td><code>($schema -replace '"','\"')</code>, or pass a file where the flag accepts one</td></tr>
+      <tr><td><code>structured_output</code> missing</td><td>Model declined, or turn cap hit before the <code>StructuredOutput</code> call</td><td>Check for the field. Raise <code>--max-turns</code> to 3 or more.</td></tr>
+      <tr><td><code>Not logged in · Please run /login</code> with <code>--bare</code></td><td><code>--bare</code> ignores plan logins and <code>CLAUDE_CODE_OAUTH_TOKEN</code></td><td>Use an API key, or drop <code>--bare</code> for <code>--setting-sources project --strict-mcp-config</code></td></tr>
+      <tr><td>Scheduled job billed per token</td><td><code>ANTHROPIC_API_KEY</code> in the job's environment</td><td>Remove it from that environment. Confirm with <code>claude auth status</code> or init <code>apiKeySource</code>.</td></tr>
+      <tr><td>Spend above <code>--max-budget-usd</code></td><td>The cap is checked between requests</td><td>Leave headroom. Set the cap below the real limit.</td></tr>
+      <tr><td>Job hangs</td><td>No wall-clock limit in the CLI. Background work keeps the run open.</td><td>Wrap with a timeout and kill the process tree</td></tr>
+      <tr><td>Resumed run lost its MCP servers or fallback</td><td>Launch flags are not restored on resume</td><td>Pass <code>--mcp-config</code>, <code>--settings</code>, <code>--fallback-model</code> again</td></tr>
+      <tr><td>Resume costs as much as a fresh long run</td><td>Cache expired: 5 minutes on an API key, 1 hour on a plan</td><td>Start fresh with a handoff, or set a <code>1h</code> TTL on a key</td></tr>
+      <tr><td>Different results on a colleague's machine</td><td>Personal settings, hooks or MCP servers loaded</td><td><code>--setting-sources project --strict-mcp-config</code>, or <code>--bare</code> on a key</td></tr>
+      <tr><td>Subagent report confidently wrong</td><td>Thin brief, cheap model, no evidence asked for</td><td>Return contract with evidence. Verify it cheaply.</td></tr>
+      <tr><td>Cost in <code>usage</code> lower than the bill</td><td><code>usage</code> excludes subagents</td><td>Use <code>modelUsage</code> or <code>total_cost_usd</code></td></tr>
+    </table></div>
+
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+        <li>Claude Code docs, "Run Claude Code programmatically": <a href="https://code.claude.com/docs/en/headless" target="_blank" rel="noopener">code.claude.com/docs/en/headless</a></li>
+        <li>Claude Code docs, "Create custom subagents": <a href="https://code.claude.com/docs/en/sub-agents" target="_blank" rel="noopener">code.claude.com/docs/en/sub-agents</a></li>
+        <li>Claude Code docs, "CLI reference": <a href="https://code.claude.com/docs/en/cli-reference" target="_blank" rel="noopener">code.claude.com/docs/en/cli-reference</a></li>
+        <li>Claude Code docs, "Environment variables": <a href="https://code.claude.com/docs/en/env-vars" target="_blank" rel="noopener">code.claude.com/docs/en/env-vars</a></li>
+        <li>Measured: every Expected line in the labs comes from a run on Claude Code 2.1.322 on 11 November 2026.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "A nightly claude -p job is supposed to rewrite a config file. It has exited 0 every night for a week, but the file has not changed. What do you check first?", "o": ["Raise --max-turns, because the run probably stopped early", "Read permission_denials in the JSON result: in Manual mode the write was denied and the run still exited 0", "Switch the job to bypassPermissions so nothing can be denied", "Add --verbose so errors appear on stderr"], "a": 1, "why": "A denied tool call does not fail a -p run: the model is told and carries on, and the exit code stays 0. permission_denials lists each refused call with its input. The fix is a narrow allow rule such as Edit(conf/**) plus a job check that fails on denials. Bypass would hide the problem and remove the safety checks."},
+    {"q": "You schedule claude -p on a workstation where you are signed in with a Max plan. A build tool on the same machine needs ANTHROPIC_API_KEY set system-wide. Which credential does the scheduled job use?", "o": ["The plan login, because you signed in interactively", "Neither: it stops and asks which one to use", "The API key: -p always uses ANTHROPIC_API_KEY when it is present, so the job is billed per token", "Whichever was used most recently"], "a": 2, "why": "ANTHROPIC_API_KEY ranks above CLAUDE_CODE_OAUTH_TOKEN and the plan login, and in -p it is used without asking. Interactive sessions ask once before using it. Give the job an environment without the key, and confirm with claude auth status or apiKeySource in the init event."},
+    {"q": "Which of these is the best candidate for a Haiku subagent?", "o": ["Search 40 large log files for one stack trace and return the matching file names and line numbers", "Rename a variable in the one file you are already editing", "Discuss three design options with you over several turns", "Apply a fix the main conversation has already worked out in detail"], "a": 0, "why": "Delegation pays when the work reads a lot and the answer is small and checkable. The logs stay in the subagent's context, at Haiku prices, and only file names and line numbers come back. Small edits, back-and-forth and work that needs the main context cost a fresh prefix and a brief for no saving."},
+    {"q": "A run with --max-budget-usd 0.10 ended with total_cost_usd 0.13 and subtype error_max_budget_usd. What happened?", "o": ["The cap is ignored on a subscription", "total_cost_usd includes a 30 percent safety margin", "A subagent's spend is not counted toward the cap", "The cap is checked between requests, so the request in flight when spend passed 0.10 completed. Set the cap below your real limit."], "a": 3, "why": "The budget is enforced against a client-side estimate after each request. A request already sent finishes, so spend can pass the cap. Subagent spend does count, and the cap stopped the run on a plan in this module's runs too. Leave headroom."},
+    {"q": "Step 1 of a pipeline produces a 300,000-token conversation and a short list of findings. Step 2, on an API key with default settings, runs two hours later and needs only the findings. How should step 2 start?", "o": ["--resume the step 1 session, so the model has the full context", "Start a fresh session and pass the findings, for example step 1's structured_output saved to a file", "--continue, because it costs less than --resume", "--fork-session, because a fork reads the original's cache"], "a": 1, "why": "On an API key the main conversation's cache lasts five minutes by default, so a resume two hours later rewrites all 300,000 tokens at the cache-write rate before doing anything. --continue and --fork-session load the same history at the same cost. When the next step needs only the result, a fresh session with a handoff is cheaper and cleaner."}
+  ]</script>
+</section>

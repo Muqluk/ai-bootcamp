@@ -1,0 +1,600 @@
+<section class="module" id="m4" data-title="Commands" data-sub="Built-in and your own" data-level="practitioner" data-prereq="m1" data-minutes="245">
+  <div class="overview">
+    <p class="lede">A slash command is the shortest path from intent to action in Claude Code. Built-in commands run fixed logic in the client: they show what fills the context, what you have spent, and how the session is set up. Your own commands are prompts kept in files: reviewed, versioned and called by name, from a terminal or from a script.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Pick the right built-in command for a context, money or setup question, and say which of them also run headless.</li>
+      <li>List the commands a session actually has, from the <code>slash_commands</code> field of the stream-json init line.</li>
+      <li>Write a project command that takes positional and named arguments, and avoid the 0-based and quoting traps.</li>
+      <li>Inject live data into a command with <code>!`…`</code>, prove the data reached the model, and turn the feature off with <code>disableSkillShellExecution</code>.</li>
+      <li>Pin a command to a cheaper model with frontmatter and confirm the model from <code>modelUsage</code>.</li>
+      <li>Decide whether a repeated task belongs in a command, a hook or a plain script, and give a command a done-test.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key). The labs were run on 2.1.322.</li>
+      <li>Windows PowerShell 5.1 or later, and <code>git</code> on the PATH (lab 3).</li>
+      <li>About $0.05 of API usage for all labs, or a small share of a plan's 5-hour window.</li>
+    </ul>
+    <div class="recap"><h3>If you skipped the prerequisites</h3><p>This module leans on the Context module. Every request Claude Code sends carries the whole conversation so far, on top of a fixed prefix: the system prompt, the tool definitions, your CLAUDE.md files and the one-line descriptions of the skills that are available. That prefix is several thousand tokens before you type anything, and most of it is served from the prompt cache on later turns. The context window on current models is 1 million tokens; Claude Code compacts automatically when the conversation nears that limit. <code>/compact</code> replaces the conversation with a summary and keeps going; <code>/clear</code> starts an empty conversation and keeps project memory. Anything a command adds to the prompt, including the output of a shell command it runs, becomes part of the conversation and is re-sent on every later turn until you compact or clear.</p></div>
+  </div>
+
+  <div class="lesson" id="m4-l1" data-title="Built-in commands, grouped by job" data-minutes="25">
+    <p>A message that starts with <code>/</code> is a command. Only the start of the message counts: the text after the name becomes the command's arguments. Two kinds of command share the <code>/</code> menu. Built-in commands are coded into the client and run fixed logic: <code>/context</code> draws a chart, <code>/model</code> switches the model, and neither calls the model. Bundled skills, such as <code>/doctor</code>, <code>/code-review</code> and <code>/batch</code>, are prompts that ship with Claude Code: invoking one hands Claude a set of instructions and lets it do the work with its tools. Your own commands, covered from the next lesson on, are the same kind of thing as bundled skills.</p>
+
+    <h3>The commands a working engineer uses</h3>
+    <p>The full list runs to about a hundred entries and changes between releases. These are the ones worth knowing by heart. The last column says whether the command was seen in the <code>slash_commands</code> list of a headless (<code>claude -p</code>) session on 2.1.322; a command missing there is interactive-only.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Job</th><th>Command</th><th>What it does</th><th>Headless</th></tr>
+      <tr><td>Context</td><td><code>/context [all]</code></td><td>Breaks the current context down by category (system prompt, system tools, deferred tools, skills, messages, free space, autocompact buffer) with per-skill token counts. <code>all</code> expands the per-item list.</td><td>Yes</td></tr>
+      <tr><td>Context</td><td><code>/compact [instructions]</code></td><td>Summarizes the conversation so far to free space. Optional text steers what the summary keeps.</td><td>Yes</td></tr>
+      <tr><td>Context</td><td><code>/clear [name]</code></td><td>Starts a new conversation with empty context. The name labels the old one in the <code>/resume</code> picker.</td><td>Yes</td></tr>
+      <tr><td>Money</td><td><code>/usage</code></td><td>Session cost, plan limits and activity stats. <code>/cost</code> and <code>/stats</code> are aliases.</td><td>Yes</td></tr>
+      <tr><td>Setup</td><td><code>/model [model]</code></td><td>Switches the model and saves it as your default for new sessions.</td><td>Yes</td></tr>
+      <tr><td>Setup</td><td><code>/effort [level|auto|status]</code></td><td>Sets the effort level (<code>low</code> to <code>xhigh</code>, <code>max</code>, <code>auto</code>); <code>status</code> prints it.</td><td>Yes</td></tr>
+      <tr><td>Setup</td><td><code>/permissions</code></td><td>Opens a dialog to view, add and remove allow, ask and deny rules by scope.</td><td>No</td></tr>
+      <tr><td>Setup</td><td><code>/hooks</code></td><td>Shows the hook configuration that loaded.</td><td>No</td></tr>
+      <tr><td>Setup</td><td><code>/agents</code></td><td>On current versions, prints a reminder to ask Claude to create subagents or to edit <code>.claude/agents/</code> directly. Before 2.1.198 it opened a management screen.</td><td>Yes</td></tr>
+      <tr><td>Setup</td><td><code>/plugin [subcommand]</code></td><td>Plugin menu, or <code>list</code>, <code>install</code>, <code>enable</code>, <code>disable</code> directly.</td><td>No</td></tr>
+      <tr><td>Setup</td><td><code>/mcp [reconnect|enable|disable …]</code></td><td>MCP server connections and OAuth. With a subcommand it changes state without opening the list.</td><td>Yes</td></tr>
+      <tr><td>Setup</td><td><code>/memory</code></td><td>Edits CLAUDE.md files and turns auto memory on or off.</td><td>No</td></tr>
+      <tr><td>Setup</td><td><code>/doctor</code></td><td>A bundled skill: a setup checkup of installation, settings, extensions and CLAUDE.md, with fixes Claude applies after you confirm.</td><td>Yes</td></tr>
+    </table></div>
+    <p>A few more come up weekly: <code>/init</code> writes a starter CLAUDE.md, <code>/resume</code> returns to an earlier conversation, <code>/rewind</code> rolls code and conversation back to a checkpoint, <code>/skills</code> lists skills with their token cost, <code>/status</code> shows version, model and account, and <code>/reload-plugins</code> applies plugin changes without a restart.</p>
+
+    <h3>Read the real list from the session</h3>
+    <p>Documentation describes every command; your session has a subset that depends on platform, plan, login and what is installed. The authoritative list for a run is the first line of stream-json output, the <code>system</code>/<code>init</code> message. Its <code>slash_commands</code> array holds every name the session accepts, built-in and custom, and its <code>skills</code> array the skill names. On a clean project folder with 2.1.322 that list had 53 names; it included <code>context</code>, <code>compact</code>, <code>clear</code>, <code>usage</code>, <code>model</code>, <code>effort</code>, <code>mcp</code>, <code>agents</code> and <code>doctor</code>, and did not include <code>permissions</code>, <code>hooks</code>, <code>memory</code> or <code>plugin</code>. Lab 1 has you read your own.</p>
+
+    <h3>Built-ins cost nothing</h3>
+    <p>A built-in that only reads client state does not call the model. Run headless, <code>claude -p "/context"</code> returned its whole breakdown as the <code>result</code> with <code>num_turns</code> 0 and <code>total_cost_usd</code> 0. The same was true of <code>/usage</code>. That makes both safe to call from a script as often as you like.</p>
+    <pre data-cap="output"><code>**Model:** claude-haiku-5-5
+**Tokens:** 17.2k / 1m (2%)
+| System prompt            | 3.4k   | 0.3%  |
+| System tools             | 11.6k  | 1.2%  |
+| System tools (deferred)  | 13.8k  | 1.4%  |
+| Skills                   | 2.2k   | 0.2%  |
+| Messages                 | 10     | 0.0%  |
+| Free space               | 949.8k | 95.0% |
+| Autocompact buffer       | 33k    | 3.3%  |</code></pre>
+
+    <h3>What <code>/usage</code> means depends on how you pay</h3>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>Subscription plan</th><th>API key</th></tr>
+      <tr><td>Top of the output</td><td>"You are currently using your subscription", then the current 5-hour session and the current week as percentages with reset times, then what contributed to usage.</td><td>Session cost in dollars and per-model token counts.</td></tr>
+      <tr><td>The dollar figure</td><td>A local estimate at list prices. Nothing is charged per token.</td><td>The bill, give or take rounding.</td></tr>
+      <tr><td>What to act on</td><td>The window percentages.</td><td>The dollars.</td></tr>
+    </table></div>
+    <aside class="rule">Use <code>/context</code> before <code>/compact</code> and <code>/usage</code> before changing models: look at the meter, then pull the lever.</aside>
+    <aside class="trap">A command name typed after other text does not run. <code>please /compact now</code> is an ordinary message; for a skill it only counts as permission for Claude to invoke it. Put the command first.</aside>
+  </div>
+
+  <div class="lesson" id="m4-l2" data-title="Your own commands: files, skills and names" data-minutes="25">
+    <p>A custom command is a Markdown file whose body is a prompt. When you type its name, Claude Code reads the file, substitutes the arguments, runs any shell injections, and sends the result to the model as your message. The model never sees the file name or the frontmatter; it sees the rendered text.</p>
+
+    <h3>Two formats, one mechanism</h3>
+    <p>Custom commands have been merged into skills. A file at <code>.claude/commands/deploy.md</code> and a skill at <code>.claude/skills/deploy/SKILL.md</code> both create <code>/deploy</code> and behave the same way. The command file is the older format and still works. The skill format adds a folder for supporting files and the <code>name</code> and <code>paths</code> frontmatter fields; everything else in this module works in both.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Where the file is</th><th>Command you type</th><th>Loads in</th></tr>
+      <tr><td><code>.claude/commands/deploy.md</code></td><td><code>/deploy</code></td><td>Sessions in this project. Commit it to share it.</td></tr>
+      <tr><td><code>.claude/commands/ops/restart.md</code></td><td><code>/ops:restart</code></td><td>Same. Each subfolder becomes a prefix, joined with <code>:</code>.</td></tr>
+      <tr><td><code>.claude/skills/deploy/SKILL.md</code></td><td><code>/deploy</code>, or the frontmatter <code>name</code></td><td>Sessions in this project.</td></tr>
+      <tr><td><code>~/.claude/skills/deploy/SKILL.md</code></td><td><code>/deploy</code></td><td>All your projects on this machine.</td></tr>
+      <tr><td><code>&lt;plugin&gt;/skills/review/SKILL.md</code></td><td><code>/&lt;plugin&gt;:review</code></td><td>Wherever the plugin is enabled.</td></tr>
+    </table></div>
+    <p>A minimal command file has no frontmatter at all. This one is complete:</p>
+    <pre data-file=".claude/commands/ops/restart.md"><code>---
+description: Restart note for a host
+---
+Reply with exactly: RESTART-NOTE for $ARGUMENTS</code></pre>
+    <p>Run headless as <code>claude -p "/ops:restart web-01"</code>, it returned <code>RESTART-NOTE for web-01</code>, and the init line listed <code>ops:restart</code> in <code>slash_commands</code>.</p>
+
+<figure class="diagram">
+<pre class="mermaid">flowchart LR
+  a["You type the command"] --> b["Claude Code reads the file"]
+  b --> c["Arguments substituted"]
+  c --> d["Shell injections run"]
+  d --> e["Rendered text sent as your message"]:::hot
+  e --> f["Model replies"]
+  b -.-> g["Frontmatter and file name stay out"]:::ghost
+</pre>
+  <figcaption>The model sees only the rendered text at the end of the chain, never the file name or frontmatter.</figcaption>
+</figure>
+    <h3>Name clashes</h3>
+    <p>Names collide more often than you expect, because the personal, project, enterprise and bundled namespaces are flat. The rules:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Same name in</th><th>Which one runs</th></tr>
+      <tr><td>A skill and a file in <code>.claude/commands/</code></td><td>The skill. Lab 2 confirms it: <code>/clash</code> answered <code>FROM-SKILL</code>.</td></tr>
+      <tr><td>Enterprise, personal and project</td><td>Enterprise over personal, personal over project.</td></tr>
+      <tr><td>Yours and a bundled skill or built-in</td><td>Yours replaces it, but not its aliases. A project <code>usage</code> skill replaces <code>/usage</code>; <code>/cost</code> still runs the built-in.</td></tr>
+      <tr><td>A plugin skill and any of the above</td><td>Both load: the plugin one is always <code>/plugin-name:skill-name</code>.</td></tr>
+      <tr><td>A root skill and a nested one in <code>apps/web/.claude/skills/</code></td><td>Both load: <code>/deploy</code> runs the root one, <code>/apps/web:deploy</code> the nested one.</td></tr>
+    </table></div>
+    <aside class="trap">The personal-over-project rule means a teammate's <code>~/.claude/skills/deploy</code> silently replaces the reviewed <code>/deploy</code> in your repository, on their machine only. Give team commands a prefix that nobody uses personally, or ship them in a plugin where the namespace is enforced.</aside>
+
+    <h3>Who may invoke it</h3>
+    <p>By default both you and the model can invoke a command: its description sits in the skill listing, and Claude may call it through the Skill tool when it judges it relevant. Two frontmatter fields change that.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Frontmatter</th><th>You can invoke</th><th>Claude can invoke</th><th>Description in context</th></tr>
+      <tr><td>(default)</td><td>Yes</td><td>Yes</td><td>Always</td></tr>
+      <tr><td><code>disable-model-invocation: true</code></td><td>Yes</td><td>No</td><td>No</td></tr>
+      <tr><td><code>user-invocable: false</code></td><td>No</td><td>Yes</td><td>Always</td></tr>
+    </table></div>
+    <p>For anything with side effects, such as deploying, committing or posting, set <code>disable-model-invocation: true</code>. It also takes the description out of every session's prefix, which is a small token saving per command.</p>
+    <aside class="trap">With a model-invocable command and <code>--max-turns 1</code>, a headless run of <code>claude -p "/ops:restart web-01"</code> ended with subtype <code>error_max_turns</code> and an empty result: Haiku spent its only turn calling the Skill tool on the command that was already loaded. Allow two or three turns, or set <code>disable-model-invocation: true</code>.</aside>
+    <aside class="rule">Write a command as a skill folder when it needs supporting files or a name different from its folder; otherwise a single file in <code>.claude/commands/</code> is enough.</aside>
+  </div>
+
+  <div class="lesson" id="m4-l3" data-title="Arguments" data-minutes="20">
+    <p>Whatever follows the command name is the argument string. Claude Code substitutes it into the body before the model sees anything. There are four placeholder forms.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Placeholder</th><th>Expands to</th><th>With <code>/echo-args web-01 'disk full'</code></th></tr>
+      <tr><td><code>$ARGUMENTS</code></td><td>The whole argument string as typed.</td><td><code>web-01 'disk full'</code></td></tr>
+      <tr><td><code>$ARGUMENTS[N]</code> or <code>$N</code></td><td>Argument N, counting from 0.</td><td><code>$0</code> = <code>web-01</code>, <code>$1</code> = <code>disk full</code></td></tr>
+      <tr><td><code>$2</code> with no third argument</td><td>Nothing: the placeholder stays as literal text.</td><td><code>$2</code></td></tr>
+      <tr><td><code>$name</code></td><td>A named argument from the <code>arguments</code> frontmatter list, mapped by position. Empty if missing.</td><td>with <code>arguments: [host, symptom]</code>, <code>$host</code> = <code>web-01</code></td></tr>
+    </table></div>
+    <p>The third column is real output. This body</p>
+    <pre data-file=".claude/commands/echo-args.md"><code>---
+description: Echo back the arguments it received
+argument-hint: &lt;host&gt; &lt;symptom&gt;
+disable-model-invocation: true
+---
+Reply with exactly this one line and nothing else:
+FIRST=$0 | SECOND=$1 | THIRD=$2 | ALL=$ARGUMENTS</code></pre>
+    <p>returned:</p>
+    <pre data-cap="output"><code>FIRST=web-01 | SECOND=disk full | THIRD=$2 | ALL=web-01 'disk full'</code></pre>
+
+    <h3>The 0-based trap</h3>
+    <p>Shell scripts number from <code>$1</code>. Claude Code numbers from <code>$0</code>. A body written by habit as "restart <code>$1</code> on <code>$2</code>" puts the second argument where the first belongs and leaves a literal <code>$2</code> in the prompt. The model then improvises, usually plausibly, so nothing fails loudly. Named arguments avoid the whole class of error:</p>
+    <pre data-file=".claude/skills/restart/SKILL.md"><code>---
+description: Draft a restart plan for one host
+arguments: [host, reason]
+argument-hint: &lt;host&gt; &lt;reason&gt;
+disable-model-invocation: true
+---
+Draft a restart plan for $host. Reason given: $reason.</code></pre>
+
+    <h3>Quoting</h3>
+    <p>Indexed arguments use shell-style quoting: quote a multi-word value to keep it as one argument. In Windows PowerShell 5.1 that collides with how arguments reach native programs. The run <code>claude -p "/echo-args web-01 `"disk full`""</code> produced <code>SECOND=disk</code> and <code>ALL=web-01 disk</code>: PowerShell split the prompt at the embedded quotes and the word <code>full</code> never arrived. Single quotes inside the double-quoted prompt went through intact, as the table shows.</p>
+    <aside class="trap">In PowerShell 5.1, never put double quotes inside a <code>claude -p</code> prompt. Use single quotes to group a multi-word argument.</aside>
+
+    <h3>Other details that matter</h3>
+    <ul>
+      <li>If the body has no placeholder at all, Claude Code appends <code>ARGUMENTS: &lt;what you typed&gt;</code> to the end, so arguments are never silently lost.</li>
+      <li>An argument that itself contains <code>$1</code> or <code>$ARGUMENTS</code> is inserted literally and not expanded again.</li>
+      <li>To write a literal <code>$1.00</code> in a body, escape it: <code>\$1.00</code>.</li>
+      <li><code>argument-hint</code> only changes the autocomplete hint in the <code>/</code> menu. It validates nothing.</li>
+      <li><code>${CLAUDE_SESSION_ID}</code>, <code>${CLAUDE_EFFORT}</code>, <code>${CLAUDE_SKILL_DIR}</code> and <code>${CLAUDE_PROJECT_DIR}</code> are also substituted, which lets a body point at a script by absolute path.</li>
+      <li>At the terminal you can stack up to six skills in one message (<code>/write-tests /fix-issue 123</code>). Through <code>claude -p</code> only the first one loads and the rest of the line becomes its arguments.</li>
+    </ul>
+    <aside class="rule">Use named arguments for anything with more than one parameter; keep <code>$ARGUMENTS</code> for free text.</aside>
+  </div>
+
+  <div class="lesson" id="m4-l4" data-title="Dynamic context: shell injection" data-minutes="25">
+    <p>A command body can run shell commands before the prompt is sent. The output replaces the placeholder, so the model receives data, not an instruction to go and fetch it. Two forms exist:</p>
+    <pre data-file=".claude/commands/last-ticket.md"><code>---
+description: Report the ticket in the newest commit body
+disable-model-invocation: true
+---
+Body of the newest commit:
+!`git log -1 --format=%b`
+
+Reply with only the ticket id from that body, or NONE if you see no ticket id.</code></pre>
+    <p>The inline form <code>!`command`</code> is recognized only at the start of a line or after whitespace; <code>KEY=!`cmd`</code> stays literal. For several lines, open a fenced block with three backticks followed by <code>!</code>; each line in it runs.</p>
+
+    <h3>When it runs and how</h3>
+    <ul>
+      <li><b>Once, at invocation, on your machine.</b> Substitution runs over the file once. Output is not re-scanned, so a command cannot emit another placeholder.</li>
+      <li><b>Through the session's shell tool.</b> Bash when it is available, otherwise PowerShell. The frontmatter field <code>shell: powershell</code> selects the PowerShell tool; <code>shell: bash</code> on Windows without Git Bash fails the invocation. Commands like <code>git log</code> run the same in both.</li>
+      <li><b>In the session's current directory</b>, which moves when Claude runs <code>cd</code>. Use <code>${CLAUDE_PROJECT_DIR}</code> in paths that must not drift.</li>
+      <li><b>Under the Bash tool's 2-minute timeout.</b> Output beyond the tool's inline ceiling arrives as a file path plus a preview.</li>
+      <li><b>Under your permission rules, without prompting.</b> A command your rules do not allow aborts the whole invocation with <code>Shell command permission check failed</code>. Read-only commands such as <code>git log</code> pass; anything else needs a rule or the command's <code>allowed-tools</code>.</li>
+      <li><b>All or nothing.</b> A non-zero exit aborts the invocation and Claude never sees the body. Exit 1 from search and compare commands is tolerated; append <code>|| true</code> under bash to a check that exits 1 on findings.</li>
+    </ul>
+
+<figure class="diagram">
+<pre class="mermaid">flowchart TD
+  a["Invocation"] --> b{"Rules allow each command?"}
+  b -- no --> x["Aborted: permission check failed"]:::bad
+  b -- yes --> c["Command runs in current directory"]
+  c --> d{"Exit code?"}
+  d -- "non-zero" --> y["Aborted: Claude never sees the body"]:::bad
+  d -- "0" --> e["Output replaces the placeholder"]:::good
+  e --> f["Prompt sent to the model"]
+</pre>
+  <figcaption>Injection is all or nothing: one refused or failing command ends the whole invocation.</figcaption>
+</figure>
+    <h3>Prove the output reached the model</h3>
+    <p>Do not test injection with data the model can already see. A headless session's prompt already carries a short git status snapshot with recent commit subjects: asked for the newest commit subject with injection switched off, Haiku still answered correctly and said it had read it "from the git status snapshot at the start of the conversation". Put a random marker where the snapshot does not reach, such as the commit body, and ask for it back. Lab 3 does that: with injection on the run returned the random <code>ticket-20006</code>; with injection off it returned <code>NONE</code>.</p>
+
+    <h3>What it costs</h3>
+    <p>Injected output is ordinary prompt text. It is billed as <span class="tok in">input</span> or <span class="tok cw">cache write</span> on the turn you invoke the command, and the rendered command stays in the conversation afterwards, so it is re-sent as <span class="tok cr">cache read</span> on every later turn until you compact or clear. A <code>git log -1</code> is a few dozen tokens. A <code>git diff</code> of a large branch or a recursive file listing can be tens of thousands, paid for the rest of the session. Invoking the command again with different output appends a second full copy; an identical render adds only a short note.</p>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>Subscription plan</th><th>API key</th></tr>
+      <tr><td>A 20,000-token injection</td><td>Draws down the 5-hour window on that turn, and a smaller amount on every later turn as cache read.</td><td>Billed once as input or cache write, then at the cache read rate per turn.</td></tr>
+    </table></div>
+
+    <h3>Turning it off</h3>
+    <p>The setting <code>disableSkillShellExecution: true</code> replaces every injection in user, project, plugin and added-directory commands with <code>[shell command execution disabled by policy]</code>. Bundled skills and skills deployed by managed settings are unaffected. It works from any settings file; in lab 3 it took effect from a file passed with <code>--settings</code> and from <code>.claude/settings.json</code>. In managed settings a <code>true</code> cannot be overridden, which is where a security team puts it.</p>
+    <aside class="trap">A command checked into a repository runs its injections on the machine of whoever types it, with that person's credentials. Review <code>!`…`</code> lines and <code>allowed-tools</code> in a pull request the way you review a script.</aside>
+    <aside class="rule">Inject the smallest output that answers the question: <code>--stat</code> before a full diff, <code>-n 20</code> before a whole log.</aside>
+  </div>
+
+  <div class="lesson" id="m4-l5" data-title="Frontmatter that changes behaviour" data-minutes="20">
+    <p>All frontmatter is optional. Most fields describe the command; four change how it runs. A misspelled field is ignored without an error, so check the spelling against the table, hyphens included.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Effect</th><th>Lasts</th></tr>
+      <tr><td><code>allowed-tools</code></td><td>Tools Claude may use without asking, for example <code>Bash(git add *) Bash(git commit *)</code>. It grants; it does not restrict. Every other tool is still callable under your normal rules.</td><td>The turn that invoked the command. Cleared by your next message.</td></tr>
+      <tr><td><code>model</code></td><td>Model for the rest of the turn: an alias such as <code>haiku</code>, a full id, or <code>inherit</code>. Not saved to settings.</td><td>The turn. The session model resumes on your next prompt.</td></tr>
+      <tr><td><code>disable-model-invocation</code></td><td>Only you can invoke the command, and its description leaves the prefix.</td><td>Permanent.</td></tr>
+      <tr><td><code>context: fork</code></td><td>Runs the body as the prompt of a new subagent (type from <code>agent</code>, default <code>general-purpose</code>) that does not see your conversation. Only its final report returns.</td><td>The subagent's run.</td></tr>
+    </table></div>
+    <p>Also useful: <code>effort</code> (level for the turn), <code>disallowed-tools</code> (removes tools while the command is active), <code>argument-hint</code>, <code>arguments</code> and <code>shell</code>.</p>
+
+    <h3>Pinning a cheap model</h3>
+    <p>A command that formats, classifies or summarizes does not need the session's best model. With <code>model: haiku</code> in the frontmatter and the session started with <code>--model sonnet</code>, the run's <code>modelUsage</code> held one key, <code>claude-haiku-5-5</code>, and cost about $0.0015. The same body without the field ran on <code>claude-sonnet-5-5</code> and cost about $0.028, roughly eighteen times as much for the same one-line answer. On a subscription the saving is window share rather than dollars; the ratio is what to look at in both cases.</p>
+    <aside class="trap">In auto mode, or when an organization's <code>availableModels</code> allowlist excludes the value, the session keeps its own model and the field is quietly ignored. Confirm from <code>modelUsage</code>, not from the frontmatter.</aside>
+
+    <h3><code>allowed-tools</code> is a grant, and it travels</h3>
+    <p>Workspace trust does not gate the field: a project command's <code>allowed-tools</code> applies even in a <code>-p</code> run in a folder you have never trusted. A repository can therefore grant its own commands broad tool access. Deny and ask rules in your settings still win over it, and an organization can switch the field off for repository commands with <code>allowManagedPermissionRulesOnly</code>.</p>
+
+    <h3><code>context: fork</code> is not a fork of your conversation</h3>
+    <p>Despite the name, the subagent starts empty apart from its own system prompt, CLAUDE.md (except for <code>Explore</code> and <code>Plan</code>, which skip it) and the rendered command body. Put everything the task needs in the body. A body that holds only guidelines, with no task, comes back with nothing useful. In the terminal a forked command runs in the background unless you set <code>background: false</code>; in <code>claude -p</code> the run waits for it.</p>
+    <aside class="rule">Fork a command when its work would flood your context with reading (a repository survey, a long log); keep it inline when you need its output in the conversation to act on.</aside>
+  </div>
+
+  <div class="lesson" id="m4-l6" data-title="Commands as team work: headless, reviewed, versioned" data-minutes="20">
+    <h3>Commands run headless</h3>
+    <p>Pass a command as the prompt: <code>claude -p "/unowned tickets.csv"</code>. Claude Code renders it exactly as at the terminal: arguments, injections, model and tool grants. Combined with <code>--output-format json</code>, a command becomes a function you can call from a scheduled task or a pipeline step and check by its <code>result</code>, <code>subtype</code> and <code>total_cost_usd</code>. Three flags keep such a run reproducible:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Flag</th><th>Why</th></tr>
+      <tr><td><code>--setting-sources project</code></td><td>Loads only the repository's settings, not the caller's personal ones.</td></tr>
+      <tr><td><code>--strict-mcp-config</code></td><td>Ignores every MCP server not passed with <code>--mcp-config</code>.</td></tr>
+      <tr><td><code>--max-turns N</code></td><td>Bounds the run. Allow two or three turns even for a one-shot command (lesson 2).</td></tr>
+    </table></div>
+    <p>To run with no commands at all, <code>--disable-slash-commands</code> turns off every skill and command for the session.</p>
+
+    <h3>A command is a prompt under change control</h3>
+    <p>A prompt typed into a chat is lost and differs every time. The same prompt in <code>.claude/commands/</code> is a file: it has a diff, a reviewer, a history and a name everyone types the same way. Treat it as code.</p>
+    <ul>
+      <li>One job per command, named by verb: <code>/unowned</code>, <code>/release-notes</code>, <code>/triage</code>.</li>
+      <li>A fixed output shape stated in the body (<code>Reply with exactly one line in the form MISSING=&lt;count&gt;</code>), so a script can check it.</li>
+      <li>A done-test kept next to it: a small fixture and the expected result. Lab 5's test ran the command three times against a five-row CSV and passed 3 of 3 with <code>MISSING=2</code>.</li>
+      <li><code>disable-model-invocation: true</code> on anything with side effects.</li>
+      <li>The narrowest <code>allowed-tools</code> that lets it finish without a prompt.</li>
+    </ul>
+
+    <h3>Command, hook or script</h3>
+    <p>A command is a request to a model: it can misread, improvise or stop early. Choose by what the task needs.</p>
+    <div class="tablewrap"><table>
+      <tr><th>The task</th><th>Use</th><th>Because</th></tr>
+      <tr><td>Needs judgment: summarize, classify, draft, review.</td><td>Command</td><td>Only the model can do it; the command makes it repeatable.</td></tr>
+      <tr><td>Must happen every time an event occurs: block a write, format after an edit, log every tool call.</td><td>Hook</td><td>A hook runs on the event whether or not anyone types anything, and the model cannot talk its way past it.</td></tr>
+      <tr><td>Is fully deterministic: count rows, rename files, call an API.</td><td>Script</td><td>Faster, free and exact. Call it from a command's injection or <code>allowed-tools</code> if the model needs the result.</td></tr>
+      <tr><td>Is a rule that should always be in force.</td><td>CLAUDE.md or a setting</td><td>A command applies only when someone remembers to type it.</td></tr>
+    </table></div>
+    <p>Lab 5's <code>/unowned</code> is honest about this: counting empty cells in a CSV is a one-line script. It is a good lab because the answer is checkable, not because it is a good use of a model. The command earns its keep when the input is messy enough that a script would need judgment.</p>
+    <aside class="rule">If you could write the done-test as the implementation, write the script instead.</aside>
+    <aside class="trap">A command used as a gate ("run <code>/check</code> before every commit") is only as reliable as the person who remembers to run it. Gates belong in hooks or CI.</aside>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m4-lab1" data-title="List the commands your session really has" data-minutes="15">
+      <p class="goal">Read the init line of a headless run, count the commands it lists, and call two built-ins headless at zero cost.</p>
+      <ol class="steps">
+        <li><p>Make the lab folder and move into it.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m4/lab1 | Out-Null; cd {{LAB}}/m4/lab1</code></pre></li>
+        <li><p>Run a one-line prompt with stream-json output. Every headless run in this module carries <code>--setting-sources project</code> and <code>--strict-mcp-config</code>: the first keeps your personal settings and hooks out, the second keeps your MCP servers out, so what you measure is Claude Code and the lab folder only.</p>
+          <pre><code>claude -p "Reply with the word OK." --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format stream-json --verbose &gt; init.jsonl</code></pre>
+          <p class="expect"><b>Expected:</b> a file of about ten JSON lines. The first is the session's init message.</p></li>
+        <li><p>Print the type, the model and the command list.</p>
+          <pre><code>$init = Get-Content init.jsonl -TotalCount 1 | ConvertFrom-Json
+"type=$($init.type) subtype=$($init.subtype) model=$($init.model)"
+"slash_commands: $($init.slash_commands.Count)"
+$init.slash_commands -join ' '</code></pre>
+          <p class="expect"><b>Expected:</b> <code>type=system subtype=init model=claude-haiku-5-5</code>, then about 50 names (53 on 2.1.322) including <code>context compact clear usage model effort mcp agents doctor</code>. <code>permissions</code>, <code>hooks</code>, <code>memory</code> and <code>plugin</code> are absent: they are interactive-only.</p></li>
+        <li><p>Call <code>/context</code> headless and read its cost.</p>
+          <pre><code>claude -p "/context" --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format json &gt; context.json
+$c = Get-Content context.json -Raw | ConvertFrom-Json
+"num_turns=$($c.num_turns) cost=$($c.total_cost_usd)"; $c.result</code></pre>
+          <p class="expect"><b>Expected:</b> <code>num_turns=0 cost=0</code>, then a Context Usage report: about 17k of 1m tokens, with rows for System prompt (about 3.4k), System tools (about 11.6k), System tools (deferred), Skills (about 2.2k), Messages, Free space and Autocompact buffer, and a per-skill table.</p></li>
+        <li><p>Do the same with <code>/usage</code>.</p>
+          <pre><code>claude -p "/usage" --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format json &gt; usage.json
+$u = Get-Content usage.json -Raw | ConvertFrom-Json
+"num_turns=$($u.num_turns) cost=$($u.total_cost_usd)"; $u.result</code></pre>
+          <p class="expect"><b>Expected:</b> <code>num_turns=0 cost=0</code>. On a subscription the result starts "You are currently using your subscription" and shows the current session and current week as percentages with reset times. On an API key it shows session cost and tokens.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>How many names does your <code>slash_commands</code> array hold, and is <code>permissions</code> among them? Answer: about 50, and no; it only exists in interactive sessions.</li>
+          <li>Which <code>/context</code> category is largest before you type anything? Answer: System tools, the built-in tool definitions, at about 11.6k tokens. That is the fixed overhead every turn carries.</li>
+          <li>Why can a monitoring script call <code>/context</code> every minute without cost? Answer: it is a built-in that reads client state; <code>num_turns</code> 0 shows no model call was made.</li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m4-lab2" data-title="Write a project command with two arguments and call it headless" data-minutes="20">
+      <p class="goal">Create a command that echoes its arguments, a namespaced command and a deliberate name clash, and read how each resolves.</p>
+      <ol class="steps">
+        <li><p>Make the folders.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m4/lab2/.claude/commands/ops, {{LAB}}/m4/lab2/.claude/skills/clash | Out-Null; cd {{LAB}}/m4/lab2</code></pre></li>
+        <li><p>Write the argument echo command.</p>
+          <pre data-file=".claude/commands/echo-args.md"><code>@'
+---
+description: Echo back the arguments it received
+argument-hint: &lt;host&gt; &lt;symptom&gt;
+disable-model-invocation: true
+---
+Reply with exactly this one line and nothing else:
+FIRST=$0 | SECOND=$1 | THIRD=$2 | ALL=$ARGUMENTS
+'@ | Set-Content -Encoding utf8 .claude/commands/echo-args.md</code></pre></li>
+        <li><p>Call it with two arguments, the second one quoted with single quotes.</p>
+          <pre><code>claude -p "/echo-args web-01 'disk full'" --model haiku --setting-sources project --strict-mcp-config --max-turns 3 --output-format json &gt; echo.json
+(Get-Content echo.json -Raw | ConvertFrom-Json).result</code></pre>
+          <p class="expect"><b>Expected:</b> <code>FIRST=web-01 | SECOND=disk full | THIRD=$2 | ALL=web-01 'disk full'</code>. <code>$0</code> is the first argument, and <code>$2</code> stays literal because there is no third. The run costs about $0.001 to $0.002.</p></li>
+        <li><p>Write a namespaced command and a clash: a command file and a skill with the same name.</p>
+          <pre><code>@'
+---
+description: Restart note for a host
+---
+Reply with exactly: RESTART-NOTE for $ARGUMENTS
+'@ | Set-Content -Encoding utf8 .claude/commands/ops/restart.md
+'Reply with exactly: FROM-COMMAND-FILE' | Set-Content -Encoding utf8 .claude/commands/clash.md
+@'
+---
+description: Clash test skill
+---
+Reply with exactly: FROM-SKILL
+'@ | Set-Content -Encoding utf8 .claude/skills/clash/SKILL.md</code></pre></li>
+        <li><p>Run the namespaced command and look at the custom names in its init line.</p>
+          <pre><code>claude -p "/ops:restart web-01" --model haiku --setting-sources project --strict-mcp-config --max-turns 3 --output-format stream-json --verbose &gt; restart.jsonl
+$init = Get-Content restart.jsonl -TotalCount 1 | ConvertFrom-Json
+$init.slash_commands | Where-Object { $_ -match 'echo|ops|clash' }
+(Get-Content restart.jsonl | Select-Object -Last 1 | ConvertFrom-Json).result</code></pre>
+          <p class="expect"><b>Expected:</b> the names <code>clash</code>, <code>echo-args</code> and <code>ops:restart</code>, then <code>RESTART-NOTE for web-01</code>.</p></li>
+        <li><p>Run the clash.</p>
+          <pre><code>claude -p "/clash" --model haiku --setting-sources project --strict-mcp-config --max-turns 3 --output-format json &gt; clash.json
+(Get-Content clash.json -Raw | ConvertFrom-Json).result</code></pre>
+          <p class="expect"><b>Expected:</b> <code>FROM-SKILL</code>. The skill wins over the command file.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>What would the result have been with <code>"/echo-args web-01 `"disk full`""</code> in Windows PowerShell 5.1? Answer: <code>SECOND=disk</code>; the embedded double quotes split the prompt and <code>full</code> is lost.</li>
+          <li>Which file do you delete to make <code>/clash</code> answer <code>FROM-COMMAND-FILE</code>? Answer: <code>.claude/skills/clash/SKILL.md</code>.</li>
+          <li>Why <code>--max-turns 3</code> and not 1? Answer: a model-invocable command can make the model call the Skill tool on itself first, which uses up a one-turn budget and ends in <code>error_max_turns</code> with an empty result.</li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m4-lab3" data-title="Inject git output and prove the model saw it" data-minutes="25">
+      <p class="goal">Build a command that reads a random marker from the newest commit body through <code>!`…`</code>, then switch injection off and watch the marker disappear.</p>
+      <ol class="steps">
+        <li><p>Make a repository with two commits. The second commit body holds a random ticket id.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m4/lab3/.claude/commands | Out-Null; cd {{LAB}}/m4/lab3
+git init -q
+$nonce = 'ticket-' + (Get-Random -Minimum 10000 -Maximum 99999)
+'one' | Set-Content a.txt; git add a.txt; git -c user.name=lab -c user.email=lab@example.com commit -q -m "Add a.txt"
+'two' | Set-Content b.txt; git add b.txt; git -c user.name=lab -c user.email=lab@example.com commit -q -m "Fix b.txt" -m "Refs $nonce"
+"nonce written: $nonce"</code></pre>
+          <p class="expect"><b>Expected:</b> a line such as <code>nonce written: ticket-20006</code>. Git may warn about line endings; that is harmless.</p></li>
+        <li><p>Write the command. The marker is in the commit body on purpose: the session's built-in git status snapshot shows commit subjects, so a subject would prove nothing.</p>
+          <pre><code>@'
+---
+description: Report the ticket in the newest commit body
+disable-model-invocation: true
+---
+Body of the newest commit:
+!`git log -1 --format=%b`
+
+Reply with only the ticket id from that body, or NONE if you see no ticket id.
+'@ | Set-Content -Encoding utf8 .claude/commands/last-ticket.md</code></pre></li>
+        <li><p>Run it.</p>
+          <pre><code>claude -p "/last-ticket" --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format json &gt; on.json
+(Get-Content on.json -Raw | ConvertFrom-Json).result</code></pre>
+          <p class="expect"><b>Expected:</b> exactly your nonce, for example <code>ticket-20006</code>, in one turn. The model could only know it from the injected output.</p></li>
+        <li><p>Run it again with injection disabled through a settings file.</p>
+          <pre><code>'{ "disableSkillShellExecution": true }' | Set-Content -Encoding ascii noshell.json
+claude -p "/last-ticket" --model haiku --setting-sources project --strict-mcp-config --settings noshell.json --max-turns 1 --output-format json &gt; off.json
+(Get-Content off.json -Raw | ConvertFrom-Json).result</code></pre>
+          <p class="expect"><b>Expected:</b> <code>NONE</code>, or a sentence saying shell command execution is disabled by policy. The nonce does not appear.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>What exactly replaced <code>!`git log -1 --format=%b`</code> in the second run? Answer: the text <code>[shell command execution disabled by policy]</code>.</li>
+          <li>Where would you set <code>disableSkillShellExecution</code> so a developer cannot turn it back on? Answer: managed settings; a <code>true</code> there cannot be overridden.</li>
+          <li>What happens if you change the injection to a command that exits 2? Answer: the whole invocation aborts with <code>Shell command failed for pattern</code> and the model sees nothing.</li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m4-lab4" data-title="Pin a command to the cheapest model" data-minutes="20">
+      <p class="goal">Run the same command body with and without <code>model: haiku</code> in a Sonnet session, and read the model and cost of each from <code>modelUsage</code>.</p>
+      <ol class="steps">
+        <li><p>Write two commands that differ only in the <code>model</code> line. This lab is about model choice, so its runs use <code>--model sonnet</code>.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m4/lab4/.claude/commands | Out-Null; cd {{LAB}}/m4/lab4
+@'
+---
+description: One-line host status summary
+disable-model-invocation: true
+model: haiku
+---
+Summarize in one line of at most ten words: host $0 reports $1.
+'@ | Set-Content -Encoding utf8 .claude/commands/status-line.md
+@'
+---
+description: One-line host status summary, session model
+disable-model-invocation: true
+---
+Summarize in one line of at most ten words: host $0 reports $1.
+'@ | Set-Content -Encoding utf8 .claude/commands/status-line-plain.md</code></pre></li>
+        <li><p>Run both in a Sonnet session.</p>
+          <pre><code>claude -p "/status-line web-01 'disk 91 percent full'" --model sonnet --setting-sources project --strict-mcp-config --max-turns 1 --output-format json &gt; pinned.json
+claude -p "/status-line-plain web-01 'disk 91 percent full'" --model sonnet --setting-sources project --strict-mcp-config --max-turns 1 --output-format json &gt; plain.json</code></pre></li>
+        <li><p>Print the result, the models used and the cost of each.</p>
+          <pre><code>foreach ($f in 'pinned.json','plain.json') {
+  $r = Get-Content $f -Raw | ConvertFrom-Json
+  "$f result=[$($r.result)] cost=$([math]::Round($r.total_cost_usd,4))"
+  foreach ($m in $r.modelUsage.PSObject.Properties) { "  model=$($m.Name) out=$($m.Value.outputTokens) usd=$([math]::Round($m.Value.costUSD,4))" }
+}</code></pre>
+          <p class="expect"><b>Expected:</b> <code>pinned.json</code> shows one model, <code>claude-haiku-5-5</code>, at about $0.0015. <code>plain.json</code> shows <code>claude-sonnet-5-5</code> at about $0.028. Both give a one-line summary of the disk alert.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>What is the cost ratio between your two runs? Answer: about 15 to 20 times; most of it is the per-token price difference applied to the same cached prefix.</li>
+          <li>On a subscription, what does that ratio buy you? Answer: window share. <code>total_cost_usd</code> is an estimate at list prices and nothing is charged per token, but a cheaper model leaves more of the 5-hour and weekly limits for other work.</li>
+          <li>You type a follow-up prompt after <code>/status-line</code> in an interactive session. Which model answers it? Answer: the session model; the override lasts one turn.</li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m4-lab5" data-title="Turn one of your repeated prompts into a command with a done-test" data-minutes="30">
+      <p class="goal">Take a prompt you type more than once a week, make it a project command with a fixed output shape, and keep a script that proves it works.</p>
+      <ol class="steps">
+        <li><p>Work through the worked example first. It counts tickets with no owner in a CSV.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m4/lab5/.claude/commands | Out-Null; cd {{LAB}}/m4/lab5
+@'
+id,host,summary,owner
+101,web-01,disk 91 percent full,ana
+102,web-02,cert expires in 6 days,
+103,db-01,replication lag 40s,raj
+104,web-01,nginx 502 spike,
+105,dns-01,zone serial not bumped,lee
+'@ | Set-Content -Encoding utf8 tickets.csv
+@'
+---
+description: Count tickets with no owner in a CSV file
+argument-hint: &lt;csv-file&gt;
+disable-model-invocation: true
+allowed-tools: Read
+---
+Read the CSV file $0. Count the data rows whose owner column is empty.
+Reply with exactly one line in the form MISSING=&lt;count&gt; and nothing else.
+'@ | Set-Content -Encoding utf8 .claude/commands/unowned.md</code></pre></li>
+        <li><p>Write the done-test as a script and run it. It calls the command three times and passes only if every answer is exact.</p>
+          <pre data-file="done-test.ps1"><code>@'
+$pass = 0
+foreach ($i in 1..3) {
+  claude -p "/unowned tickets.csv" --model haiku --setting-sources project --strict-mcp-config --max-turns 3 --output-format json &gt; "run$i.json"
+  $r = Get-Content "run$i.json" -Raw | ConvertFrom-Json
+  if ($r.result.Trim() -eq 'MISSING=2') { $pass++ }
+  "run $i result=[$($r.result.Trim())] turns=$($r.num_turns) cost=$([math]::Round($r.total_cost_usd,4))"
+}
+"done-test: $pass of 3 passed"
+if ($pass -eq 3) { exit 0 } else { exit 1 }
+'@ | Set-Content -Encoding utf8 done-test.ps1
+powershell -NoProfile -File .\done-test.ps1; "EXIT $LASTEXITCODE"</code></pre>
+          <p class="expect"><b>Expected:</b> three lines with <code>result=[MISSING=2] turns=2</code>, each at about $0.0005 when the prefix is already cached (a first run on a cold cache was about $0.002), then <code>done-test: 3 of 3 passed</code> and <code>EXIT 0</code>.</p></li>
+        <li><p>Now your own. Pick a prompt from your shell history or chat log that you have typed at least three times. Write it to <code>.claude/commands/&lt;verb&gt;.md</code> in a real repository. Use named arguments for its parameters, state an exact output shape in the body, set <code>disable-model-invocation: true</code> if it changes anything, and grant only the tools it needs in <code>allowed-tools</code>.</p></li>
+        <li><p>Copy <code>done-test.ps1</code> next to it, change the call, the fixture and the expected answer, and run it until it passes 3 of 3. Then decide, using the table in the last lesson, whether the task should have been a script or a hook instead.</p>
+          <p class="expect"><b>Expected:</b> your done-test prints <code>3 of 3 passed</code> and exits 0.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Done-test:</b> a command file in a repository and a script beside it that exits 0 after three passing headless runs. Then answer:</p>
+        <ul>
+          <li>Does your done-test compare an exact string or a pattern? Answer: prefer exact. If the answer is free text, make the body end with a fixed line (<code>VERDICT=pass</code>) and test that line.</li>
+          <li>What does a run that passes 2 of 3 tell you? Answer: the prompt is ambiguous or the model too weak for it. Tighten the output shape before you reach for a bigger model.</li>
+          <li>Could the done-test itself do the job? Answer: if yes, as with counting empty CSV cells, replace the command with the script.</li>
+        </ul>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Built-in commands used in this module</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Command</th><th>Job</th><th>Headless on 2.1.322</th></tr>
+      <tr><td><code>/context [all]</code></td><td>Context breakdown by category and skill</td><td>Yes, 0 turns, 0 cost</td></tr>
+      <tr><td><code>/compact [instructions]</code></td><td>Summarize to free context</td><td>Listed</td></tr>
+      <tr><td><code>/clear [name]</code></td><td>Empty conversation</td><td>Listed</td></tr>
+      <tr><td><code>/usage</code> (<code>/cost</code>, <code>/stats</code>)</td><td>Cost, plan limits, activity</td><td>Yes, 0 turns, 0 cost</td></tr>
+      <tr><td><code>/model</code>, <code>/effort</code></td><td>Model and reasoning level</td><td>Listed</td></tr>
+      <tr><td><code>/mcp</code>, <code>/agents</code>, <code>/doctor</code></td><td>MCP servers, subagent reminder, setup checkup</td><td>Listed</td></tr>
+      <tr><td><code>/permissions</code>, <code>/hooks</code>, <code>/memory</code>, <code>/plugin</code></td><td>Rules, hooks, CLAUDE.md, plugins</td><td>Interactive only</td></tr>
+    </table></div>
+
+    <h3>Where commands live</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Path</th><th>Command</th></tr>
+      <tr><td><code>.claude/commands/name.md</code></td><td><code>/name</code></td></tr>
+      <tr><td><code>.claude/commands/sub/name.md</code></td><td><code>/sub:name</code></td></tr>
+      <tr><td><code>.claude/skills/name/SKILL.md</code></td><td><code>/name</code> (or frontmatter <code>name</code>); wins over a command file</td></tr>
+      <tr><td><code>~/.claude/skills/name/SKILL.md</code></td><td><code>/name</code>; wins over project</td></tr>
+      <tr><td><code>&lt;plugin&gt;/skills/name/SKILL.md</code></td><td><code>/&lt;plugin&gt;:name</code></td></tr>
+    </table></div>
+
+    <h3>Substitutions</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Placeholder</th><th>Value</th></tr>
+      <tr><td><code>$ARGUMENTS</code></td><td>Whole argument string as typed</td></tr>
+      <tr><td><code>$ARGUMENTS[N]</code>, <code>$N</code></td><td>Argument N, 0-based; literal if missing</td></tr>
+      <tr><td><code>$name</code></td><td>From <code>arguments: [a, b]</code>, by position; empty if missing</td></tr>
+      <tr><td><code>${CLAUDE_SESSION_ID}</code>, <code>${CLAUDE_EFFORT}</code></td><td>Session id, effort level</td></tr>
+      <tr><td><code>${CLAUDE_SKILL_DIR}</code>, <code>${CLAUDE_PROJECT_DIR}</code></td><td>Skill folder, project root</td></tr>
+      <tr><td><code>!`cmd`</code>, fenced block opened with three backticks and <code>!</code></td><td>Shell output, run once at invocation</td></tr>
+      <tr><td><code>\$1</code></td><td>A literal <code>$1</code></td></tr>
+    </table></div>
+
+    <h3>Frontmatter</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Effect</th></tr>
+      <tr><td><code>description</code></td><td>Shown in the menu and the skill listing</td></tr>
+      <tr><td><code>argument-hint</code></td><td>Autocomplete hint only</td></tr>
+      <tr><td><code>arguments</code></td><td>Names for positional arguments</td></tr>
+      <tr><td><code>disable-model-invocation</code></td><td>Only you can invoke; description leaves the prefix</td></tr>
+      <tr><td><code>user-invocable: false</code></td><td>Only Claude can invoke</td></tr>
+      <tr><td><code>allowed-tools</code></td><td>Pre-approved tools for the invoking turn; not a restriction</td></tr>
+      <tr><td><code>disallowed-tools</code></td><td>Tools removed while active</td></tr>
+      <tr><td><code>model</code>, <code>effort</code></td><td>Model and effort for the rest of the turn</td></tr>
+      <tr><td><code>context: fork</code>, <code>agent</code>, <code>background</code></td><td>Run as a subagent of that type; wait or not</td></tr>
+      <tr><td><code>shell</code></td><td><code>bash</code> (default) or <code>powershell</code> for injections</td></tr>
+      <tr><td><code>name</code>, <code>paths</code></td><td>Skill format only</td></tr>
+    </table></div>
+
+    <h3>Flags and settings</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Item</th><th>Use</th></tr>
+      <tr><td><code>claude -p "/name args"</code></td><td>Run a command headless</td></tr>
+      <tr><td><code>--output-format stream-json --verbose</code></td><td>First line is the init message with <code>slash_commands</code> and <code>skills</code></td></tr>
+      <tr><td><code>--setting-sources project</code>, <code>--strict-mcp-config</code></td><td>Keep personal settings and MCP servers out</td></tr>
+      <tr><td><code>--settings &lt;file&gt;</code></td><td>Extra settings for one run</td></tr>
+      <tr><td><code>--disable-slash-commands</code></td><td>No skills or commands in the session</td></tr>
+      <tr><td><code>disableSkillShellExecution</code></td><td>Replace injections with <code>[shell command execution disabled by policy]</code></td></tr>
+      <tr><td><code>modelUsage</code> in the JSON result</td><td>Which models actually ran, with tokens and <code>costUSD</code></td></tr>
+    </table></div>
+
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>The prompt contains a literal <code>$2</code></td><td>Numbered from 1; arguments are 0-based</td><td>Use <code>$0</code>, <code>$1</code>, or named arguments</td></tr>
+      <tr><td>A quoted argument arrives as one word</td><td>Double quotes inside a <code>claude -p</code> prompt in PowerShell 5.1</td><td>Use single quotes inside the prompt</td></tr>
+      <tr><td>Headless run ends <code>error_max_turns</code> with an empty result</td><td>The model called the Skill tool on the loaded command and used the only turn</td><td><code>--max-turns 3</code>, or <code>disable-model-invocation: true</code></td></tr>
+      <tr><td><code>/deploy</code> runs something other than the repository's file</td><td>A skill, or a personal skill, of the same name wins</td><td>Check the clash table; use a unique prefix or a plugin</td></tr>
+      <tr><td><code>Shell command failed for pattern</code></td><td>An injection exited non-zero</td><td>Fix the command, or append <code>|| true</code> for checks that exit 1</td></tr>
+      <tr><td><code>Shell command permission check failed</code></td><td>An injected command is not allowed by your rules</td><td>Add it to <code>allowed-tools</code> or an allow rule</td></tr>
+      <tr><td>Injection appears as <code>[shell command execution disabled by policy]</code></td><td><code>disableSkillShellExecution</code> is on, perhaps in managed settings</td><td>Move the data gathering into a script the command tells Claude to run</td></tr>
+      <tr><td>Frontmatter has no effect</td><td>Misspelled field, or <code>---</code> not on the first line</td><td>Match the field name exactly; start the file with <code>---</code></td></tr>
+      <tr><td><code>model: haiku</code> set but the bill did not drop</td><td>Auto mode or an <code>availableModels</code> allowlist kept the session model</td><td>Read <code>modelUsage</code> to confirm</td></tr>
+      <tr><td>Context grows after each command run</td><td>Large injected output stays in the conversation</td><td>Inject less (<code>--stat</code>, <code>-n</code>), or use <code>context: fork</code></td></tr>
+    </table></div>
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+      <li>Claude Code docs, "Extend Claude with skills": <a href="https://code.claude.com/docs/en/skills" target="_blank" rel="noopener">code.claude.com/docs/en/skills</a></li>
+      <li>Claude Code docs, "Commands": <a href="https://code.claude.com/docs/en/commands" target="_blank" rel="noopener">code.claude.com/docs/en/commands</a></li>
+      <li>Claude Code docs, "All settings": <a href="https://code.claude.com/docs/en/settings-reference" target="_blank" rel="noopener">code.claude.com/docs/en/settings-reference</a></li>
+      <li>Claude Code docs, "CLI reference": <a href="https://code.claude.com/docs/en/cli-reference" target="_blank" rel="noopener">code.claude.com/docs/en/cli-reference</a></li>
+      <li>Claude Code docs, "Environment variables": <a href="https://code.claude.com/docs/en/env-vars" target="_blank" rel="noopener">code.claude.com/docs/en/env-vars</a></li>
+      <li>Claude Code docs, "Run Claude Code programmatically": <a href="https://code.claude.com/docs/en/headless" target="_blank" rel="noopener">code.claude.com/docs/en/headless</a></li>
+      <li>Measured: every Expected line in the labs comes from a run on Claude Code 2.1.322 on 11 November 2026.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "Your team's /triage command works for you but a colleague says it ignores half the instructions. Both of you run it in the same repository. What do you check first?", "o": ["Whether the colleague's model is older", "Whether the command file has a BOM", "Whether the colleague has a personal skill named triage in their home folder", "Whether the colleague passed too many arguments"], "a": 2, "why": "Personal skills win over project ones with the same name, so a colleague's ~/.claude/skills/triage silently replaces the reviewed command on their machine only. Ask them to check the skill list or the init line's skills. A unique prefix or a plugin namespace prevents it."},
+    {"q": "A command body reads 'Restart service $1 on host $2' and is invoked as /restart nginx web-01. What does the model receive?", "o": ["'Restart service web-01 on host $2'", "'Restart service nginx on host web-01'", "An error, because $2 has no value", "'Restart service nginx web-01 on host'"], "a": 0, "why": "Indexed arguments are 0-based, so $1 is the second argument (web-01) and $2 has no argument and stays as literal text. Nothing fails; the model improvises from a wrong prompt. Use $0 and $1, or named arguments."},
+    {"q": "You want a /pr-context command that pastes the full diff of the current branch into the conversation before asking for a review. The branch often touches hundreds of files. What is the best design?", "o": ["Inject the full diff; the cache makes repeat reads cheap", "Ask the model to run git diff itself", "Use a fenced ! block so the diff is formatted", "Inject git diff --stat and let the command run with context: fork so the reading stays out of your session"], "a": 3, "why": "Injected output stays in the conversation and is re-sent every turn, so a huge diff is paid for all session long even at cache read rates. A forked command does its reading in a separate context and returns only a report, and a --stat injection gives it a map to start from."},
+    {"q": "A repository you just cloned contains .claude/commands/setup.md with allowed-tools: Bash(*) and several !`...` lines. You run claude -p \"/setup\" in it. What is true?", "o": ["Nothing runs until you accept the workspace trust dialog", "The injections run on your machine and the Bash grant applies for that turn, without a trust prompt", "allowed-tools is ignored in headless runs", "Only read-only injections run"], "a": 1, "why": "Workspace trust does not gate a project command's allowed-tools, even in a -p run in an untrusted folder, and injected commands run at render time under your permission rules. Review checked-in commands like scripts before running them. An organization can turn both off with allowManagedPermissionRulesOnly and disableSkillShellExecution in managed settings."},
+    {"q": "Every commit in a repository must have its staged PowerShell files pass a linter. Someone proposes a /precommit command that runs the linter and fixes issues. What do you recommend?", "o": ["Accept it, with disable-model-invocation: true", "Accept it, pinned to Haiku to keep cost down", "Make the check a hook or a CI step, and keep a command only for the judgment part such as explaining or fixing findings", "Put 'always run /precommit' in CLAUDE.md"], "a": 2, "why": "A gate that must hold every time cannot depend on someone typing a command or on the model following an instruction. Hooks and CI run on the event regardless. A command still has a place for the parts that need judgment, like explaining or fixing what the linter found."}
+  ]</script>
+</section>

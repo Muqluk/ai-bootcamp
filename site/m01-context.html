@@ -1,0 +1,613 @@
+<section class="module" id="m1" data-title="Context" data-sub="What the model sees, and what it costs to show it" data-level="foundation" data-prereq="" data-minutes="240">
+  <div class="overview">
+    <p class="lede">The model keeps no memory between requests. Everything it knows about your session is the text Claude Code sends with each request, and every token of that text is paid for again each turn. This module shows you what is in that text, how to measure it, and how to make sure the part that matters is the part the model actually reads.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Name the layers Claude Code puts in the context window, in order, and read their sizes from <code>/context</code>, the stream-json init line and the <code>usage</code> block.</li>
+      <li>Measure what a CLAUDE.md file adds to every request, and cut it with path-scoped rules, skills and HTML comments.</li>
+      <li>Predict how a session grows turn by turn, and choose between <code>/compact</code> with instructions, <code>/clear</code> and a fresh session, knowing what each one loses.</li>
+      <li>Explain why a bigger context can make answers worse, and place instructions so they hold.</li>
+      <li>Make the model read the source before it answers, ask for <code>file:line</code> evidence, and check that evidence.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key).</li>
+      <li>Windows PowerShell 5.1 or PowerShell 7 for the lab commands.</li>
+      <li>A project of your own with a CLAUDE.md or AGENTS.md, for the last lab.</li>
+      <li>About $0.10 of API usage for all five labs on Haiku, or a small slice of a plan's 5-hour window.</li>
+    </ul>
+  </div>
+
+  <div class="lesson" id="m1-l1" data-title="The model forgets everything between turns" data-minutes="20">
+    <h3>A stateless function with a long argument</h3>
+    <p>A language model is a function. It takes a sequence of tokens and returns a continuation. It holds nothing from one call to the next: no session, no scratchpad, no memory of what it said a minute ago. What looks like a conversation is the client sending the whole conversation again, with the new message appended, on every request.</p>
+    <p>Claude Code is that client. When you type a prompt, it builds one request that contains its own system prompt, the definitions of every tool the model may call, your instruction files, the conversation so far, every tool result so far, and your new message. The model answers. If the answer is a tool call, Claude Code runs the tool, appends the result, and sends the whole thing again. One prompt from you can be ten requests, and each of the ten carries everything before it.</p>
+    <p>This has three consequences you will use for the rest of the module.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Consequence</th><th>What it means in practice</th></tr>
+      <tr><td>The model knows only what is in the request.</td><td>A file it has not read, a rule that is not in an instruction file, a decision from yesterday's session: none of it exists for the model. It will not say "I don't know" reliably. It will often fill the gap with something plausible.</td></tr>
+      <tr><td>Every token is re-sent every request.</td><td>A 10,000-token file read on turn 3 is in the prompt of turn 4, 5 and 40. Its cost is paid per request, not once.</td></tr>
+      <tr><td>Order and position are under the client's control.</td><td>Claude Code decides what goes first and what goes last. You influence it through instruction files, skills, the prompt itself and when you compact or clear.</td></tr>
+    </table></div>
+
+    <h3>Why re-sending is affordable: the prompt cache</h3>
+    <p>Re-sending 50,000 tokens forty times would be expensive at full input price. The API caches the start of a request: if a new request begins with exactly the same tokens as a recent one, that prefix is served from cache. The <code>usage</code> block on every result splits the prompt side into three counts:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Meaning</th><th class="num">API price vs base input</th></tr>
+      <tr><td><span class="tok in">input_tokens</span></td><td>Tokens after the last cache breakpoint, read fresh.</td><td class="num">1x</td></tr>
+      <tr><td><span class="tok cw">cache_creation_input_tokens</span></td><td>Tokens written to the cache on this request.</td><td class="num">1.25x (5 min) or 2x (1 hour)</td></tr>
+      <tr><td><span class="tok cr">cache_read_input_tokens</span></td><td>Tokens served from the cache.</td><td class="num">0.1x, or less on some models</td></tr>
+      <tr><td><span class="tok out">output_tokens</span></td><td>What the model wrote, thinking included.</td><td class="num">5x</td></tr>
+    </table></div>
+    <p>The sum of the first three is the real size of the prompt the model saw. Call it the prompt side. It is the number to watch in this module, because it is what fills the window. Which of the three buckets a token lands in decides its price, and the module Tokens and their price covers that in depth.</p>
+    <p>Here is the result of the smallest possible run: a one-word reply on Haiku in an empty folder.</p>
+    <pre data-cap="output"><code>input_tokens                : 2
+cache_creation_input_tokens : 7214
+cache_read_input_tokens     : 14517
+output_tokens               : 4</code></pre>
+    <p>Four tokens of answer, about 21,700 tokens of prompt. None of that prompt was yours. It is the fixed cost of being a Claude Code session, and Lab 1 has you measure it on your machine.</p>
+
+    <h3>Subscription and API key</h3>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>API key</th><th>Subscription plan</th></tr>
+      <tr><td>What re-sending costs</td><td>Dollars per token, by bucket and model.</td><td>A share of the 5-hour window and the weekly limit. Cached content counts less against the limits.</td></tr>
+      <tr><td>Cache lifetime Claude Code asks for</td><td>5 minutes by default.</td><td>1 hour on the main conversation while you are within plan usage. On this machine every cache write on a plan login showed up as <code>ephemeral_1h_input_tokens</code>.</td></tr>
+      <tr><td><code>total_cost_usd</code></td><td>A client-side estimate of what you will be billed.</td><td>The same estimate at list price. Nothing is charged per token.</td></tr>
+    </table></div>
+    <p>Either way, the size of the prompt side is the lever. A smaller context costs fewer dollars on a key and less window on a plan.</p>
+    <aside class="rule">Treat the context as a document you are re-sending on every request, because you are.</aside>
+    <aside class="trap">Assuming the model remembers something because you discussed it in a previous session. A new session, <code>/clear</code>, or a subagent starts with none of it. Persistent facts go in an instruction file; everything else must be re-read.</aside>
+  </div>
+
+  <div class="lesson" id="m1-l2" data-title="What is in the window, in order" data-minutes="25">
+    <h3>Three slots, filled by the client</h3>
+    <p>The API orders a request as <b>tools</b>, then <b>system</b>, then <b>messages</b>. The cache works on that order: a change in an early slot invalidates the cache for everything after it. A change to the tool definitions invalidates all three; a new message only adds to the end. Claude Code fills the slots with these layers.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Layer</th><th>What it is</th><th class="num">Size, empty session</th><th>Changes when</th></tr>
+      <tr><td>System prompt</td><td>Claude Code's own instructions, environment facts, git status snapshot, plus anything from <code>--append-system-prompt</code> or an output style.</td><td class="num">about 3,400</td><td>Rarely within a session.</td></tr>
+      <tr><td>Tool definitions</td><td>Name, description and JSON schema of each built-in tool (Read, Edit, Bash, PowerShell, Grep and the rest).</td><td class="num">about 11,600</td><td>You change <code>--tools</code>, <code>--allowedTools</code> or permission settings.</td></tr>
+      <tr><td>Deferred tools</td><td>MCP tools and some built-ins are deferred: only their names and server instructions load. The full schema loads when the model searches for the tool.</td><td class="num">names only</td><td>You add or remove an MCP server.</td></tr>
+      <tr><td>Instruction files</td><td>CLAUDE.md, CLAUDE.local.md, unscoped <code>.claude/rules/</code> files, and the first 200 lines or 25KB of auto memory's MEMORY.md. Delivered as a user message after the system prompt.</td><td class="num">0 in an empty folder</td><td>You edit the files; on demand when Claude reads a file in a subdirectory that has its own.</td></tr>
+      <tr><td>Skills listing</td><td>Name and description of each skill the model may invoke. Bodies load only on invocation.</td><td class="num">about 2,200</td><td>You add a skill or plugin.</td></tr>
+      <tr><td>Messages</td><td>Your prompts, the model's replies, and system reminders Claude Code adds (a file changed on disk, attribution lines).</td><td class="num">10</td><td>Every turn.</td></tr>
+      <tr><td>Tool results</td><td>Everything a tool returned: file contents, command output, search hits.</td><td class="num">0</td><td>Every tool call. Usually the largest layer by far.</td></tr>
+    </table></div>
+<figure class="diagram">
+<pre class="mermaid">flowchart LR
+  a["Tool definitions"] --> b["System prompt"]
+  b --> c["Instruction files"]
+  c --> d["Messages"]
+  d --> e["Tool results"]:::hot
+</pre>
+  <figcaption>Order of one request: early slots change rarely and are cached; the newest messages and tool results sit at the end and grow every turn.</figcaption>
+</figure>
+    <p>The sizes are from an empty folder on Claude Code 2.1.322 with no MCP servers, measured with the three instruments below. Your numbers will differ with version, platform, plugins and servers. That is the point of measuring.</p>
+
+    <h3>Instrument 1: <code>/context</code></h3>
+    <p><code>/context</code> prints the window by category. It works in a live session and also headless, as <code>claude -p "/context"</code>. <code>/context all</code> expands the per-file lists. Output from the empty folder:</p>
+    <pre data-cap="output"><code>**Tokens:** 17.2k / 1m (2%)
+
+| Category | Tokens | Percentage |
+|----------|--------|------------|
+| System prompt | 3.4k | 0.3% |
+| System tools | 11.6k | 1.2% |
+| System tools (deferred) | 13.8k | 1.4% |
+| Skills | 2.2k | 0.2% |
+| Messages | 10 | 0.0% |
+| Free space | 949.8k | 95.0% |
+| Autocompact buffer | 33k | 3.3% |</code></pre>
+    <p>Two things to read correctly. The deferred line is not in the 17.2k total: the other lines add up to it without the deferred tools. That is what deferral buys you. And <code>/context</code> is an estimate. The billed prompt side on the same session was about 21,700. Use <code>/context</code> to see which category is large, and the <code>usage</code> block for the number.</p>
+
+    <h3>Instrument 2: the stream-json init line</h3>
+    <p>Run headless with <code>--output-format stream-json --verbose</code> and the first line is a JSON object with <code>type</code> "system" and <code>subtype</code> "init". It lists what loaded, not how big it is: <code>tools</code>, <code>mcp_servers</code>, <code>model</code>, <code>permissionMode</code>, <code>slash_commands</code>, <code>skills</code>, <code>plugins</code>, <code>agents</code>, <code>memory_paths</code>, <code>apiKeySource</code> and more. In the empty folder it showed 26 tools, 17 skills, no MCP servers, and a <code>memory_paths</code> object with only the auto memory folder. Use it to answer "did that server, skill or file load at all" in a script.</p>
+
+    <h3>Instrument 3: the <code>usage</code> block</h3>
+    <p>Every <code>--output-format json</code> result, and the last line of a stream-json run, carries <code>usage</code>. Prompt side = <code>input_tokens</code> + <code>cache_creation_input_tokens</code> + <code>cache_read_input_tokens</code>. For a run that made several model calls, the three counts are summed across the calls, so a turn with one tool call counts the prefix twice. That is real cost, but it is not the window size. For window size, compare single-call runs, or read the last entry of <code>usage.iterations</code>.</p>
+    <p>One more detail from the lab runs: the very first run in an empty folder already showed about 14,500 tokens of cache read. The cache matches on identical prefixes, not on sessions, so the system prompt and tool definitions written by an earlier session on the same account are reused. The part that is new to each session (its working folder, its first message) is written fresh.</p>
+    <aside class="rule">Use <code>/context</code> to find the big category, the init line to prove what loaded, and the <code>usage</code> block for the number you pay for.</aside>
+    <aside class="trap">Reading the cost of a multi-call turn as the window size. A turn that read one file can report twice the prompt side, because the prefix was sent twice.</aside>
+  </div>
+
+  <div class="lesson" id="m1-l3" data-title="Instruction files" data-minutes="25">
+    <h3>Where they live and how they stack</h3>
+    <p>CLAUDE.md files do not override each other. Every file that applies is concatenated into context, broadest first, so the more specific file is read last.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Scope</th><th>Location</th><th>Loaded</th></tr>
+      <tr><td>Managed policy</td><td><code>C:\Program Files\ClaudeCode\CLAUDE.md</code>, <code>/etc/claude-code/CLAUDE.md</code>, <code>/Library/Application Support/ClaudeCode/CLAUDE.md</code></td><td>At launch, every session, cannot be excluded.</td></tr>
+      <tr><td>User</td><td><code>~/.claude/CLAUDE.md</code></td><td>At launch, when user settings are loaded.</td></tr>
+      <tr><td>Project</td><td><code>./CLAUDE.md</code> or <code>./.claude/CLAUDE.md</code>, and the same in every folder above the working folder</td><td>At launch, root of the filesystem first, working folder last.</td></tr>
+      <tr><td>Local</td><td><code>./CLAUDE.local.md</code> (gitignore it)</td><td>At launch, right after the CLAUDE.md in the same folder.</td></tr>
+      <tr><td>Rules</td><td><code>.claude/rules/*.md</code>, recursive</td><td>At launch if unscoped; on demand if the file has <code>paths:</code> frontmatter.</td></tr>
+      <tr><td>Subfolder</td><td><code>sub/CLAUDE.md</code> below the working folder</td><td>On demand, when Claude reads, writes or edits a file in that folder.</td></tr>
+    </table></div>
+    <p>If a repository has an <code>AGENTS.md</code> and no <code>CLAUDE.md</code> or <code>CLAUDE.local.md</code> in the working folder or above it, Claude Code reads <code>AGENTS.md</code> instead. A <code>CLAUDE.md</code> containing the line <code>@AGENTS.md</code> loads both tools' instructions from one file.</p>
+
+    <h3>Imports and comments</h3>
+    <p>A line such as <code>See @docs/style.md</code> imports that file. Relative paths resolve from the importing file; imports nest up to four hops; a path inside backticks is not imported. An import that resolves outside the project asks for approval the first time.</p>
+    <p>Imports organise a file. They do not make it cheaper. Lab 2 measured it: 300 rules inline in CLAUDE.md added about 13,900 tokens per request; the same 300 rules moved to an imported file added about 14,000. <code>/context all</code> lists the imported file as its own memory file.</p>
+    <p>Block-level HTML comments are stripped before injection. The same 300 rules wrapped in <code>&lt;!-- --&gt;</code> added about 160 tokens, the cost of the heading and one remaining line. Comments are the right place for maintainer notes: owner, review date, why a rule exists.</p>
+
+    <h3>What belongs in CLAUDE.md, and what does not</h3>
+    <p>CLAUDE.md is paid on every request of every session. It earns its place only with facts the model needs in every session and cannot discover cheaply.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Content</th><th>Where it goes</th><th>Why</th></tr>
+      <tr><td>Build and test commands, branch rules, "never do X"</td><td>CLAUDE.md</td><td>Needed every session; short.</td></tr>
+      <tr><td>A multi-step procedure (release, migration, incident triage)</td><td>A skill</td><td>Only the description is in context until it is used. See the module Skills.</td></tr>
+      <tr><td>Rules for one part of the tree (<code>src/api/**</code>)</td><td>A rule with <code>paths:</code></td><td>Loads only when Claude touches a matching file.</td></tr>
+      <tr><td>Directory layouts, dependency lists, architecture tours</td><td>Nowhere</td><td>The model can read the tree when it needs to. A stale copy is worse than none.</td></tr>
+      <tr><td>Something that must happen every time (format on save, block a command)</td><td>A hook</td><td>Instructions are context, not enforcement. See the module Hooks.</td></tr>
+      <tr><td>Personal URLs, test accounts, preferences</td><td>CLAUDE.local.md or <code>~/.claude/CLAUDE.md</code></td><td>Not the team's business; not in git.</td></tr>
+    </table></div>
+    <p>The documentation sets a target of under 200 lines per CLAUDE.md file. Longer files cost more context and reduce adherence, and Claude Code warns at startup and in <code>/status</code> when a file is over the recommended length. Write rules concrete enough to check ("Run <code>make test</code> before committing", not "test your changes"), group them under headings, and remove contradictions: when two files disagree, the model may pick either one.</p>
+    <p>CLAUDE.md is delivered as a user message after the system prompt, so it is strong guidance, not configuration. When you need system-prompt weight in a script, <code>--append-system-prompt</code> puts text there. In a session, <code>/memory</code> lists and opens the files, and <code>/doctor prompt-audit</code> reviews them for stale or conflicting content without changing anything until you ask.</p>
+    <aside class="rule">Every line in CLAUDE.md is a line you pay for on every request. Keep the ones the model needs every time and cannot find on its own.</aside>
+    <aside class="trap">Splitting a 600-line CLAUDE.md into six imported files and believing it shrank. The window sees all 600 lines. Use path-scoped rules or skills to make content load less often.</aside>
+    
+  </div>
+
+  <div class="lesson" id="m1-l4" data-title="Growth, compaction and clearing" data-minutes="20">
+    <h3>How a session grows</h3>
+    <p>The prompt side of each request is the fixed overhead plus everything said and returned so far. Lab 4 measured a resumed session in which each turn read one 150-line log file (about 13KB):</p>
+    <div class="tablewrap"><table>
+      <tr><th class="num">Turn</th><th>What happened</th><th class="num">Prompt side of the last call</th></tr>
+      <tr><td class="num">0</td><td>One-word reply, Read as the only tool</td><td class="num">4,813</td></tr>
+      <tr><td class="num">1</td><td>Read app-1.log, reply with one number</td><td class="num">11,636</td></tr>
+      <tr><td class="num">2</td><td>Read app-2.log</td><td class="num">18,516</td></tr>
+      <tr><td class="num">3</td><td>Read app-3.log</td><td class="num">25,335</td></tr>
+      <tr><td class="num">4</td><td>Read app-4.log</td><td class="num">32,140</td></tr>
+      <tr><td class="num">5</td><td>After <code>/compact</code>, one question</td><td class="num">6,398</td></tr>
+    </table></div>
+    <p>Each file added about 6,800 tokens and stayed. The answers were one number each; the cost came from what the model read, not what it wrote. Per-turn cost rose in step: turn 4 cost about four times turn 1, for the same work. Tool results dominate growth in real sessions too. A test log, a <code>git diff</code> of a lockfile or a directory listing does the same thing.</p>
+    <p>Note also the overhead of turn 0: 4,813 tokens with only the Read tool, against about 21,700 with the default tool set. Restricting <code>--tools</code> in a headless job is one of the largest savings available.</p>
+
+    <h3>Auto-compaction</h3>
+    <p>When the window approaches its limit, Claude Code compacts on its own: it replaces the conversation with a structured summary and carries on. On the 1M-token models the default trigger is about 967K; <code>/context</code> shows the reserve as "Autocompact buffer". You can move the trigger with <code>/autocompact 500k</code>, the <code>--autocompact</code> flag, the <code>autoCompactWindow</code> setting or <code>CLAUDE_CODE_AUTO_COMPACT_WINDOW</code> (100K to 1M). If a single output is so large that the window refills right after each summary, Claude Code stops after a few attempts and shows an error instead of looping.</p>
+
+<figure class="diagram">
+<pre class="mermaid">stateDiagram-v2
+  [*] --> Filling: "session starts"
+  Filling --> Filling: "each turn adds results"
+  Filling --> Compacted: "auto-compact or /compact"
+  Compacted --> Filling: "summary plus re-injected files"
+  Filling --> Empty: "/clear"
+  Compacted --> Empty: "/clear"
+  Empty --> Filling: "instruction files reload"
+</pre>
+  <figcaption>The window only grows until you compact it into a summary or clear it; only a clear drops the whole conversation.</figcaption>
+</figure>
+    <h3>Your three manual levers</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Command</th><th>What it does</th><th>What you keep</th><th>What you lose</th></tr>
+      <tr><td><code>/compact [instructions]</code></td><td>Summarises the conversation now. Instructions steer the summary: <code>/compact keep the failing test names and the fix plan</code>.</td><td>Same session. System prompt, project-root CLAUDE.md, unscoped rules, auto memory and skill descriptions are re-injected from disk. Up to five recently edited files are re-read. Invoked skill bodies come back capped at 5,000 tokens each.</td><td>Exact wording of earlier turns, tool output details, path-scoped rules and subfolder CLAUDE.md files (they reload only when a matching file is touched again), and anything the summary judged unimportant.</td></tr>
+      <tr><td><code>/clear [name]</code></td><td>Starts a new conversation with empty context. The old one stays in the <code>/resume</code> picker.</td><td>Instruction files and memory, loaded fresh.</td><td>The whole conversation.</td></tr>
+      <tr><td>New session or subagent</td><td>A separate context window from the start.</td><td>Instruction files.</td><td>Everything in your current conversation, unless you write it into the prompt.</td></tr>
+    </table></div>
+    <p><code>/compact</code> also works headless on a resumed session: <code>claude -p "/compact ..." --resume &lt;id&gt;</code> returns a result with <code>local_command</code> "compact" and a zero <code>usage</code> block. In Lab 4 it took the window from about 32,000 to about 6,400 tokens, and the next turn still listed all four files and their values, because the compact instructions asked for exactly that.</p>
+    <p>A CLAUDE.md section titled "Compact Instructions" steers every automatic compaction the same way. Rules that must survive compaction belong in the project-root CLAUDE.md or an unscoped rule, never only in the conversation.</p>
+    <aside class="rule">Clear between unrelated tasks; compact with instructions inside one long task; never rely on the conversation to hold a rule.</aside>
+    <aside class="trap">Telling the model a constraint in turn 2 ("don't touch the prod config") and finding it ignored after an auto-compaction in turn 80. The summary kept the task and dropped the aside.</aside>
+  </div>
+
+  <div class="lesson" id="m1-l5" data-title="When more context makes answers worse" data-minutes="15">
+    <h3>A big window is not a good memory</h3>
+    <p>A 1M-token window means the request is accepted, not that every token gets equal attention. The model weighs everything in the prompt against everything else. Three effects follow, and all three get worse as the context grows.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Effect</th><th>Mechanism</th><th>What you see</th></tr>
+      <tr><td>Position</td><td>Models attend most reliably to the start and the end of a long prompt. Material in the middle of a long run of tool output is the most likely to be missed.</td><td>A rule from the middle of a 900-line instruction file is ignored; the detail from the third of eight file reads is misquoted.</td></tr>
+      <tr><td>Dilution</td><td>Every irrelevant token competes with the relevant ones. Thirty near-identical rules make each one weaker.</td><td>Adherence falls as CLAUDE.md grows. The documentation's 200-line guidance exists because of this.</td></tr>
+      <tr><td>Stale content</td><td>Old instructions, old file contents and abandoned plans stay in the window and look exactly as authoritative as new ones.</td><td>The model edits code against the version of a file it read an hour ago, or follows a plan you rejected.</td></tr>
+    </table></div>
+    <p>Claude Code mitigates the stale-file case with a system reminder when a file it read changes on disk. It cannot know that the plan you discussed at turn 10 was replaced verbally at turn 30.</p>
+
+    <h3>Placing what matters</h3>
+    <ul>
+      <li><b>The task goes last and is specific.</b> Your prompt is the end of the request. Name the file, the function, the acceptance test. "Fix the timeout in <code>gate/upstream.go</code> so <code>TestBillingRetry</code> passes" beats "fix the bug we talked about".</li>
+      <li><b>Standing rules go in instruction files, at the top.</b> Put the few rules that cause damage when missed at the start of CLAUDE.md, under a clear heading. The same applies to SKILL.md: after compaction a skill body is cut to its first 5,000 tokens.</li>
+      <li><b>Restate a constraint when it matters.</b> Repeating "read-only: do not modify files" in the prompt that needs it costs a dozen tokens and puts the rule at the end of the window.</li>
+      <li><b>Keep bulk out.</b> Ask for <code>head</code>, a filtered search, or a summary instead of a full log. Send a large investigation to a subagent: it reads in its own window and returns only its report. The module Headless runs and subagents covers how.</li>
+      <li><b>Reset when the topic changes.</b> A fresh window with a two-line handoff note outperforms a long window full of the previous task.</li>
+    </ul>
+    <aside class="rule">Put the instruction where the model looks: the top of an instruction file for standing rules, the end of the prompt for this task.</aside>
+    <aside class="trap">Answering "the model ignored my rule" by adding the rule again in a second place in CLAUDE.md. That makes the file longer and the rule no stronger. Shorten the file, make the rule concrete, or turn it into a hook.</aside>
+  </div>
+
+  <div class="lesson" id="m1-l6" data-title="Grounding: make it read before it answers" data-minutes="25">
+    <h3>The confident wrong answer</h3>
+    <p>Ask a model about a file it cannot see and it rarely says "I cannot see it". It produces the most likely text. Lab 3 asks Haiku about a small proxy config, <code>acme-gate.conf</code>, in which <code>/invoice/</code> routes to a billing upstream with <code>read_timeout = 180s</code> and <code>retries = 0</code>. With no tools at all (<code>--tools=</code>), these were real answers across the lab runs:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Run</th><th>What came back</th><th>Why it is wrong</th></tr>
+      <tr><td>No tools</td><td>"I couldn't find <code>acme-gate.conf</code> in this workspace, <code>C:\...</code>, or your user profile."</td><td>It searched nothing. The result showed <code>num_turns</code> 1 and the init line listed 0 tools. The claim of a search was invented.</td></tr>
+      <tr><td>No tools</td><td>Text shaped like a tool call (<code>Glob</code> with <code>**/acme-gate.conf</code>) followed by a made-up "No files found" result.</td><td>A transcript of work that never happened, printed as the answer.</td></tr>
+      <tr><td>Read allowed, stale notes in the prompt, evidence required</td><td>"Read timeout is 180s (<code>acme-gate.conf:13</code>), and retries are 0 (<code>acme-gate.conf:14</code>). The notes saying 60s and 3 are out of date."</td><td>Correct, and checkable in five seconds.</td></tr>
+    </table></div>
+    <p>The failure is not that the model lies. It is that a fluent answer and a grounded answer look the same on the screen. Your defence is to make grounding the default and to make the evidence visible.</p>
+
+    <h3>Read on demand versus stuffing</h3>
+    <p>There are two ways to put source material in front of the model.</p>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>Stuff it in up front</th><th>Let the model read on demand</th></tr>
+      <tr><td>How</td><td>Paste files into the prompt, import them in CLAUDE.md, pipe them on stdin.</td><td>Grant Read, Grep and Glob; ask a question; the model searches and reads what it needs.</td></tr>
+      <tr><td>Cost</td><td>Every token on every request, relevant or not.</td><td>Only what was read, from the turn it was read.</td></tr>
+      <tr><td>Freshness</td><td>A snapshot from when you pasted it.</td><td>The file as it is now.</td></tr>
+      <tr><td>Risk</td><td>Dilution; stale copies.</td><td>The model skips the read and answers from prior. Counter it with the prompt below.</td></tr>
+      <tr><td>Good for</td><td>A short, stable spec the whole task depends on.</td><td>Codebases, configs, logs, anything large or changing.</td></tr>
+    </table></div>
+    <p>Claude Code is built for the second way. Its tools are a search engine over your files, used at the moment of need.</p>
+
+    <h3>Retrieval and RAG, honestly</h3>
+    <p>Retrieval-augmented generation is the same idea run by a program instead of the model: split documents into chunks, index them (often by embedding similarity), fetch the top matches for a question, and paste them into the prompt. It is the right tool when the corpus is too large to search with grep, lives outside the file system, or the caller is not an agent with tools. Its weaknesses are the chunker and the ranker: the passage that answers the question can be split across chunks or ranked eleventh, and the model then answers from what it was given, confidently. In an agent session with file tools, the model's own Grep and Read are a retrieval system whose queries you can see and whose results you can check. Prefer them until the corpus forces you elsewhere. MCP servers that expose a search tool are the usual bridge to corpora that are not files.</p>
+
+    <h3>Asking for evidence</h3>
+    <p>Three sentences turn an answer you have to trust into one you can check:</p>
+    <pre><code>Read the file first. Cite file:line for each value you report.
+If the file does not say, answer "not in the file".</code></pre>
+    <p>Then check a citation. <code>Select-String -Path acme-gate.conf -Pattern read_timeout</code> printed line 13 as <code>read_timeout = 180s</code>, matching the claim. A citation that points at the wrong line is your signal that the rest needs checking too. For anything that matters (a firewall rule, a retention setting, a version pin) make "evidence or it did not happen" the rule, and put that rule in CLAUDE.md.</p>
+    <aside class="rule">No read, no answer: require file:line evidence for any claim about your systems, and spot-check one citation.</aside>
+    <aside class="trap">Removing tools to make a run "safe" and then trusting its answer. A model with no tools has nothing but its prior. It will still answer, and it may tell you it looked.</aside>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m1-lab1" data-title="Measure the fixed overhead of an empty session" data-minutes="15">
+      <p class="goal">Run one tiny prompt in an empty folder and read what loaded, how big it is, and which part is cached, from the init line, the <code>usage</code> block and <code>/context</code>.</p>
+      <ol class="steps">
+        <li><p>Make an empty lab folder and move into it.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m1/lab1 | Out-Null; cd {{LAB}}/m1/lab1</code></pre></li>
+        <li><p>Run one prompt with stream-json output. Every headless run in this module carries <code>--setting-sources project</code> and <code>--strict-mcp-config</code>: the first loads only settings from the lab folder, so your personal settings, hooks and user CLAUDE.md stay out of the measurement; the second loads no MCP servers except ones you pass with <code>--mcp-config</code>. <code>--model haiku</code> keeps the runs cheap.</p>
+          <pre><code>claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format stream-json --verbose &gt; run1.jsonl</code></pre>
+          <p class="expect"><b>Expected:</b> a file of about four JSON lines: <code>system/init</code>, an assistant message, a rate-limit event on a plan login, and the <code>result</code>.</p></li>
+        <li><p>Read the init line: what loaded.</p>
+          <pre><code>$lines = Get-Content run1.jsonl
+$init = $lines[0] | ConvertFrom-Json
+"tools: $($init.tools.Count)  skills: $($init.skills.Count)  mcp_servers: $(@($init.mcp_servers).Count)  agents: $($init.agents.Count)"
+$init.memory_paths</code></pre>
+          <p class="expect"><b>Expected:</b> about 26 tools, 17 skills, 0 MCP servers and 6 agents on Claude Code 2.1.322 for Windows. <code>memory_paths</code> shows only an <code>auto</code> folder: no CLAUDE.md loaded.</p></li>
+        <li><p>Read the <code>usage</code> block on the last line: how big it was.</p>
+          <pre><code>$u = ($lines[-1] | ConvertFrom-Json).usage
+$u | Select-Object input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens
+"prompt side: $($u.input_tokens + $u.cache_creation_input_tokens + $u.cache_read_input_tokens)"</code></pre>
+          <p class="expect"><b>Expected:</b> about 2 input, 7,200 cache write, 14,500 cache read and 4 output tokens; prompt side about 21,700. If this is your first run in a while, more of it is cache write.</p></li>
+        <li><p>Ask for the category breakdown, headless.</p>
+          <pre><code>claude -p "/context" --model haiku --setting-sources project --strict-mcp-config</code></pre>
+          <p class="expect"><b>Expected:</b> a Markdown table with total about 17.2k of 1m; System prompt about 3.4k, System tools about 11.6k, System tools (deferred) about 13.8k, Skills about 2.2k, Messages 10, Autocompact buffer 33k.</p></li>
+        <li><p>Run the plain prompt again with JSON output and compare the buckets.</p>
+          <pre><code>claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json &gt; run2.json
+(Get-Content run2.json -Raw | ConvertFrom-Json).usage | Select-Object input_tokens, cache_creation_input_tokens, cache_read_input_tokens</code></pre>
+          <p class="expect"><b>Expected:</b> the same prompt side within a few tokens, with more of it as cache read: about 4,500 cache write and 17,200 cache read in the lab run.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>Which single category is largest in your <code>/context</code> output? On a default install it is System tools, about two thirds of the total.</li>
+          <li>Add the non-deferred categories. Do they equal the total? They should: deferred tools are listed but not counted.</li>
+          <li>Why is the <code>usage</code> prompt side (about 21,700) larger than <code>/context</code> (about 17.2k)? <code>/context</code> is an estimate by category; <code>usage</code> is what the API counted, including per-session text such as environment details.</li>
+          <li>Why did run 2 still write some cache? The part of the prefix unique to each new session (its first message, environment details) is new every time. Only the shared part is read.</li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m1-lab2" data-title="Measure what a CLAUDE.md costs per request" data-minutes="20">
+      <p class="goal">Add a 300-line CLAUDE.md to a lab folder, measure the tokens it adds to every request, then show that imports cost the same and HTML comments cost nothing.</p>
+      <ol class="steps">
+        <li><p>Make the folder and take a baseline.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m1/lab2 | Out-Null; cd {{LAB}}/m1/lab2
+function Prompt-Side($file) { $u = (Get-Content $file -Raw | ConvertFrom-Json).usage; $u.input_tokens + $u.cache_creation_input_tokens + $u.cache_read_input_tokens }
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json &gt; before.json
+Prompt-Side before.json</code></pre>
+          <p class="expect"><b>Expected:</b> about 21,700, the same overhead as Lab 1.</p></li>
+        <li><p>Write a 300-rule CLAUDE.md.</p>
+          <pre><code>$rules = foreach ($i in 1..300) { "- Rule {0:D3}: in the acme deploy scripts, service web-{1:D2} restarts only after its health check on port {2} passes twice in a row." -f $i, ($i % 40), (8000 + $i) }
+Set-Content -Encoding utf8 CLAUDE.md -Value (@('# Acme deploy rules', '') + $rules)
+(Get-Content CLAUDE.md).Count; (Get-Item CLAUDE.md).Length</code></pre>
+          <p class="expect"><b>Expected:</b> 302 lines, about 38,700 bytes.</p></li>
+        <li><p>Measure again, twice.</p>
+          <pre><code>claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json &gt; after.json
+(Prompt-Side after.json) - (Prompt-Side before.json)
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json &gt; after2.json
+(Get-Content after2.json -Raw | ConvertFrom-Json).usage | Select-Object cache_creation_input_tokens, cache_read_input_tokens</code></pre>
+          <p class="expect"><b>Expected:</b> the file adds about 13,900 tokens. On the second run the whole prompt side, about 35,700, was cache read with no cache write: cheap per token, but present on every request.</p></li>
+        <li><p>See it by name.</p>
+          <pre><code>claude -p "/context all" --model haiku --setting-sources project --strict-mcp-config</code></pre>
+          <p class="expect"><b>Expected:</b> a new category <code>Memory files</code> of about 13.8k, and a Memory Files table with one row: type <code>Project</code>, the path of your CLAUDE.md, about 13.8k tokens.</p></li>
+        <li><p>Wrap the rules in an HTML comment, keep one real rule, and measure.</p>
+          <pre><code>Set-Content -Encoding utf8 CLAUDE.md -Value (@('# Acme deploy rules', '', '&lt;!--') + $rules + @('--&gt;', '', '- Deploy only from the main branch.'))
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json &gt; comment.json
+(Prompt-Side comment.json) - (Prompt-Side before.json)</code></pre>
+          <p class="expect"><b>Expected:</b> about 160 tokens. The comment block is stripped before injection.</p></li>
+        <li><p>Move the rules to an imported file and measure.</p>
+          <pre><code>Set-Content -Encoding utf8 deploy-rules.md -Value $rules
+Set-Content -Encoding utf8 CLAUDE.md -Value @('# Acme deploy rules', '', 'Rules: @deploy-rules.md')
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json &gt; import.json
+(Prompt-Side import.json) - (Prompt-Side before.json)</code></pre>
+          <p class="expect"><b>Expected:</b> about 14,000 tokens, slightly more than inline. An import is not a saving.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>How many tokens per line did your CLAUDE.md cost? About 46 in the lab (13,900 / 302). Multiply by your own file's line count for a first estimate.</li>
+          <li>A session makes 60 model calls. On an API key with Haiku 5.5 at $0.10 per million input tokens and cache reads at 0.1x, what do the 13,900 tokens cost if every call reads them from cache? 60 x 13,900 x $0.01 per million, about $0.008. On Opus 5.5 ($4 input, cache read 0.05x) it is about $0.17. Small per session, but it is the same file in every session of every developer, and it dilutes attention at any price.</li>
+          <li>Which change would actually cut the cost: imports, comments, or path-scoped rules? Comments (for notes) and path-scoped rules or skills (for content). Imports cut nothing.</li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m1-lab3" data-title="Compare an ungrounded and a grounded answer" data-minutes="20">
+      <p class="goal">Ask the same question about a made-up config file with no tools and then with Read allowed and evidence required, and check both answers against the file.</p>
+      <ol class="steps">
+        <li><p>Make the folder and write the config.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m1/lab3 | Out-Null; cd {{LAB}}/m1/lab3
+Set-Content -Encoding utf8 acme-gate.conf -Value @'
+# acme-gate: edge proxy for the acme web tier
+[listen]
+port = 8443
+tls_profile = modern
+
+[upstream web]
+servers = web-01:9080, web-02:9080
+read_timeout = 47s
+retries = 2
+
+[upstream billing]
+servers = bill-01:7311
+read_timeout = 180s
+retries = 0
+
+[routes]
+/api/      -&gt; web
+/billing/  -&gt; billing
+/invoice/  -&gt; billing
+
+[limits]
+max_body = 12m
+idle_close = 75s
+'@
+$q = 'Our edge proxy config is acme-gate.conf. What read timeout and how many retries apply to requests for /invoice/? Answer in two short lines.'
+$notes = 'Notes from last month: the billing upstream in acme-gate.conf has read_timeout = 60s and retries = 3.'</code></pre></li>
+        <li><p>Ask with no tools at all. Write <code>--tools=</code> with the equals sign: Windows PowerShell 5.1 drops an empty <code>""</code> argument, so <code>--tools ""</code> does not reach Claude Code intact.</p>
+          <pre><code>claude -p $q --model haiku --setting-sources project --strict-mcp-config --tools= --max-turns 1 --output-format json &gt; a.json
+$r = Get-Content a.json -Raw | ConvertFrom-Json; $r.result; "turns: $($r.num_turns)"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>turns: 1</code> and no correct values. In the lab runs the result was either text shaped like a tool call (<code>Glob</code> for <code>**/acme-gate.conf</code>) with no real answer, or a statement that the file could not be found in the workspace or the user profile. No search happened: there were no tools.</p></li>
+        <li><p>Add stale notes to the prompt, still with no tools.</p>
+          <pre><code>claude -p "$notes $q" --model haiku --setting-sources project --strict-mcp-config --tools= --max-turns 1 --output-format json &gt; b.json
+$r = Get-Content b.json -Raw | ConvertFrom-Json; $r.result</code></pre>
+          <p class="expect"><b>Expected:</b> no correct values. Depending on the run, the model repeats the notes (60s and 3), prints a fake <code>Grep</code> call as text, or declines. Whatever it says, it has not seen the file.</p></li>
+        <li><p>Same prompt with the notes, Read allowed, and evidence required.</p>
+          <pre><code>claude -p "$notes $q Read the file first and cite file:line for each value." --model haiku --setting-sources project --strict-mcp-config --tools "Read" --allowedTools "Read" --max-turns 3 --output-format json &gt; c.json
+$r = Get-Content c.json -Raw | ConvertFrom-Json; $r.result; "turns: $($r.num_turns)"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>turns: 2</code> (one Read, one answer). "Read timeout is 180s (<code>acme-gate.conf:13</code>), and retries are 0 (<code>acme-gate.conf:14</code>)", with a note that the 60s and 3 in the notes are out of date and that <code>/invoice/</code> routes to billing at line 19.</p></li>
+        <li><p>Check the citations against the file.</p>
+          <pre><code>Select-String -Path acme-gate.conf -Pattern 'read_timeout|retries|/invoice/' | ForEach-Object { "$($_.LineNumber): $($_.Line)" }</code></pre>
+          <p class="expect"><b>Expected:</b> lines 8 and 9 (web: 47s, 2), 13 and 14 (billing: 180s, 0), and 19 (<code>/invoice/ -&gt; billing</code>). The grounded answer's line numbers match.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>What proves run A did not look at the file? <code>num_turns</code> 1 and <code>--tools=</code>: there was no tool to look with. Any claim of a search is invented.</li>
+          <li>A confident answer of "47s and 2" would have been plausible. Why? Those are real values in the file, for the wrong upstream. A model guessing from a partial view, or an earlier read of only the top of the file, produces exactly this kind of wrong answer.</li>
+          <li>Which part of the prompt in run C made the answer checkable? "cite file:line for each value". Without it you get the values but no way to verify them except reading the file yourself.</li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m1-lab4" data-title="Plot a session's growth, then compact it" data-minutes="25">
+      <p class="goal">Resume one headless session for four turns that each read a log file, tabulate the prompt side per turn, compact with instructions, and measure the drop.</p>
+      <ol class="steps">
+        <li><p>Make the folder and four 150-line log files.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m1/lab4 | Out-Null; cd {{LAB}}/m1/lab4
+foreach ($n in 1..4) {
+  $lines = foreach ($i in 1..150) { "2026-11-0{0} 10:{1:D2}:{2:D2} web-0{0} INFO request id={3} path=/api/orders status=200 ms={4}" -f $n, ($i % 60), (($i * 7) % 60), (100000 + $n * 1000 + $i), (20 + ($i * 13) % 400) }
+  Set-Content -Encoding utf8 "app-$n.log" -Value $lines
+}</code></pre>
+          <p class="expect"><b>Expected:</b> four files of about 12.9KB each.</p></li>
+        <li><p>Define a helper that turns one result into a table row. <code>prompt</code> is the size of the last model call in the turn, which is the window size at the end of that turn.</p>
+          <pre><code>function Row($turn, $file) {
+  $r = Get-Content $file -Raw | ConvertFrom-Json; $u = $r.usage; $last = $u.iterations[-1]
+  [pscustomobject]@{ turn = $turn
+    prompt = $last.input_tokens + $last.cache_creation_input_tokens + $last.cache_read_input_tokens
+    cache_write = $u.cache_creation_input_tokens; cache_read = $u.cache_read_input_tokens
+    output = $u.output_tokens; cost = [math]::Round($r.total_cost_usd, 4) }
+}</code></pre></li>
+        <li><p>Start a session with Read as the only tool, and keep its id.</p>
+          <pre><code>claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --tools "Read" --allowedTools "Read" --output-format json &gt; t0.json
+$sid = (Get-Content t0.json -Raw | ConvertFrom-Json).session_id
+$rows = @(Row 0 t0.json)</code></pre>
+          <p class="expect"><b>Expected:</b> a session id (a UUID). Turn 0's prompt is about 4,800 tokens, far below Lab 1's 21,700, because only one tool definition is loaded.</p></li>
+        <li><p>Resume it four times, reading one file per turn.</p>
+          <pre><code>foreach ($n in 1..4) {
+  claude -p "Read app-$n.log and reply with only the highest ms value in it." --resume $sid --model haiku --setting-sources project --strict-mcp-config --tools "Read" --allowedTools "Read" --max-turns 3 --output-format json &gt; "t$n.json"
+  $rows += Row $n "t$n.json"
+}
+$rows | Format-Table -AutoSize
+$rows | Export-Csv -NoTypeInformation growth.csv</code></pre>
+          <p class="expect"><b>Expected:</b> each answer is 419. The table from the lab run:</p>
+          <pre data-cap="output"><code>turn prompt cache_write cache_read output   cost
+---- ------ ----------- ---------- ------   ----
+   0   4813           0       4811      4 0.0001
+   1  11636        6772       9724    260 0.0016
+   2  18516        6880      23435    140 0.0033
+   3  25335        6819      37134    126 0.0051
+   4  32140        6805      50758     85 0.0070</code></pre>
+          <p>The prompt grows by about 6,800 tokens per file and never shrinks. Cost per turn rises with it. Your cost column will differ with cache state; the prompt column should match within a few tokens.</p></li>
+        <li><p>Compact with instructions, headless, then ask a question that needs what was kept.</p>
+          <pre><code>claude -p "/compact Keep only the file names and the highest ms value found in each." --resume $sid --model haiku --setting-sources project --strict-mcp-config --tools "Read" --allowedTools "Read" --output-format json &gt; compact.json
+(Get-Content compact.json -Raw | ConvertFrom-Json) | Select-Object local_command, num_turns
+claude -p "List the files you read and the value you found in each, one line per file." --resume $sid --model haiku --setting-sources project --strict-mcp-config --tools "Read" --allowedTools "Read" --max-turns 2 --output-format json &gt; t5.json
+(Get-Content t5.json -Raw | ConvertFrom-Json).result
+Row 5 t5.json | Format-Table -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> <code>local_command</code> is <code>compact</code> and <code>num_turns</code> 0. The answer lists app-1.log to app-4.log with 419 each, without reading any file again. Turn 5's prompt is about 6,400 tokens, down from about 32,100.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>What is the slope of your prompt column, in tokens per turn? About 6,800: the size of one log file as tokens. The answers added almost nothing.</li>
+          <li>If this session went on reading one such file per turn, roughly when would it reach the default auto-compact trigger of about 967K? After about 140 turns (967,000 / 6,800). Long before that, every turn would carry tens of thousands of tokens of logs it no longer needs.</li>
+          <li>What did compaction lose? The log contents and the exact wording of every turn. Ask a question about a specific line of app-2.log and the model has to read the file again.</li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m1-lab5" data-title="Audit your own instruction files" data-minutes="30">
+      <p class="goal">Run a measuring script against a project of your own, read its numbers against a checklist, and change the instruction files until the checklist passes.</p>
+      <ol class="steps">
+        <li><p>Save the audit script in the lab folder. It lists every CLAUDE.md, CLAUDE.local.md, AGENTS.md and <code>.claude/rules</code> file under the project with line count, size, imports, HTML comments and backticked file references that do not exist, then asks <code>/context all</code> (from inside the project, project settings only) for the token cost of each file that loads at launch. It writes <code>audit.txt</code> in the lab folder and changes nothing in the project.</p>
+          <pre data-file="{{LAB}}/m1/audit.ps1"><code>param([Parameter(Mandatory)][string]$Project)
+$Project = (Resolve-Path $Project).Path
+$out = New-Object System.Collections.Generic.List[string]
+$files = @(Get-ChildItem -Path $Project -Recurse -File -Force -Include CLAUDE.md, CLAUDE.local.md, AGENTS.md -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '\\(node_modules|\.git)\\' })
+$rules = Join-Path $Project '.claude\rules'
+if (Test-Path $rules) { $files += @(Get-ChildItem $rules -Recurse -File -Filter *.md) }
+$out.Add("FILES")
+foreach ($f in $files) {
+  $text = Get-Content $f.FullName
+  $imports = @($text | Select-String -Pattern '(^|\s)@[\w./~\\-]+' -AllMatches).Count
+  $comments = @($text | Select-String -Pattern '&lt;!--').Count
+  $missing = @()
+  foreach ($m in ($text | Select-String -Pattern '`([\w./-]+\.(md|ps1|sh|json|yml|yaml|txt))`' -AllMatches)) {
+    foreach ($g in $m.Matches) { $p = Join-Path $Project $g.Groups[1].Value; if (-not (Test-Path $p)) { $missing += $g.Groups[1].Value } }
+  }
+  $flag = if ($text.Count -gt 200) { 'OVER 200' } else { 'ok' }
+  $out.Add(("{0}  lines={1} ({2})  bytes={3}  imports={4}  html-comments={5}  missing-refs={6}" -f $f.FullName.Substring($Project.Length), $text.Count, $flag, $f.Length, $imports, $comments, ($missing -join ',')))
+}
+Push-Location $Project
+$ctx = claude -p "/context all" --model haiku --setting-sources project --strict-mcp-config
+Pop-Location
+$out.Add("CONTEXT")
+$ctx | Where-Object { $_ -match 'Memory files|^\| (Project|Local|User|Managed)|System prompt \||System tools \|' } | ForEach-Object { $out.Add($_) }
+$out | Set-Content -Encoding utf8 audit.txt
+$out</code></pre>
+          <p>Save it with your editor, or paste it into <code>Set-Content -Encoding utf8 {{LAB}}/m1/audit.ps1 -Value @' ... '@</code>.</p></li>
+        <li><p>Optional warm-up: build a sample project with typical faults and audit it first, so you know what the output looks like.</p>
+          <pre><code>cd {{LAB}}/m1
+New-Item -ItemType Directory -Force sample\docs, sample\.claude\rules | Out-Null
+$body = @('# acme web', '', '## Build', '- Build with `make build`; test with `make test`.', '- Deploy notes are in `docs/deploy-old.md`.', '', '&lt;!-- owner: platform team; review quarterly --&gt;', '', 'Style guide: @docs/style.md', '')
+$body += foreach ($i in 1..200) { "- Layout: src/module{0:D3}/ holds the handlers for feature {0}." -f $i }
+Set-Content -Encoding utf8 sample\CLAUDE.md -Value $body
+Set-Content -Encoding utf8 sample\docs\style.md -Value (@('# Style') + (1..60 | ForEach-Object { "- Style rule $_ : use four spaces in file type $_." }))
+Set-Content -Encoding utf8 sample\.claude\rules\testing.md -Value @('# Testing', '- Always run `make test` before you commit.')
+&amp; .\audit.ps1 -Project sample</code></pre>
+          <p class="expect"><b>Expected:</b></p>
+          <pre data-cap="output"><code>FILES
+\CLAUDE.md  lines=210 (OVER 200)  bytes=12499  imports=1  html-comments=1  missing-refs=docs/deploy-old.md
+\.claude\rules\testing.md  lines=2 (ok)  bytes=59  imports=0  html-comments=0  missing-refs=
+CONTEXT
+| System prompt | 3.4k | 0.3% |
+| System tools | 11.6k | 1.2% |
+| Memory files | 6.2k | 0.6% |
+### Memory Files
+| Project | ...\sample\CLAUDE.md | 4.9k |
+| Project | ...\sample\docs\style.md | 1.3k |
+| Project | ...\sample\.claude\rules\testing.md | 29 |</code></pre>
+          <p>Three faults show: a file over 200 lines, a reference to a file that does not exist, and an imported style guide costing 1.3k on every request. The 200 layout lines are content the model could discover by listing <code>src/</code>.</p></li>
+        <li><p>Run it on your own project. Use a path to a repository you work in.</p>
+          <pre><code>cd {{LAB}}/m1
+&amp; .\audit.ps1 -Project C:\path\to\your\repo</code></pre>
+          <p class="expect"><b>Expected:</b> one FILES row per instruction file and a CONTEXT section with your <code>Memory files</code> total and one row per file loaded at launch. A repository that uses only AGENTS.md shows it as a memory file when no CLAUDE.md is on the path.</p></li>
+        <li><p>Score each file against this checklist and write the score into <code>audit.txt</code> by hand or in a second file.</p>
+          <div class="tablewrap"><table>
+            <tr><th>#</th><th>Check</th><th>Pass when</th></tr>
+            <tr><td class="num">1</td><td>Length</td><td>Every file is 200 lines or fewer.</td></tr>
+            <tr><td class="num">2</td><td>Total cost</td><td><code>Memory files</code> is a number you can justify line by line. As a starting bar, under 5k.</td></tr>
+            <tr><td class="num">3</td><td>No dead references</td><td><code>missing-refs</code> is empty everywhere.</td></tr>
+            <tr><td class="num">4</td><td>No discoverable content</td><td>No directory tours, dependency lists or architecture overviews the model can get from the tree.</td></tr>
+            <tr><td class="num">5</td><td>Procedures are skills</td><td>No multi-step procedure longer than about ten lines; those are skills.</td></tr>
+            <tr><td class="num">6</td><td>Scoped rules are scoped</td><td>Rules for one part of the tree have <code>paths:</code> frontmatter.</td></tr>
+            <tr><td class="num">7</td><td>Rules are checkable</td><td>Each rule names a command, a path or a value. No "be careful", "write clean code".</td></tr>
+            <tr><td class="num">8</td><td>No contradictions</td><td>No two files give different answers to the same question.</td></tr>
+            <tr><td class="num">9</td><td>Critical rules first</td><td>The rules that cause damage when missed are in the first screen of the root file.</td></tr>
+            <tr><td class="num">10</td><td>Notes are comments</td><td>Ownership and rationale notes are in <code>&lt;!-- --&gt;</code> blocks.</td></tr>
+          </table></div></li>
+        <li><p>Fix what fails: move procedures to skills, add <code>paths:</code> to scoped rules, delete discoverable content, wrap notes in comments. Run the audit again.</p>
+          <pre><code>&amp; .\audit.ps1 -Project C:\path\to\your\repo</code></pre></li>
+      </ol>
+      <p><b>Done when:</b> the second <code>audit.txt</code> shows every file at 200 lines or fewer, no missing references, and a <code>Memory files</code> total lower than the first run, and you have a pass mark on all ten checks. If your files already passed, the done-test is the scored checklist itself.</p>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>Your <code>Memory files</code> total went from A to B tokens. Over a day of 200 model calls, how many prompt tokens is that? 200 x (A - B). On an API key multiply by your model's cache-read price; on a plan it is window share you get back.</li>
+          <li>You moved a 40-line release procedure into a skill. What is still in context every session? Its name and description in the skills listing. The 40 lines load only when the skill is invoked.</li>
+          <li>The audit shows an AGENTS.md but <code>/context</code> does not list it. Why? A CLAUDE.md or CLAUDE.local.md on the path takes precedence, so AGENTS.md is not read. Import it with <code>@AGENTS.md</code> from the CLAUDE.md, or merge them.</li>
+        </ul>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Instruments</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Instrument</th><th>How to get it</th><th>What it tells you</th></tr>
+      <tr><td><code>/context [all]</code></td><td>In a session, or <code>claude -p "/context"</code></td><td>Window by category (System prompt, System tools, System tools (deferred), Memory files, Skills, Messages, Free space, Autocompact buffer); <code>all</code> lists memory files and skills with tokens. An estimate.</td></tr>
+      <tr><td>Init line</td><td><code>--output-format stream-json --verbose</code>, first line</td><td>What loaded: <code>tools</code>, <code>mcp_servers</code>, <code>skills</code>, <code>plugins</code>, <code>agents</code>, <code>slash_commands</code>, <code>memory_paths</code>, <code>model</code>, <code>permissionMode</code>, <code>apiKeySource</code>.</td></tr>
+      <tr><td><code>usage</code> block</td><td><code>--output-format json</code> result</td><td>Billed counts: <code>input_tokens</code>, <code>cache_creation_input_tokens</code>, <code>cache_read_input_tokens</code>, <code>output_tokens</code>, <code>cache_creation.ephemeral_1h_input_tokens</code> / <code>ephemeral_5m_input_tokens</code>, per-call <code>iterations</code>. Summed across calls in a turn.</td></tr>
+      <tr><td><code>/memory</code></td><td>In a session</td><td>Lists and opens instruction files; toggles auto memory.</td></tr>
+      <tr><td><code>/doctor prompt-audit</code></td><td>In a session</td><td>Reviews instruction files for stale or conflicting content; proposes edits.</td></tr>
+    </table></div>
+
+    <h3>Flags and commands used</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Flag or command</th><th>Effect</th></tr>
+      <tr><td><code>--setting-sources project</code></td><td>Load only project settings (and project instruction files); user and local settings stay out.</td></tr>
+      <tr><td><code>--strict-mcp-config</code></td><td>Use only MCP servers passed with <code>--mcp-config</code>.</td></tr>
+      <tr><td><code>--tools "Read"</code>, <code>--tools=</code></td><td>Limit the built-in tool set; <code>--tools=</code> gives no tools (use the equals form in PowerShell 5.1).</td></tr>
+      <tr><td><code>--allowedTools "Read"</code></td><td>Pre-approve tools so headless runs do not stop for permission.</td></tr>
+      <tr><td><code>--resume &lt;id&gt;</code></td><td>Continue a session by id, same session id.</td></tr>
+      <tr><td><code>--append-system-prompt</code></td><td>Add text to the system prompt.</td></tr>
+      <tr><td><code>--autocompact &lt;auto|tokens&gt;</code>, <code>/autocompact</code></td><td>Set the auto-compact trigger (100K to 1M). Also <code>autoCompactWindow</code>, <code>CLAUDE_CODE_AUTO_COMPACT_WINDOW</code>.</td></tr>
+      <tr><td><code>/compact [instructions]</code></td><td>Summarise now, steered by instructions. Works headless with <code>--resume</code>.</td></tr>
+      <tr><td><code>/clear [name]</code></td><td>New empty conversation; old one stays in <code>/resume</code>.</td></tr>
+      <tr><td><code>/rewind</code></td><td>Roll back, or summarise from or up to a chosen message.</td></tr>
+    </table></div>
+
+    <h3>Instruction file locations</h3>
+    <div class="tablewrap"><table>
+      <tr><th>File</th><th>When it loads</th><th>Notes</th></tr>
+      <tr><td>Managed CLAUDE.md</td><td>Launch</td><td>Cannot be excluded.</td></tr>
+      <tr><td><code>~/.claude/CLAUDE.md</code></td><td>Launch</td><td>Personal, all projects.</td></tr>
+      <tr><td><code>CLAUDE.md</code>, <code>.claude/CLAUDE.md</code> (here and above)</td><td>Launch</td><td>Root first, working folder last.</td></tr>
+      <tr><td><code>CLAUDE.local.md</code></td><td>Launch</td><td>After CLAUDE.md in the same folder; gitignore it.</td></tr>
+      <tr><td><code>.claude/rules/*.md</code></td><td>Launch, or on demand with <code>paths:</code></td><td>Skipped when <code>project</code> is not in <code>--setting-sources</code>.</td></tr>
+      <tr><td><code>sub/CLAUDE.md</code></td><td>On demand</td><td>When a file in <code>sub/</code> is read or edited.</td></tr>
+      <tr><td><code>AGENTS.md</code></td><td>Launch, only if no CLAUDE.md or CLAUDE.local.md on the path</td><td>Or import it: <code>@AGENTS.md</code>.</td></tr>
+      <tr><td>Auto memory <code>MEMORY.md</code></td><td>Launch</td><td>First 200 lines or 25KB only.</td></tr>
+    </table></div>
+
+    <h3>Numbers from the labs (Claude Code 2.1.322, Haiku, Windows)</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Measure</th><th class="num">Value</th></tr>
+      <tr><td>Prompt side, empty folder, default tools</td><td class="num">about 21,700</td></tr>
+      <tr><td>Prompt side, empty folder, Read only</td><td class="num">about 4,800</td></tr>
+      <tr><td>300-line CLAUDE.md (38.7KB)</td><td class="num">about 13,900 per request</td></tr>
+      <tr><td>Same rules inside an HTML comment</td><td class="num">about 160</td></tr>
+      <tr><td>Same rules as an <code>@</code> import</td><td class="num">about 14,000</td></tr>
+      <tr><td>One 150-line log file read (12.9KB)</td><td class="num">about 6,800, every later request</td></tr>
+      <tr><td>Default auto-compact trigger, 1M models</td><td class="num">about 967K</td></tr>
+    </table></div>
+
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>The model ignores a CLAUDE.md rule.</td><td>File too long, rule vague, contradicted elsewhere, or file not loaded.</td><td>Check <code>/context all</code> Memory files; shorten; make the rule concrete; remove the conflict; use a hook if it must always happen.</td></tr>
+      <tr><td>A rule worked early and stopped later.</td><td>It was only in the conversation, or in a path-scoped rule, and compaction summarised it away.</td><td>Move it to the project-root CLAUDE.md or an unscoped rule; add Compact Instructions.</td></tr>
+      <tr><td>Confident answer about a file that is wrong.</td><td>The model did not read the file, or read an old version earlier in the session.</td><td>Require a read and <code>file:line</code> evidence; check one citation.</td></tr>
+      <tr><td>A run with no tools says it searched.</td><td>Fabricated action; it had nothing to search with.</td><td>Trust <code>num_turns</code> and the init line, not the prose.</td></tr>
+      <tr><td>Every turn gets slower and dearer.</td><td>Tool results piling up in the window.</td><td><code>/compact</code> with instructions, <code>/clear</code> between tasks, filtered reads, subagents for bulk.</td></tr>
+      <tr><td>Splitting CLAUDE.md into imports did not reduce cost.</td><td>Imports load with the importing file.</td><td>Path-scoped rules or skills.</td></tr>
+      <tr><td>AGENTS.md is not read.</td><td>A CLAUDE.md or CLAUDE.local.md exists on the path.</td><td>Add <code>@AGENTS.md</code> to the CLAUDE.md.</td></tr>
+      <tr><td>Headless overhead is large for a tiny job.</td><td>Default tool set and skills listing in every request.</td><td>Pass <code>--tools</code> with only what the job needs.</td></tr>
+      <tr><td><code>--tools ""</code> behaves oddly in PowerShell 5.1.</td><td>The empty argument is dropped before Claude Code sees it.</td><td>Write <code>--tools=</code>.</td></tr>
+    </table></div>
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+      <li>Claude Code docs, "How Claude remembers your project": <a href="https://code.claude.com/docs/en/memory" target="_blank" rel="noopener">code.claude.com/docs/en/memory</a></li>
+      <li>Claude Code docs, "How Claude Code works": <a href="https://code.claude.com/docs/en/how-claude-code-works" target="_blank" rel="noopener">code.claude.com/docs/en/how-claude-code-works</a></li>
+      <li>Claude Code docs, "Model configuration": <a href="https://code.claude.com/docs/en/model-config" target="_blank" rel="noopener">code.claude.com/docs/en/model-config</a></li>
+      <li>Claude Code docs, "CLI reference": <a href="https://code.claude.com/docs/en/cli-reference" target="_blank" rel="noopener">code.claude.com/docs/en/cli-reference</a></li>
+      <li>Claude Code docs, "Commands": <a href="https://code.claude.com/docs/en/commands" target="_blank" rel="noopener">code.claude.com/docs/en/commands</a></li>
+      <li>Claude Code docs, "Run Claude Code programmatically": <a href="https://code.claude.com/docs/en/headless" target="_blank" rel="noopener">code.claude.com/docs/en/headless</a></li>
+      <li>Measured: every Expected line in the labs comes from a run on Claude Code 2.1.322 on 11 November 2026.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "A teammate's CLAUDE.md is 650 lines. To \"make it lighter\" they split it into a 40-line CLAUDE.md that imports five topic files with @path. What changed in the per-request context cost?", "o": ["It fell to about 40 lines' worth, since imports load on demand", "It fell by about half, since imports are cached separately", "Almost nothing: imported files load at launch with the file that imports them", "It rose sharply, since each import adds a separate system prompt"], "a": 2, "why": "Imports expand into context alongside the importing CLAUDE.md, so the window still carries all 650 lines. Lab 2 measured an import at slightly more than the same text inline. To load content less often, use path-scoped rules or skills."},
+    {"q": "Eighty turns into a session, the model edits a production config you told it in turn 3 never to touch. /context shows the session compacted once. What is the most effective fix for next time?", "o": ["Put the rule in the project-root CLAUDE.md, near the top, and back it with a hook if it must never happen", "Repeat the rule every ten turns", "Raise the auto-compact trigger to 1M so compaction never happens", "Use /clear more often"], "a": 0, "why": "The rule lived only in the conversation, and compaction summarised it away. Project-root CLAUDE.md is re-injected after compaction, and a hook enforces what instructions can only request. Raising the trigger only delays the same loss and grows the window in the meantime."},
+    {"q": "A headless nightly job asks Claude to read one JSON file and write a one-line summary. Its usage shows about 22,000 prompt tokens per run for a 2,000-token file. Which change cuts the most?", "o": ["Switch output format to text", "Add a CLAUDE.md telling the model to be brief", "Move the job to a folder without a git repository", "Pass --tools \"Read\" so only the Read tool definition is sent"], "a": 3, "why": "Most of an empty session's prompt is tool definitions, about 11,600 tokens on a default install. Lab 4 started at about 4,800 with Read only against about 21,700 with the default set. Output format and brevity change the output side, which is tiny here."},
+    {"q": "You ask about the retry count in a service config. The answer is confident, specific and has no citations. The session's tools include Read. What should you do?", "o": ["Accept it: with Read available the model will have looked", "Ask again with \"Read the file first and cite file:line\", then check one citation", "Ask the same question twice and accept it if both answers match", "Lower the temperature and ask again"], "a": 1, "why": "Having a tool available does not prove it was used, and the model can answer from prior or from a stale earlier read. Requiring file:line evidence makes the answer checkable, and checking one citation tells you whether to trust the rest. Two matching ungrounded answers can be the same guess twice."},
+    {"q": "You finished debugging a flaky test and now want to review an unrelated pull request in the same repository. The session is at 180K tokens. What is the best move?", "o": ["/compact with no instructions, then start the review", "Keep going: the window is 1M, so 180K leaves plenty of room", "/clear, then give the review task with the PR number and what to check", "Start a subagent from the current session to do the review, then keep the session for later"], "a": 2, "why": "The debugging context is irrelevant to the review and would dilute it and cost tokens on every request. /clear starts with an empty conversation while instruction files reload. Compaction keeps a summary of work you no longer need; room in the window is not a reason to keep stale content."}
+  ]</script>
+</section>

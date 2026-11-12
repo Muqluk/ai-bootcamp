@@ -1,0 +1,1202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>html,body{height:100%}body{margin:0}img{max-width:100%}</style>
+<title>Commands · AI/LLM Bootcamp</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&family=Nunito:wght@700;800&display=swap">
+<style>
+/* AI/LLM Bootcamp. One stylesheet for the catalogue page and every module page.
+   Layout: a top bar (brand, where you are, theme picker), a part rail on the left (a strip in some themes and on phones),
+   one reading column that swaps parts on the hash.
+   The four token types keep one colour each everywhere, the way a utility meter keeps one colour per tariff.
+   Five themes: data-style a..e on the root (a = Meter is the base). data-mode light|dark is resolved in script. */
+:root {
+  --bg: #f1f3f6; --surface: #ffffff; --sunk: #e8ebf0; --fg: #17202b; --muted: #566273; --line: #d3d9e2;
+  --accent: #a4460d; --accent-ink: #ffffff; --accent-soft: #fbeadf;
+  --t-in: #2a66b3; --t-out: #b8500f; --t-cw: #7446bd; --t-cr: #25784c;
+  --good: #25784c; --good-soft: #e0f1e7; --bad: #a8372f; --bad-soft: #f8e3e1; --home: #7446bd; --home-soft: #efe8fa;
+  --font-display: "Archivo", "Segoe UI Semibold", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, "SF Mono", monospace;
+  --top-h: 46px;
+}
+:root[data-mode="dark"] {
+  --bg: #11151b; --surface: #19202a; --sunk: #0d1116; --fg: #e5e9ef; --muted: #98a4b3; --line: #2b3542;
+  --accent: #f09460; --accent-ink: #1d0f05; --accent-soft: #3a2415;
+  --t-in: #6ea9ee; --t-out: #f09460; --t-cw: #b396f0; --t-cr: #6cc795;
+  --good: #6cc795; --good-soft: #17301f; --bad: #e6837b; --bad-soft: #3a1f1d; --home: #b396f0; --home-soft: #261f38; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+script, pre.mermaid { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.6; margin: 0; }
+a { color: var(--accent); }
+h1, h2, h3, h4 { font-family: var(--font-display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(1.9rem, 4.6vw, 2.7rem); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.6rem; font-weight: 700; }
+h3 { font-size: 1.15rem; font-weight: 700; margin-top: 1.7em; }
+h4 { font-size: 1rem; font-weight: 700; margin-top: 1.2em; }
+p { margin: 0.7em 0; }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--sunk); padding: 0.08em 0.32em; border-radius: 4px; overflow-wrap: anywhere; }
+.codebox { margin: 0.7em 0; border: 1px solid var(--line); border-radius: 8px; background: var(--sunk); min-width: 0; }
+.codebox .cap { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--line); font: 600 0.72rem var(--font-mono); color: var(--muted); }
+.codebox pre { margin: 0; padding: 11px 13px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.5; }
+.codebox pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: normal; }
+.copy { font: 600 0.72rem var(--font-body); padding: 3px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
+.copy:hover { color: var(--fg); }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* top bar */
+.top { position: sticky; top: 0; z-index: 12; height: var(--top-h); display: flex; align-items: center; gap: 14px; background: var(--surface); border-bottom: 1px solid var(--line); padding: 0 max(14px, env(safe-area-inset-right, 0px)) 0 max(14px, env(safe-area-inset-left, 0px)); }
+.brand { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; text-decoration: none; color: var(--fg); white-space: nowrap; }
+.crumb { font-size: 0.86rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.themepick { margin-left: auto; display: flex; align-items: center; gap: 6px; font: 600 0.8rem var(--font-body); color: var(--muted); white-space: nowrap; }
+.themepick select { font: 600 0.8rem var(--font-body); padding: 4px 6px; }
+
+/* frame */
+.app { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: calc(100vh - var(--top-h)); }
+.app.solo { grid-template-columns: minmax(0, 1fr); }
+.side { position: sticky; top: var(--top-h); align-self: start; height: calc(100vh - var(--top-h)); overflow-y: auto; background: var(--surface); border-right: 1px solid var(--line); padding: 16px 12px 18px max(12px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 14px; }
+#nav { display: flex; flex-direction: column; gap: 2px; }
+.navlink { display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; align-items: center; text-decoration: none; color: var(--fg); font-size: 0.9rem; padding: 6px 8px; border-radius: 7px; line-height: 1.3; }
+.navlink:hover { background: var(--sunk); }
+.navlink.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.navlink .n { font: 600 0.74rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.navlink .p { font: 600 0.68rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.navlink .p.full { color: var(--good); }
+.side-foot { margin-top: auto; display: grid; gap: 6px; font-size: 0.85rem; padding: 0 8px; }
+.side-foot label { display: flex; gap: 8px; align-items: center; color: var(--muted); cursor: pointer; }
+main { min-width: 0; padding-block: 30px 72px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.view, section.module, .pager { max-width: 780px; margin: 0 auto; min-width: 0; }
+.view, section.module { display: grid; gap: 20px; }
+.view.wide { max-width: 1040px; }
+.view > *, section.module > * { min-width: 0; }
+@media (max-width: 860px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { z-index: 9; height: auto; flex-direction: row; align-items: center; gap: 10px; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px max(14px, env(safe-area-inset-right, 0px)) 6px max(14px, env(safe-area-inset-left, 0px)); overflow: visible; }
+  .side-foot { display: none; }
+  #nav { flex-direction: row; overflow-x: auto; scrollbar-width: none; min-width: 0; flex: 1; }
+  #nav::-webkit-scrollbar { display: none; }
+  .navlink { grid-template-columns: auto auto; flex: 0 0 auto; white-space: nowrap; padding: 5px 9px; }
+  .navlink .p { display: none; }
+  main { padding-block: 22px 56px; }
+  .crumb { display: none; }
+}
+
+/* shared pieces */
+.kicker { font: 600 0.72rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); }
+.muted { color: var(--muted); }
+.lede { font-size: 1.08rem; color: var(--muted); max-width: 66ch; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; min-width: 0; }
+.panel > h3:first-child { margin-top: 0; }
+.btn { font: 600 0.9rem var(--font-body); padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; text-decoration: none; display: inline-block; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+input[type="text"], input[type="number"], textarea, select { font: inherit; font-size: 0.92rem; color: var(--fg); background: var(--sunk); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; min-width: 0; }
+textarea { width: 100%; min-height: 96px; resize: vertical; font-family: var(--font-mono); font-size: 0.8rem; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 0.74rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 0.84rem; }
+.tok { font: 600 0.78rem var(--font-mono); white-space: nowrap; }
+.tok::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; background: currentColor; }
+.tok.in { color: var(--t-in); } .tok.out { color: var(--t-out); } .tok.cw { color: var(--t-cw); } .tok.cr { color: var(--t-cr); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.chip { font: 600 0.7rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; text-decoration: none; }
+a.chip:hover { border-color: var(--accent); color: var(--accent); }
+.chip.lv-foundation { color: var(--t-cr); border-color: var(--t-cr); }
+.chip.lv-practitioner { color: var(--t-in); border-color: var(--t-in); }
+.chip.lv-advanced { color: var(--t-cw); border-color: var(--t-cw); }
+
+/* catalogue */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+.mcard { display: grid; gap: 6px; align-content: start; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; text-decoration: none; color: inherit; }
+a.mcard:hover { border-color: var(--accent); }
+.mcard .n { font: 600 0.72rem var(--font-mono); color: var(--accent); }
+.mcard .t { font-family: var(--font-display); font-weight: 700; font-size: 1.08rem; }
+.mcard .s { font-size: 0.86rem; color: var(--muted); }
+.mcard .pre { font-size: 0.8rem; color: var(--muted); }
+.meter { height: 6px; background: var(--sunk); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.meter span { display: block; height: 100%; width: 0; background: var(--good); }
+.howto { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 18px; }
+.howto b { display: block; font-family: var(--font-display); font-size: 1rem; }
+.howto div { font-size: 0.92rem; color: var(--muted); }
+.paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.paths .panel { padding: 14px 16px; }
+.paths b { font-family: var(--font-display); }
+.paths ol { margin: 6px 0 0; padding-left: 1.3em; font-size: 0.9rem; }
+
+/* module */
+.mhead { display: grid; gap: 8px; }
+.mhead .meta { color: var(--muted); font-size: 0.92rem; }
+.partlist { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; }
+.partlist a { display: grid; grid-template-columns: 34px 1fr auto; gap: 8px; padding: 7px 8px; border-radius: 7px; text-decoration: none; color: var(--fg); }
+.partlist a:hover { background: var(--sunk); }
+.partlist .n { font: 600 0.74rem var(--font-mono); color: var(--accent); padding-top: 3px; }
+.partlist .m { font: 600 0.72rem var(--font-mono); color: var(--muted); padding-top: 3px; }
+.overview p, .overview li, .lesson p, .lesson li, .lab p, .lab li, .reference p, .reference li { max-width: 70ch; }
+.overview ul, .lesson ul, .lesson ol, .lab ul, .reference ul { padding-left: 1.2em; }
+.overview li, .lesson li, .lab li { margin: 0.3em 0; }
+.overview > h3:first-of-type { margin-top: 0.6em; }
+.recap { background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 14px 18px; margin-top: 1.2em; }
+.recap h3 { margin-top: 0; font-size: 1rem; }
+.sources { font-size: 0.88rem; color: var(--muted); }
+.sources h3 { color: var(--fg); }
+.sources li { margin: 0.25em 0; overflow-wrap: anywhere; }
+aside.rule { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; margin: 1.1em 0; max-width: 70ch; font-weight: 600; }
+aside.trap { background: var(--bad-soft); border-radius: 8px; padding: 10px 14px; margin: 1em 0; max-width: 70ch; font-size: 0.94rem; }
+aside.trap::before { content: "Trap"; display: block; font: 600 0.68rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--bad); }
+aside.home { background: var(--home-soft); border-radius: 8px; padding: 10px 14px; margin: 1em 0; max-width: 70ch; font-size: 0.94rem; }
+aside.home::before { content: "At home"; display: block; font: 600 0.68rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--home); }
+body.hide-home aside.home { display: none; }
+.labs { display: grid; gap: 18px; }
+.lab { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; min-width: 0; }
+.lab.done { border-color: var(--good); }
+.labhead { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.labhead h3 { margin: 0; }
+.labhead .meta { font: 600 0.72rem var(--font-mono); color: var(--muted); }
+.goal { color: var(--muted); }
+ol.steps { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 14px; counter-reset: step; }
+ol.steps > li { counter-increment: step; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 0 10px; margin: 0; max-width: none; }
+ol.steps > li > .tick { grid-row: 1 / span 30; }
+ol.steps > li > :not(.tick) { grid-column: 2; margin-top: 0; margin-bottom: 8px; min-width: 0; }
+ol.steps > li > :last-child { margin-bottom: 0; }
+.tick { appearance: none; -webkit-appearance: none; width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--sunk); cursor: pointer; display: grid; place-items: center; margin: 0; }
+.tick::before { content: counter(step); font: 600 0.78rem var(--font-mono); color: var(--muted); }
+.tick:checked { background: var(--good); border-color: var(--good); }
+.tick:checked::before { content: "\2713"; color: var(--surface); }
+p.expect { font-size: 0.92rem; border-left: 3px solid var(--t-cr); padding-left: 12px; color: var(--muted); }
+p.expect b { color: var(--fg); }
+details.check { border: 1px dashed var(--line); border-radius: 8px; padding: 10px 14px; margin-top: 12px; }
+details.check summary { cursor: pointer; font-weight: 600; }
+details.check[open] summary { margin-bottom: 6px; }
+.labfoot { display: flex; justify-content: flex-end; margin-top: 14px; }
+.lab.done .labfoot .btn { background: var(--good-soft); color: var(--good); border-color: var(--good); }
+.pager { display: flex; justify-content: space-between; gap: 10px; margin-top: 28px; }
+.pager .btn { max-width: 48%; }
+.pager .next { margin-left: auto; }
+
+/* calls */
+.drill { display: grid; gap: 14px; }
+.q { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 10px; }
+.q .qt { font-weight: 600; max-width: 70ch; }
+.opts { display: grid; gap: 7px; }
+.opt { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: transparent; color: var(--fg); font: inherit; font-size: 0.94rem; text-align: left; line-height: 1.45; }
+.opt:hover { border-color: var(--accent); }
+.opt .k { flex: 0 0 22px; font: 600 0.76rem var(--font-mono); color: var(--muted); padding-top: 2px; }
+.opt.right { border-color: var(--good); background: var(--good-soft); }
+.opt.wrong { border-color: var(--bad); background: var(--bad-soft); }
+.why { font-size: 0.92rem; color: var(--muted); border-left: 3px solid var(--line); padding-left: 12px; max-width: 70ch; }
+
+/* instruments */
+.tool { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin: 1em 0; display: grid; gap: 12px; min-width: 0; }
+.tool h4 { margin: 0; }
+.tool .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.tool label { display: grid; gap: 3px; font-size: 0.78rem; color: var(--muted); font-weight: 600; }
+.tool label input, .tool label select { width: 100%; }
+.bar { display: flex; height: 22px; border-radius: 5px; overflow: hidden; background: var(--sunk); }
+.bar span { display: block; height: 100%; min-width: 0; }
+.bar .in { background: var(--t-in); } .bar .out { background: var(--t-out); } .bar .cw { background: var(--t-cw); } .bar .cr { background: var(--t-cr); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; }
+.big { font: 700 1.5rem var(--font-display); font-variant-numeric: tabular-nums; }
+.verdict { font-weight: 600; }
+.note { font-size: 0.82rem; color: var(--muted); }
+
+/* diagrams: inline SVG drawn in the boxes-and-arrows style; every colour comes from the theme */
+figure.diagram { margin: 1.2em 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 10px; overflow-x: auto; }
+figure.diagram svg { display: block; width: 100%; height: auto; min-width: 520px; max-width: 760px; margin: 0 auto; font-family: var(--font-body); }
+figure.diagram figcaption { font-size: 0.84rem; color: var(--muted); margin-top: 8px; text-align: center; }
+.dg-box { fill: var(--sunk); stroke: var(--muted); stroke-width: 1.5; }
+.dg-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.dg-good { fill: var(--good-soft); stroke: var(--good); stroke-width: 1.5; }
+.dg-bad { fill: var(--bad-soft); stroke: var(--bad); stroke-width: 1.5; }
+.dg-ghost { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 6 4; }
+.dg-in { fill: var(--t-in); } .dg-out { fill: var(--t-out); } .dg-cw { fill: var(--t-cw); } .dg-cr { fill: var(--t-cr); }
+.dg-line { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.dg-line.dash { stroke-dasharray: 5 4; }
+.dg-line.hot { stroke: var(--accent); }
+.dg-head { fill: var(--muted); stroke: none; }
+.dg-head.hot { fill: var(--accent); }
+.dg-text { fill: var(--fg); font-size: 13px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+.dg-sub { fill: var(--muted); font-size: 11px; text-anchor: middle; dominant-baseline: middle; }
+.dg-label { fill: var(--muted); font-size: 11px; font-family: var(--font-mono); text-anchor: middle; dominant-baseline: middle; }
+.dg-on { fill: var(--surface); font-size: 12px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+.dg-left { text-anchor: start; } .dg-right { text-anchor: end; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+
+/* ---------- themes b to e: token overrides and a few shapes ---------- */
+/* a strip under the top bar instead of the left rail (b, d, e) */
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .app { grid-template-columns: minmax(0, 1fr); }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .side { z-index: 9; height: auto; flex-direction: row; align-items: center; gap: 12px; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px max(14px, env(safe-area-inset-right, 0px)) 6px max(14px, env(safe-area-inset-left, 0px)); overflow: visible; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) :is(.side-foot, .navlink .p) { display: none; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) #nav { flex-direction: row; overflow-x: auto; min-width: 0; flex: 1; scrollbar-width: none; }
+:root:is([data-style="b"], [data-style="d"], [data-style="e"]) .navlink { grid-template-columns: auto auto; flex: 0 0 auto; white-space: nowrap; }
+:root:is([data-style="b"], [data-style="c"], [data-style="e"]) :is(.panel, .lab, .q, .tool, .codebox, .mcard, .btn, .opt, .copy, .bar, .navlink, input, textarea, select, details.check, aside.trap, aside.home, code, .recap, figure.diagram, .chip, .partlist a) { border-radius: var(--r, 2px); }
+
+/* b: Workbench. Editor greys, one cobalt accent, 2px corners, dense system type. */
+:root[data-style="b"] { --r: 2px; --bg: #f4f4f5; --surface: #ffffff; --sunk: #ececee; --fg: #1e1e1e; --muted: #5a5f66; --line: #d0d0d4; --accent: #2f6fe0; --accent-ink: #ffffff; --accent-soft: rgba(47, 111, 224, 0.1);
+  --t-in: #2f6fe0; --t-out: #a5641f; --t-cw: #8a4a81; --t-cr: #2f7a55; --good: #2f7a55; --good-soft: #e3f1ea; --bad: #b8404c; --bad-soft: #f8e4e6;
+  --font-display: "Segoe UI", system-ui, -apple-system, sans-serif; --font-body: "Segoe UI", system-ui, -apple-system, sans-serif; --font-mono: "Cascadia Code", Consolas, "Courier New", monospace; }
+:root[data-style="b"][data-mode="dark"] { --bg: #1e1e1e; --surface: #252526; --sunk: #181818; --fg: #d4d4d4; --muted: #a8adb4; --line: #3c3c3c; --accent: #4c8dff; --accent-ink: #ffffff; --accent-soft: rgba(76, 141, 255, 0.14);
+  --t-in: #4c8dff; --t-out: #c0813f; --t-cw: #a8689f; --t-cr: #6fae8c; --good: #6fae8c; --good-soft: rgba(111, 174, 140, 0.12); --bad: #e0707c; --bad-soft: rgba(224, 112, 124, 0.1); }
+:root[data-style="b"] body { font-size: 14px; line-height: 1.5; }
+:root[data-style="b"] .side { background: var(--sunk); padding-block: 4px; }
+:root[data-style="b"] .navlink.active { background: transparent; box-shadow: inset 0 -2px 0 var(--accent); border-radius: 0; }
+:root[data-style="b"] :is(h1, h2, h3, h4) { font-weight: 600; letter-spacing: 0; }
+:root[data-style="b"] h2 { font-size: 1.35rem; } :root[data-style="b"] h3 { font-size: 1.05rem; }
+:root[data-style="b"] .lab { border-left: 3px solid var(--accent); }
+:root[data-style="b"] .lab.done { border-left-color: var(--good); }
+:root[data-style="b"] .tick { border-radius: 2px; width: 24px; height: 24px; }
+:root[data-style="b"] .bar { height: 14px; }
+
+/* c: Blueprint. Drafting-sheet blues on a faint grid, mono headings, dashed frames, square corners. */
+:root[data-style="c"] { --r: 0px; --bg: #eaf1f8; --surface: #f7fafd; --sunk: #dbe6f2; --fg: #0f2a47; --muted: #476483; --line: #b3c7dc; --accent: #0b5cad; --accent-ink: #ffffff; --accent-soft: #d5e5f6;
+  --t-in: #0b5cad; --t-out: #b0560c; --t-cw: #6b3fb0; --t-cr: #1d7a55; --good: #1d7a55; --good-soft: #d9efe4; --bad: #a8372f; --bad-soft: #f6dedb;
+  --font-display: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; }
+:root[data-style="c"][data-mode="dark"] { --bg: #0f2540; --surface: #143052; --sunk: #0b1c31; --fg: #e8f1fb; --muted: #9db8d6; --line: #2d5484; --accent: #7fd4ff; --accent-ink: #06213a; --accent-soft: #1b426e;
+  --t-in: #7fd4ff; --t-out: #ffb86b; --t-cw: #d7a6ff; --t-cr: #8fe3b0; --good: #8fe3b0; --good-soft: #17463f; --bad: #ff9d94; --bad-soft: #4a2a3a; }
+:root[data-style="c"] body { background-image: linear-gradient(color-mix(in srgb, var(--line) 30%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--line) 30%, transparent) 1px, transparent 1px); background-size: 28px 28px; }
+:root[data-style="c"] :is(h1, h2, h3, h4) { text-transform: uppercase; letter-spacing: 0.03em; font-weight: 600; }
+:root[data-style="c"] h1 { font-size: clamp(1.5rem, 3.6vw, 2.1rem); }
+:root[data-style="c"] h2 { font-size: 1.35rem; } :root[data-style="c"] h3 { font-size: 0.98rem; }
+:root[data-style="c"] :is(.lab, .tool, .panel, .q, .mcard, figure.diagram) { border-style: dashed; border-color: var(--accent); }
+:root[data-style="c"] .side { background: var(--bg); border-right-style: dashed; }
+:root[data-style="c"] .tick { border-radius: 0; transform: rotate(45deg) scale(0.8); } :root[data-style="c"] .tick::before { transform: rotate(-45deg); }
+
+/* d: Classroom. Big friendly type, a coloured module banner, soft round cards, raspberry accent. */
+:root[data-style="d"] { --bg: #ffffff; --surface: #f5f6fa; --sunk: #e9ecf4; --fg: #151a2d; --muted: #565d78; --line: #dfe3ee; --accent: #c2255c; --accent-ink: #ffffff; --accent-soft: #fde8f0;
+  --t-in: #2a66b3; --t-out: #c2255c; --t-cw: #7446bd; --t-cr: #25784c;
+  --font-display: "Nunito", "Segoe UI", system-ui, sans-serif; }
+:root[data-style="d"][data-mode="dark"] { --bg: #16141c; --surface: #201d29; --sunk: #110f16; --fg: #f1eef7; --muted: #a8a2b8; --line: #342f42; --accent: #ff7aa8; --accent-ink: #2a0a17; --accent-soft: #3d1c2b;
+  --t-in: #6ea9ee; --t-out: #ff7aa8; --t-cw: #b396f0; --t-cr: #6cc795; }
+:root[data-style="d"] body { font-size: 17px; }
+:root[data-style="d"] :is(h1, h2, h3, h4) { font-weight: 800; }
+:root[data-style="d"] h2 { font-size: 2rem; }
+:root[data-style="d"] .mhead { background: var(--accent); color: var(--accent-ink); padding: 26px 28px; border-radius: 20px; }
+:root[data-style="d"] .mhead :is(.kicker, .meta) { color: inherit; opacity: 0.9; }
+:root[data-style="d"] .mhead .chip { color: inherit; border-color: currentColor; }
+:root[data-style="d"] :is(.lab, .tool, .panel, .q, .mcard, figure.diagram, .recap) { border: 0; border-radius: 20px; padding: 22px 24px; }
+:root[data-style="d"] .navlink { border-radius: 999px; padding: 6px 12px; }
+:root[data-style="d"] .tick { width: 36px; height: 36px; } :root[data-style="d"] ol.steps > li { grid-template-columns: 40px minmax(0, 1fr); }
+:root[data-style="d"] .bar { height: 30px; border-radius: 999px; }
+:root[data-style="d"] .btn { border-radius: 999px; }
+
+/* e: Console. Everything monospaced, hard rules, amber accent, no rounding, headings marked like Markdown. */
+:root[data-style="e"] { --r: 0px; --bg: #f5f5f2; --surface: #f5f5f2; --sunk: #e9e9e4; --fg: #141414; --muted: #5c5c55; --line: #2a2a28; --accent: #8a5a00; --accent-ink: #ffffff; --accent-soft: #f1e6c8;
+  --t-in: #1f5fa8; --t-out: #b34700; --t-cw: #7a3fb5; --t-cr: #1f7a4a; --good: #1f7a4a; --good-soft: #dcefe2; --bad: #a8372f; --bad-soft: #f6dedb;
+  --font-display: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; --font-body: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; }
+:root[data-style="e"][data-mode="dark"] { --bg: #141210; --surface: #141210; --sunk: #1e1b17; --fg: #f2e9d8; --muted: #a89c86; --line: #5a5246; --accent: #ffb000; --accent-ink: #141210; --accent-soft: #3a2c0a;
+  --t-in: #7ab8ff; --t-out: #ff8f4d; --t-cw: #c79bff; --t-cr: #7ee0a0; --good: #7ee0a0; --good-soft: #1b3324; --bad: #ff9d94; --bad-soft: #3d201d; }
+:root[data-style="e"] body { font-size: 14px; }
+:root[data-style="e"] :is(h1, h2, h3, h4) { font-weight: 600; letter-spacing: 0; }
+:root[data-style="e"] h1 { font-size: clamp(1.4rem, 3.4vw, 1.9rem); }
+:root[data-style="e"] h2 { font-size: 1.3rem; } :root[data-style="e"] h3 { font-size: 1rem; }
+:root[data-style="e"] .mhead h2::before, :root[data-style="e"] .mhead h1::before { content: "# "; color: var(--accent); }
+:root[data-style="e"] :is(.lesson, .overview, .reference) h3::before { content: "## "; color: var(--accent); }
+:root[data-style="e"] .tick { border-radius: 0; border-width: 1px; border-color: var(--line); }
+:root[data-style="e"] .bar { height: 18px; border: 1px solid var(--line); }
+:root[data-style="e"] .navlink.active { background: var(--fg); color: var(--bg); } :root[data-style="e"] .navlink.active .n { color: inherit; }
+
+/* ---------- Mermaid diagrams, pre-rendered to SVG at build time. Layout is Mermaid's; every colour is the theme's. ---------- */
+figure.diagram svg.mm { font-family: "Segoe UI", system-ui, Arial, sans-serif; min-width: 0; max-height: 620px; }
+figure.diagram.map svg.mm { max-width: 1000px; max-height: 1150px; }
+svg.mm text, svg.mm tspan { fill: var(--fg) !important; stroke: none !important; }
+svg.mm .node > :is(rect, circle, ellipse, polygon, path), svg.mm .label-container, svg.mm :is(rect.actor, .actor-box, .labelBox, .activation0, .activation1, .activation2), svg.mm .statediagram-state :is(rect, path).basic, svg.mm .classGroup rect, svg.mm .er.entityBox { fill: var(--sunk) !important; stroke: var(--muted) !important; }
+svg.mm .node .label rect, svg.mm .cluster-label rect { fill: none !important; stroke: none !important; }
+svg.mm :is(.edgeLabel rect, rect.background, .labelBkg, .edgeLabel .label rect) { fill: var(--surface) !important; stroke: none !important; opacity: 1 !important; }
+svg.mm :is(.flowchart-link, .transition, .relation, .messageLine0, .messageLine1, .edgePath path, .actor-line, .loopLine, line.divider, .edge-thickness-normal) { stroke: var(--muted) !important; }
+svg.mm :is(.flowchart-link, .transition, .relation, .edgePath path) { fill: none !important; }
+svg.mm marker :is(path, circle, polygon), svg.mm :is(.arrowMarkerPath, .arrowheadPath) { fill: var(--muted) !important; stroke: var(--muted) !important; }
+svg.mm .cluster > :is(rect, polygon, path), svg.mm .statediagram-cluster rect, svg.mm rect.rect { fill: color-mix(in srgb, var(--surface) 55%, transparent) !important; stroke: var(--line) !important; }
+svg.mm :is(.note, .state-note) :is(rect, path), svg.mm rect.note, svg.mm g.note > rect { fill: var(--accent-soft) !important; stroke: var(--accent) !important; }
+svg.mm :is(.state-start, .start-state, circle.state-start) { fill: var(--fg) !important; stroke: var(--fg) !important; }
+svg.mm :is(.end-state-outer, .state-end) { fill: var(--surface) !important; stroke: var(--fg) !important; }
+svg.mm .end-state-inner { fill: var(--fg) !important; stroke: var(--fg) !important; }
+svg.mm .node:is(.hot) > :is(rect, circle, ellipse, polygon, path) { fill: var(--accent-soft) !important; stroke: var(--accent) !important; }
+svg.mm .node:is(.good, .found) > :is(rect, circle, ellipse, polygon, path) { fill: var(--good-soft) !important; stroke: var(--good) !important; }
+svg.mm .node.bad > :is(rect, circle, ellipse, polygon, path) { fill: var(--bad-soft) !important; stroke: var(--bad) !important; }
+svg.mm .node:is(.info, .prac) > :is(rect, circle, ellipse, polygon, path) { fill: color-mix(in srgb, var(--t-in) 14%, var(--surface)) !important; stroke: var(--t-in) !important; }
+svg.mm .node:is(.alt, .adv) > :is(rect, circle, ellipse, polygon, path) { fill: color-mix(in srgb, var(--t-cw) 14%, var(--surface)) !important; stroke: var(--t-cw) !important; }
+svg.mm .node.ghost > :is(rect, circle, ellipse, polygon, path) { fill: none !important; stroke: var(--line) !important; stroke-dasharray: 6 4; }
+
+</style>
+</head>
+<body>
+<div class="top">
+  <a class="brand" href="index.html">AI/LLM Bootcamp</a>
+  <span class="crumb" id="crumb"></span>
+  <label class="themepick">Theme: <select id="theme" aria-label="Theme"></select></label>
+</div>
+<div class="app">
+  <aside class="side">
+    <nav id="nav" aria-label="Parts of this module"></nav>
+    <div class="side-foot">
+      
+      <a href="index.html">All modules</a>
+    </div>
+  </aside>
+  <main>
+<section class="module" id="m4" data-title="Commands" data-sub="Built-in and your own" data-level="practitioner" data-prereq="m1" data-minutes="245">
+  <div class="overview">
+    <p class="lede">A slash command is the shortest path from intent to action in Claude Code. Built-in commands run fixed logic in the client: they show what fills the context, what you have spent, and how the session is set up. Your own commands are prompts kept in files: reviewed, versioned and called by name, from a terminal or from a script.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Pick the right built-in command for a context, money or setup question, and say which of them also run headless.</li>
+      <li>List the commands a session actually has, from the <code>slash_commands</code> field of the stream-json init line.</li>
+      <li>Write a project command that takes positional and named arguments, and avoid the 0-based and quoting traps.</li>
+      <li>Inject live data into a command with <code>!`…`</code>, prove the data reached the model, and turn the feature off with <code>disableSkillShellExecution</code>.</li>
+      <li>Pin a command to a cheaper model with frontmatter and confirm the model from <code>modelUsage</code>.</li>
+      <li>Decide whether a repeated task belongs in a command, a hook or a plain script, and give a command a done-test.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key). The labs were run on 2.1.322.</li>
+      <li>Windows PowerShell 5.1 or later, and <code>git</code> on the PATH (lab 3).</li>
+      <li>About $0.05 of API usage for all labs, or a small share of a plan's 5-hour window.</li>
+    </ul>
+    <div class="recap"><h3>If you skipped the prerequisites</h3><p>This module leans on the Context module. Every request Claude Code sends carries the whole conversation so far, on top of a fixed prefix: the system prompt, the tool definitions, your CLAUDE.md files and the one-line descriptions of the skills that are available. That prefix is several thousand tokens before you type anything, and most of it is served from the prompt cache on later turns. The context window on current models is 1 million tokens; Claude Code compacts automatically when the conversation nears that limit. <code>/compact</code> replaces the conversation with a summary and keeps going; <code>/clear</code> starts an empty conversation and keeps project memory. Anything a command adds to the prompt, including the output of a shell command it runs, becomes part of the conversation and is re-sent on every later turn until you compact or clear.</p></div>
+  </div>
+
+  <div class="lesson" id="m4-l1" data-title="Built-in commands, grouped by job" data-minutes="25">
+    <p>A message that starts with <code>/</code> is a command. Only the start of the message counts: the text after the name becomes the command's arguments. Two kinds of command share the <code>/</code> menu. Built-in commands are coded into the client and run fixed logic: <code>/context</code> draws a chart, <code>/model</code> switches the model, and neither calls the model. Bundled skills, such as <code>/doctor</code>, <code>/code-review</code> and <code>/batch</code>, are prompts that ship with Claude Code: invoking one hands Claude a set of instructions and lets it do the work with its tools. Your own commands, covered from the next lesson on, are the same kind of thing as bundled skills.</p>
+
+    <h3>The commands a working engineer uses</h3>
+    <p>The full list runs to about a hundred entries and changes between releases. These are the ones worth knowing by heart. The last column says whether the command was seen in the <code>slash_commands</code> list of a headless (<code>claude -p</code>) session on 2.1.322; a command missing there is interactive-only.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Job</th><th>Command</th><th>What it does</th><th>Headless</th></tr>
+      <tr><td>Context</td><td><code>/context [all]</code></td><td>Breaks the current context down by category (system prompt, system tools, deferred tools, skills, messages, free space, autocompact buffer) with per-skill token counts. <code>all</code> expands the per-item list.</td><td>Yes</td></tr>
+      <tr><td>Context</td><td><code>/compact [instructions]</code></td><td>Summarizes the conversation so far to free space. Optional text steers what the summary keeps.</td><td>Yes</td></tr>
+      <tr><td>Context</td><td><code>/clear [name]</code></td><td>Starts a new conversation with empty context. The name labels the old one in the <code>/resume</code> picker.</td><td>Yes</td></tr>
+      <tr><td>Money</td><td><code>/usage</code></td><td>Session cost, plan limits and activity stats. <code>/cost</code> and <code>/stats</code> are aliases.</td><td>Yes</td></tr>
+      <tr><td>Setup</td><td><code>/model [model]</code></td><td>Switches the model and saves it as your default for new sessions.</td><td>Yes</td></tr>
+      <tr><td>Setup</td><td><code>/effort [level|auto|status]</code></td><td>Sets the effort level (<code>low</code> to <code>xhigh</code>, <code>max</code>, <code>auto</code>); <code>status</code> prints it.</td><td>Yes</td></tr>
+      <tr><td>Setup</td><td><code>/permissions</code></td><td>Opens a dialog to view, add and remove allow, ask and deny rules by scope.</td><td>No</td></tr>
+      <tr><td>Setup</td><td><code>/hooks</code></td><td>Shows the hook configuration that loaded.</td><td>No</td></tr>
+      <tr><td>Setup</td><td><code>/agents</code></td><td>On current versions, prints a reminder to ask Claude to create subagents or to edit <code>.claude/agents/</code> directly. Before 2.1.198 it opened a management screen.</td><td>Yes</td></tr>
+      <tr><td>Setup</td><td><code>/plugin [subcommand]</code></td><td>Plugin menu, or <code>list</code>, <code>install</code>, <code>enable</code>, <code>disable</code> directly.</td><td>No</td></tr>
+      <tr><td>Setup</td><td><code>/mcp [reconnect|enable|disable …]</code></td><td>MCP server connections and OAuth. With a subcommand it changes state without opening the list.</td><td>Yes</td></tr>
+      <tr><td>Setup</td><td><code>/memory</code></td><td>Edits CLAUDE.md files and turns auto memory on or off.</td><td>No</td></tr>
+      <tr><td>Setup</td><td><code>/doctor</code></td><td>A bundled skill: a setup checkup of installation, settings, extensions and CLAUDE.md, with fixes Claude applies after you confirm.</td><td>Yes</td></tr>
+    </table></div>
+    <p>A few more come up weekly: <code>/init</code> writes a starter CLAUDE.md, <code>/resume</code> returns to an earlier conversation, <code>/rewind</code> rolls code and conversation back to a checkpoint, <code>/skills</code> lists skills with their token cost, <code>/status</code> shows version, model and account, and <code>/reload-plugins</code> applies plugin changes without a restart.</p>
+
+    <h3>Read the real list from the session</h3>
+    <p>Documentation describes every command; your session has a subset that depends on platform, plan, login and what is installed. The authoritative list for a run is the first line of stream-json output, the <code>system</code>/<code>init</code> message. Its <code>slash_commands</code> array holds every name the session accepts, built-in and custom, and its <code>skills</code> array the skill names. On a clean project folder with 2.1.322 that list had 53 names; it included <code>context</code>, <code>compact</code>, <code>clear</code>, <code>usage</code>, <code>model</code>, <code>effort</code>, <code>mcp</code>, <code>agents</code> and <code>doctor</code>, and did not include <code>permissions</code>, <code>hooks</code>, <code>memory</code> or <code>plugin</code>. Lab 1 has you read your own.</p>
+
+    <h3>Built-ins cost nothing</h3>
+    <p>A built-in that only reads client state does not call the model. Run headless, <code>claude -p "/context"</code> returned its whole breakdown as the <code>result</code> with <code>num_turns</code> 0 and <code>total_cost_usd</code> 0. The same was true of <code>/usage</code>. That makes both safe to call from a script as often as you like.</p>
+    <pre data-cap="output"><code>**Model:** claude-haiku-5-5
+**Tokens:** 17.2k / 1m (2%)
+| System prompt            | 3.4k   | 0.3%  |
+| System tools             | 11.6k  | 1.2%  |
+| System tools (deferred)  | 13.8k  | 1.4%  |
+| Skills                   | 2.2k   | 0.2%  |
+| Messages                 | 10     | 0.0%  |
+| Free space               | 949.8k | 95.0% |
+| Autocompact buffer       | 33k    | 3.3%  |</code></pre>
+
+    <h3>What <code>/usage</code> means depends on how you pay</h3>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>Subscription plan</th><th>API key</th></tr>
+      <tr><td>Top of the output</td><td>"You are currently using your subscription", then the current 5-hour session and the current week as percentages with reset times, then what contributed to usage.</td><td>Session cost in dollars and per-model token counts.</td></tr>
+      <tr><td>The dollar figure</td><td>A local estimate at list prices. Nothing is charged per token.</td><td>The bill, give or take rounding.</td></tr>
+      <tr><td>What to act on</td><td>The window percentages.</td><td>The dollars.</td></tr>
+    </table></div>
+    <aside class="rule">Use <code>/context</code> before <code>/compact</code> and <code>/usage</code> before changing models: look at the meter, then pull the lever.</aside>
+    <aside class="trap">A command name typed after other text does not run. <code>please /compact now</code> is an ordinary message; for a skill it only counts as permission for Claude to invoke it. Put the command first.</aside>
+  </div>
+
+  <div class="lesson" id="m4-l2" data-title="Your own commands: files, skills and names" data-minutes="25">
+    <p>A custom command is a Markdown file whose body is a prompt. When you type its name, Claude Code reads the file, substitutes the arguments, runs any shell injections, and sends the result to the model as your message. The model never sees the file name or the frontmatter; it sees the rendered text.</p>
+
+    <h3>Two formats, one mechanism</h3>
+    <p>Custom commands have been merged into skills. A file at <code>.claude/commands/deploy.md</code> and a skill at <code>.claude/skills/deploy/SKILL.md</code> both create <code>/deploy</code> and behave the same way. The command file is the older format and still works. The skill format adds a folder for supporting files and the <code>name</code> and <code>paths</code> frontmatter fields; everything else in this module works in both.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Where the file is</th><th>Command you type</th><th>Loads in</th></tr>
+      <tr><td><code>.claude/commands/deploy.md</code></td><td><code>/deploy</code></td><td>Sessions in this project. Commit it to share it.</td></tr>
+      <tr><td><code>.claude/commands/ops/restart.md</code></td><td><code>/ops:restart</code></td><td>Same. Each subfolder becomes a prefix, joined with <code>:</code>.</td></tr>
+      <tr><td><code>.claude/skills/deploy/SKILL.md</code></td><td><code>/deploy</code>, or the frontmatter <code>name</code></td><td>Sessions in this project.</td></tr>
+      <tr><td><code>~/.claude/skills/deploy/SKILL.md</code></td><td><code>/deploy</code></td><td>All your projects on this machine.</td></tr>
+      <tr><td><code>&lt;plugin&gt;/skills/review/SKILL.md</code></td><td><code>/&lt;plugin&gt;:review</code></td><td>Wherever the plugin is enabled.</td></tr>
+    </table></div>
+    <p>A minimal command file has no frontmatter at all. This one is complete:</p>
+    <pre data-file=".claude/commands/ops/restart.md"><code>---
+description: Restart note for a host
+---
+Reply with exactly: RESTART-NOTE for $ARGUMENTS</code></pre>
+    <p>Run headless as <code>claude -p "/ops:restart web-01"</code>, it returned <code>RESTART-NOTE for web-01</code>, and the init line listed <code>ops:restart</code> in <code>slash_commands</code>.</p>
+
+<figure class="diagram">
+<svg class="mm mm-flowchart" role="img" id="mmdee7d42a89b4" width="100%" xmlns="http://www.w3.org/2000/svg" style="max-width: 1128px;" viewBox="4 4 1128 207.60000610351562"><style>#mmdee7d42a89b4{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;fill:#000000;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#mmdee7d42a89b4 .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#mmdee7d42a89b4 .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#mmdee7d42a89b4 .error-icon{fill:#552222;}#mmdee7d42a89b4 .error-text{fill:#552222;stroke:#552222;}#mmdee7d42a89b4 .edge-thickness-normal{stroke-width:1px;}#mmdee7d42a89b4 .edge-thickness-thick{stroke-width:3.5px;}#mmdee7d42a89b4 .edge-pattern-solid{stroke-dasharray:0;}#mmdee7d42a89b4 .edge-thickness-invisible{stroke-width:0;fill:none;}#mmdee7d42a89b4 .edge-pattern-dashed{stroke-dasharray:3;}#mmdee7d42a89b4 .edge-pattern-dotted{stroke-dasharray:2;}#mmdee7d42a89b4 .marker{fill:#666;stroke:#666;}#mmdee7d42a89b4 .marker.cross{stroke:#666;}#mmdee7d42a89b4 svg{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;}#mmdee7d42a89b4 p{margin:0;}#mmdee7d42a89b4 .label{font-family:"Segoe UI",Arial,sans-serif;color:#000000;}#mmdee7d42a89b4 .cluster-label text{fill:#333;}#mmdee7d42a89b4 .cluster-label span{color:#333;}#mmdee7d42a89b4 .cluster-label span p{background-color:transparent;}#mmdee7d42a89b4 .label text,#mmdee7d42a89b4 span{fill:#000000;color:#000000;}#mmdee7d42a89b4 .node rect,#mmdee7d42a89b4 .node circle,#mmdee7d42a89b4 .node ellipse,#mmdee7d42a89b4 .node polygon,#mmdee7d42a89b4 .node path{fill:#eee;stroke:#999;stroke-width:1px;}#mmdee7d42a89b4 .rough-node .label text,#mmdee7d42a89b4 .node .label text,#mmdee7d42a89b4 .image-shape .label,#mmdee7d42a89b4 .icon-shape .label{text-anchor:middle;}#mmdee7d42a89b4 .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#mmdee7d42a89b4 .rough-node .label,#mmdee7d42a89b4 .node .label,#mmdee7d42a89b4 .image-shape .label,#mmdee7d42a89b4 .icon-shape .label{text-align:center;}#mmdee7d42a89b4 .node.clickable{cursor:pointer;}#mmdee7d42a89b4 .root .anchor path{fill:#666!important;stroke-width:0;stroke:#666;}#mmdee7d42a89b4 .arrowheadPath{fill:#333333;}#mmdee7d42a89b4 .edgePaths .path{stroke:#666;stroke-width:1px;}#mmdee7d42a89b4 .flowchart-link{stroke:#666;fill:none;}#mmdee7d42a89b4 .edgeLabel{background-color:white;text-align:center;}#mmdee7d42a89b4 .edgeLabel p{background-color:white;}#mmdee7d42a89b4 .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mmdee7d42a89b4 .labelBkg{background-color:rgba(255, 255, 255, 0.5);}#mmdee7d42a89b4 .cluster rect{fill:hsl(0, 0%, 98.9215686275%);stroke:#707070;stroke-width:1px;}#mmdee7d42a89b4 .cluster text{fill:#333;}#mmdee7d42a89b4 .cluster span{color:#333;}#mmdee7d42a89b4 .node .collapsed-indicator{fill:#707070;stroke:none;opacity:0.6;}#mmdee7d42a89b4 .node .collapsed-separator{stroke:#707070;stroke-width:0.75px;}#mmdee7d42a89b4 div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"Segoe UI",Arial,sans-serif;font-size:12px;background:hsl(-160, 0%, 93.3333333333%);border:1px solid #707070;border-radius:2px;pointer-events:none;z-index:100;}#mmdee7d42a89b4 .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mmdee7d42a89b4 rect.text{fill:none;stroke-width:0;}#mmdee7d42a89b4 .icon-shape,#mmdee7d42a89b4 .image-shape{background-color:white;text-align:center;}#mmdee7d42a89b4 .icon-shape p,#mmdee7d42a89b4 .image-shape p{background-color:white;padding:2px;}#mmdee7d42a89b4 .icon-shape .label rect,#mmdee7d42a89b4 .image-shape .label rect{opacity:0.5;background-color:white;fill:white;}#mmdee7d42a89b4 .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#mmdee7d42a89b4 .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#mmdee7d42a89b4 .node .neo-node{stroke:#999;}#mmdee7d42a89b4 [data-look="neo"].node rect,#mmdee7d42a89b4 [data-look="neo"].cluster rect,#mmdee7d42a89b4 [data-look="neo"].node polygon{stroke:url(#mmdee7d42a89b4-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmdee7d42a89b4 [data-look="neo"].swimlane.cluster rect{filter:none;}#mmdee7d42a89b4 [data-look="neo"].node path{stroke:url(#mmdee7d42a89b4-gradient);stroke-width:1px;}#mmdee7d42a89b4 [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmdee7d42a89b4 [data-look="neo"].node .neo-line path{stroke:#999;filter:none;}#mmdee7d42a89b4 [data-look="neo"].node circle{stroke:url(#mmdee7d42a89b4-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmdee7d42a89b4 [data-look="neo"].node circle .state-start{fill:#000000;}#mmdee7d42a89b4 [data-look="neo"].icon-shape .icon{fill:url(#mmdee7d42a89b4-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmdee7d42a89b4 [data-look="neo"].icon-shape .icon-neo path{stroke:url(#mmdee7d42a89b4-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmdee7d42a89b4 :root{--mermaid-font-family:"Segoe UI",Arial,sans-serif;}</style><g><marker id="mmdee7d42a89b4_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mmdee7d42a89b4_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mmdee7d42a89b4_flowchart-v2-pointEnd-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="11.5" refY="7" markerUnits="userSpaceOnUse" markerWidth="10.5" markerHeight="14" orient="auto"><path d="M 0 0 L 11.5 7 L 0 14 z" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></path></marker><marker id="mmdee7d42a89b4_flowchart-v2-pointStart-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="1" refY="7" markerUnits="userSpaceOnUse" markerWidth="11.5" markerHeight="14" orient="auto"><polygon points="0,7 11.5,14 11.5,0" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></polygon></marker><marker id="mmdee7d42a89b4_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmdee7d42a89b4_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmdee7d42a89b4_flowchart-v2-circleEnd-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refY="5" refX="12.25" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmdee7d42a89b4_flowchart-v2-circleStart-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-2" refY="5" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmdee7d42a89b4_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mmdee7d42a89b4_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mmdee7d42a89b4_flowchart-v2-crossEnd-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="17.7" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5;"></path></marker><marker id="mmdee7d42a89b4_flowchart-v2-crossStart-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="-3.5" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edges edgePaths"><path d="M164,107.79999732971191L200,107.79999732971191" id="mmdee7d42a89b4-L_a_b_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_a_b_0" data-points="W3sieCI6MTY0LCJ5IjoxMDcuNzk5OTk3MzI5NzExOTF9LHsieCI6MjA0LCJ5IjoxMDcuNzk5OTk3MzI5NzExOTF9XQ==" data-look="neo" marker-end="url(#mmdee7d42a89b4_flowchart-v2-pointEnd-margin)"></path><path d="M356,100.69999758402507L368.9289321881345,100.69999758402507Q376,100.69999758402507 376,93.6289297721596L376,59.17106628598657Q376,52.099998474121094 383.0710678118655,52.099998474121094L392,52.099998474121094" id="mmdee7d42a89b4-L_b_c_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 75.27172088623047 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_b_c_0" data-points="W3sieCI6MzU2LCJ5IjoxMDAuNjk5OTk3NTg0MDI1MDd9LHsieCI6Mzc2LCJ5IjoxMDAuNjk5OTk3NTg0MDI1MDd9LHsieCI6Mzc2LCJ5Ijo1Mi4wOTk5OTg0NzQxMjEwOTR9LHsieCI6Mzk2LCJ5Ijo1Mi4wOTk5OTg0NzQxMjEwOTR9XQ==" data-look="neo" marker-end="url(#mmdee7d42a89b4_flowchart-v2-pointEnd-margin)"></path><path d="M548,52.099998474121094L584,52.099998474121094" id="mmdee7d42a89b4-L_c_d_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_c_d_0" data-points="W3sieCI6NTQ4LCJ5Ijo1Mi4wOTk5OTg0NzQxMjEwOTR9LHsieCI6NTg4LCJ5Ijo1Mi4wOTk5OTg0NzQxMjEwOTR9XQ==" data-look="neo" marker-end="url(#mmdee7d42a89b4_flowchart-v2-pointEnd-margin)"></path><path d="M740,52.099998474121094L776,52.099998474121094" id="mmdee7d42a89b4-L_d_e_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_d_e_0" data-points="W3sieCI6NzQwLCJ5Ijo1Mi4wOTk5OTg0NzQxMjEwOTR9LHsieCI6NzgwLCJ5Ijo1Mi4wOTk5OTg0NzQxMjEwOTR9XQ==" data-look="neo" marker-end="url(#mmdee7d42a89b4_flowchart-v2-pointEnd-margin)"></path><path d="M932,52.099998474121094L968,52.099998474121094" id="mmdee7d42a89b4-L_e_f_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_e_f_0" data-points="W3sieCI6OTMyLCJ5Ijo1Mi4wOTk5OTg0NzQxMjEwOTR9LHsieCI6OTcyLCJ5Ijo1Mi4wOTk5OTg0NzQxMjEwOTR9XQ==" data-look="neo" marker-end="url(#mmdee7d42a89b4_flowchart-v2-pointEnd-margin)"></path><path d="M356,114.89999707539877L368.9289321881345,114.89999707539877Q376,114.89999707539877 376,121.97106488726425L376,156.42892837343726Q376,163.49999618530273 383.0710678118655,163.49999618530273L392,163.49999618530273" id="mmdee7d42a89b4-L_b_g_0" class="edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_b_g_0" data-points="W3sieCI6MzU2LCJ5IjoxMTQuODk5OTk3MDc1Mzk4Nzd9LHsieCI6Mzc2LCJ5IjoxMTQuODk5OTk3MDc1Mzk4Nzd9LHsieCI6Mzc2LCJ5IjoxNjMuNDk5OTk2MTg1MzAyNzN9LHsieCI6Mzk2LCJ5IjoxNjMuNDk5OTk2MTg1MzAyNzN9XQ==" data-look="neo" marker-end="url(#mmdee7d42a89b4_flowchart-v2-pointEnd-margin)"></path></g><g class="edgeLabels"></g><g class="nodes"><g class="node default" id="mmdee7d42a89b4-flowchart-a-0" data-look="neo" transform="translate(88, 107.79999732971191)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">You</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> type</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> the</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">command</tspan></tspan></text></g></g></g><g class="node default" id="mmdee7d42a89b4-flowchart-b-1" data-look="neo" transform="translate(280, 107.79999732971191)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Claude</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Code</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">reads</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> the</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> file</tspan></tspan></text></g></g></g><g class="node default" id="mmdee7d42a89b4-flowchart-c-3" data-look="neo" transform="translate(472, 52.099998474121094)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Arguments</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">substituted</tspan></tspan></text></g></g></g><g class="node default" id="mmdee7d42a89b4-flowchart-d-5" data-look="neo" transform="translate(664, 52.099998474121094)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Shell</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> injections</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">run</tspan></tspan></text></g></g></g><g class="node default hot" id="mmdee7d42a89b4-flowchart-e-7" data-look="neo" transform="translate(856, 52.099998474121094)"><rect class="basic label-container" style="" x="-76" y="-40.099998474121094" width="152" height="80.19999694824219"></rect><g class="label" style="" transform="translate(0, -28.099998474121094)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Rendered</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> text</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">sent</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> as</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> your</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="2.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">message</tspan></tspan></text></g></g></g><g class="node default" id="mmdee7d42a89b4-flowchart-f-9" data-look="neo" transform="translate(1048, 52.099998474121094)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Model</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> replies</tspan></tspan></text></g></g></g><g class="node default ghost" id="mmdee7d42a89b4-flowchart-g-11" data-look="neo" transform="translate(472, 163.49999618530273)"><rect class="basic label-container" style="" x="-76" y="-40.099998474121094" width="152" height="80.19999694824219"></rect><g class="label" style="" transform="translate(0, -28.099998474121094)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Frontmatter</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> and</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">file</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> name</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> stay</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="2.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">out</tspan></tspan></text></g></g></g></g></g></g><defs><filter id="mmdee7d42a89b4-drop-shadow" height="130%" width="130%"><feDropShadow dx="4" dy="4" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><defs><filter id="mmdee7d42a89b4-drop-shadow-small" height="150%" width="150%"><feDropShadow dx="2" dy="2" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><linearGradient id="mmdee7d42a89b4-gradient" gradientUnits="objectBoundingBox" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="hsl(0, 0%, 83.3333333333%)" stop-opacity="1"></stop><stop offset="100%" stop-color="hsl(0, 0%, 88.9215686275%)" stop-opacity="1"></stop></linearGradient></svg>
+  <figcaption>The model sees only the rendered text at the end of the chain, never the file name or frontmatter.</figcaption>
+</figure>
+    <h3>Name clashes</h3>
+    <p>Names collide more often than you expect, because the personal, project, enterprise and bundled namespaces are flat. The rules:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Same name in</th><th>Which one runs</th></tr>
+      <tr><td>A skill and a file in <code>.claude/commands/</code></td><td>The skill. Lab 2 confirms it: <code>/clash</code> answered <code>FROM-SKILL</code>.</td></tr>
+      <tr><td>Enterprise, personal and project</td><td>Enterprise over personal, personal over project.</td></tr>
+      <tr><td>Yours and a bundled skill or built-in</td><td>Yours replaces it, but not its aliases. A project <code>usage</code> skill replaces <code>/usage</code>; <code>/cost</code> still runs the built-in.</td></tr>
+      <tr><td>A plugin skill and any of the above</td><td>Both load: the plugin one is always <code>/plugin-name:skill-name</code>.</td></tr>
+      <tr><td>A root skill and a nested one in <code>apps/web/.claude/skills/</code></td><td>Both load: <code>/deploy</code> runs the root one, <code>/apps/web:deploy</code> the nested one.</td></tr>
+    </table></div>
+    <aside class="trap">The personal-over-project rule means a teammate's <code>~/.claude/skills/deploy</code> silently replaces the reviewed <code>/deploy</code> in your repository, on their machine only. Give team commands a prefix that nobody uses personally, or ship them in a plugin where the namespace is enforced.</aside>
+
+    <h3>Who may invoke it</h3>
+    <p>By default both you and the model can invoke a command: its description sits in the skill listing, and Claude may call it through the Skill tool when it judges it relevant. Two frontmatter fields change that.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Frontmatter</th><th>You can invoke</th><th>Claude can invoke</th><th>Description in context</th></tr>
+      <tr><td>(default)</td><td>Yes</td><td>Yes</td><td>Always</td></tr>
+      <tr><td><code>disable-model-invocation: true</code></td><td>Yes</td><td>No</td><td>No</td></tr>
+      <tr><td><code>user-invocable: false</code></td><td>No</td><td>Yes</td><td>Always</td></tr>
+    </table></div>
+    <p>For anything with side effects, such as deploying, committing or posting, set <code>disable-model-invocation: true</code>. It also takes the description out of every session's prefix, which is a small token saving per command.</p>
+    <aside class="trap">With a model-invocable command and <code>--max-turns 1</code>, a headless run of <code>claude -p "/ops:restart web-01"</code> ended with subtype <code>error_max_turns</code> and an empty result: Haiku spent its only turn calling the Skill tool on the command that was already loaded. Allow two or three turns, or set <code>disable-model-invocation: true</code>.</aside>
+    <aside class="rule">Write a command as a skill folder when it needs supporting files or a name different from its folder; otherwise a single file in <code>.claude/commands/</code> is enough.</aside>
+  </div>
+
+  <div class="lesson" id="m4-l3" data-title="Arguments" data-minutes="20">
+    <p>Whatever follows the command name is the argument string. Claude Code substitutes it into the body before the model sees anything. There are four placeholder forms.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Placeholder</th><th>Expands to</th><th>With <code>/echo-args web-01 'disk full'</code></th></tr>
+      <tr><td><code>$ARGUMENTS</code></td><td>The whole argument string as typed.</td><td><code>web-01 'disk full'</code></td></tr>
+      <tr><td><code>$ARGUMENTS[N]</code> or <code>$N</code></td><td>Argument N, counting from 0.</td><td><code>$0</code> = <code>web-01</code>, <code>$1</code> = <code>disk full</code></td></tr>
+      <tr><td><code>$2</code> with no third argument</td><td>Nothing: the placeholder stays as literal text.</td><td><code>$2</code></td></tr>
+      <tr><td><code>$name</code></td><td>A named argument from the <code>arguments</code> frontmatter list, mapped by position. Empty if missing.</td><td>with <code>arguments: [host, symptom]</code>, <code>$host</code> = <code>web-01</code></td></tr>
+    </table></div>
+    <p>The third column is real output. This body</p>
+    <pre data-file=".claude/commands/echo-args.md"><code>---
+description: Echo back the arguments it received
+argument-hint: &lt;host&gt; &lt;symptom&gt;
+disable-model-invocation: true
+---
+Reply with exactly this one line and nothing else:
+FIRST=$0 | SECOND=$1 | THIRD=$2 | ALL=$ARGUMENTS</code></pre>
+    <p>returned:</p>
+    <pre data-cap="output"><code>FIRST=web-01 | SECOND=disk full | THIRD=$2 | ALL=web-01 'disk full'</code></pre>
+
+    <h3>The 0-based trap</h3>
+    <p>Shell scripts number from <code>$1</code>. Claude Code numbers from <code>$0</code>. A body written by habit as "restart <code>$1</code> on <code>$2</code>" puts the second argument where the first belongs and leaves a literal <code>$2</code> in the prompt. The model then improvises, usually plausibly, so nothing fails loudly. Named arguments avoid the whole class of error:</p>
+    <pre data-file=".claude/skills/restart/SKILL.md"><code>---
+description: Draft a restart plan for one host
+arguments: [host, reason]
+argument-hint: &lt;host&gt; &lt;reason&gt;
+disable-model-invocation: true
+---
+Draft a restart plan for $host. Reason given: $reason.</code></pre>
+
+    <h3>Quoting</h3>
+    <p>Indexed arguments use shell-style quoting: quote a multi-word value to keep it as one argument. In Windows PowerShell 5.1 that collides with how arguments reach native programs. The run <code>claude -p "/echo-args web-01 `"disk full`""</code> produced <code>SECOND=disk</code> and <code>ALL=web-01 disk</code>: PowerShell split the prompt at the embedded quotes and the word <code>full</code> never arrived. Single quotes inside the double-quoted prompt went through intact, as the table shows.</p>
+    <aside class="trap">In PowerShell 5.1, never put double quotes inside a <code>claude -p</code> prompt. Use single quotes to group a multi-word argument.</aside>
+
+    <h3>Other details that matter</h3>
+    <ul>
+      <li>If the body has no placeholder at all, Claude Code appends <code>ARGUMENTS: &lt;what you typed&gt;</code> to the end, so arguments are never silently lost.</li>
+      <li>An argument that itself contains <code>$1</code> or <code>$ARGUMENTS</code> is inserted literally and not expanded again.</li>
+      <li>To write a literal <code>$1.00</code> in a body, escape it: <code>\$1.00</code>.</li>
+      <li><code>argument-hint</code> only changes the autocomplete hint in the <code>/</code> menu. It validates nothing.</li>
+      <li><code>${CLAUDE_SESSION_ID}</code>, <code>${CLAUDE_EFFORT}</code>, <code>${CLAUDE_SKILL_DIR}</code> and <code>${CLAUDE_PROJECT_DIR}</code> are also substituted, which lets a body point at a script by absolute path.</li>
+      <li>At the terminal you can stack up to six skills in one message (<code>/write-tests /fix-issue 123</code>). Through <code>claude -p</code> only the first one loads and the rest of the line becomes its arguments.</li>
+    </ul>
+    <aside class="rule">Use named arguments for anything with more than one parameter; keep <code>$ARGUMENTS</code> for free text.</aside>
+  </div>
+
+  <div class="lesson" id="m4-l4" data-title="Dynamic context: shell injection" data-minutes="25">
+    <p>A command body can run shell commands before the prompt is sent. The output replaces the placeholder, so the model receives data, not an instruction to go and fetch it. Two forms exist:</p>
+    <pre data-file=".claude/commands/last-ticket.md"><code>---
+description: Report the ticket in the newest commit body
+disable-model-invocation: true
+---
+Body of the newest commit:
+!`git log -1 --format=%b`
+
+Reply with only the ticket id from that body, or NONE if you see no ticket id.</code></pre>
+    <p>The inline form <code>!`command`</code> is recognized only at the start of a line or after whitespace; <code>KEY=!`cmd`</code> stays literal. For several lines, open a fenced block with three backticks followed by <code>!</code>; each line in it runs.</p>
+
+    <h3>When it runs and how</h3>
+    <ul>
+      <li><b>Once, at invocation, on your machine.</b> Substitution runs over the file once. Output is not re-scanned, so a command cannot emit another placeholder.</li>
+      <li><b>Through the session's shell tool.</b> Bash when it is available, otherwise PowerShell. The frontmatter field <code>shell: powershell</code> selects the PowerShell tool; <code>shell: bash</code> on Windows without Git Bash fails the invocation. Commands like <code>git log</code> run the same in both.</li>
+      <li><b>In the session's current directory</b>, which moves when Claude runs <code>cd</code>. Use <code>${CLAUDE_PROJECT_DIR}</code> in paths that must not drift.</li>
+      <li><b>Under the Bash tool's 2-minute timeout.</b> Output beyond the tool's inline ceiling arrives as a file path plus a preview.</li>
+      <li><b>Under your permission rules, without prompting.</b> A command your rules do not allow aborts the whole invocation with <code>Shell command permission check failed</code>. Read-only commands such as <code>git log</code> pass; anything else needs a rule or the command's <code>allowed-tools</code>.</li>
+      <li><b>All or nothing.</b> A non-zero exit aborts the invocation and Claude never sees the body. Exit 1 from search and compare commands is tolerated; append <code>|| true</code> under bash to a check that exits 1 on findings.</li>
+    </ul>
+
+<figure class="diagram">
+<svg class="mm mm-flowchart" role="img" id="mmfee3977b0ee4" width="100%" xmlns="http://www.w3.org/2000/svg" style="max-width: 456px;" viewBox="4 4 456 973.5999755859375"><style>#mmfee3977b0ee4{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;fill:#000000;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#mmfee3977b0ee4 .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#mmfee3977b0ee4 .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#mmfee3977b0ee4 .error-icon{fill:#552222;}#mmfee3977b0ee4 .error-text{fill:#552222;stroke:#552222;}#mmfee3977b0ee4 .edge-thickness-normal{stroke-width:1px;}#mmfee3977b0ee4 .edge-thickness-thick{stroke-width:3.5px;}#mmfee3977b0ee4 .edge-pattern-solid{stroke-dasharray:0;}#mmfee3977b0ee4 .edge-thickness-invisible{stroke-width:0;fill:none;}#mmfee3977b0ee4 .edge-pattern-dashed{stroke-dasharray:3;}#mmfee3977b0ee4 .edge-pattern-dotted{stroke-dasharray:2;}#mmfee3977b0ee4 .marker{fill:#666;stroke:#666;}#mmfee3977b0ee4 .marker.cross{stroke:#666;}#mmfee3977b0ee4 svg{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;}#mmfee3977b0ee4 p{margin:0;}#mmfee3977b0ee4 .label{font-family:"Segoe UI",Arial,sans-serif;color:#000000;}#mmfee3977b0ee4 .cluster-label text{fill:#333;}#mmfee3977b0ee4 .cluster-label span{color:#333;}#mmfee3977b0ee4 .cluster-label span p{background-color:transparent;}#mmfee3977b0ee4 .label text,#mmfee3977b0ee4 span{fill:#000000;color:#000000;}#mmfee3977b0ee4 .node rect,#mmfee3977b0ee4 .node circle,#mmfee3977b0ee4 .node ellipse,#mmfee3977b0ee4 .node polygon,#mmfee3977b0ee4 .node path{fill:#eee;stroke:#999;stroke-width:1px;}#mmfee3977b0ee4 .rough-node .label text,#mmfee3977b0ee4 .node .label text,#mmfee3977b0ee4 .image-shape .label,#mmfee3977b0ee4 .icon-shape .label{text-anchor:middle;}#mmfee3977b0ee4 .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#mmfee3977b0ee4 .rough-node .label,#mmfee3977b0ee4 .node .label,#mmfee3977b0ee4 .image-shape .label,#mmfee3977b0ee4 .icon-shape .label{text-align:center;}#mmfee3977b0ee4 .node.clickable{cursor:pointer;}#mmfee3977b0ee4 .root .anchor path{fill:#666!important;stroke-width:0;stroke:#666;}#mmfee3977b0ee4 .arrowheadPath{fill:#333333;}#mmfee3977b0ee4 .edgePaths .path{stroke:#666;stroke-width:1px;}#mmfee3977b0ee4 .flowchart-link{stroke:#666;fill:none;}#mmfee3977b0ee4 .edgeLabel{background-color:white;text-align:center;}#mmfee3977b0ee4 .edgeLabel p{background-color:white;}#mmfee3977b0ee4 .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mmfee3977b0ee4 .labelBkg{background-color:rgba(255, 255, 255, 0.5);}#mmfee3977b0ee4 .cluster rect{fill:hsl(0, 0%, 98.9215686275%);stroke:#707070;stroke-width:1px;}#mmfee3977b0ee4 .cluster text{fill:#333;}#mmfee3977b0ee4 .cluster span{color:#333;}#mmfee3977b0ee4 .node .collapsed-indicator{fill:#707070;stroke:none;opacity:0.6;}#mmfee3977b0ee4 .node .collapsed-separator{stroke:#707070;stroke-width:0.75px;}#mmfee3977b0ee4 div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"Segoe UI",Arial,sans-serif;font-size:12px;background:hsl(-160, 0%, 93.3333333333%);border:1px solid #707070;border-radius:2px;pointer-events:none;z-index:100;}#mmfee3977b0ee4 .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mmfee3977b0ee4 rect.text{fill:none;stroke-width:0;}#mmfee3977b0ee4 .icon-shape,#mmfee3977b0ee4 .image-shape{background-color:white;text-align:center;}#mmfee3977b0ee4 .icon-shape p,#mmfee3977b0ee4 .image-shape p{background-color:white;padding:2px;}#mmfee3977b0ee4 .icon-shape .label rect,#mmfee3977b0ee4 .image-shape .label rect{opacity:0.5;background-color:white;fill:white;}#mmfee3977b0ee4 .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#mmfee3977b0ee4 .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#mmfee3977b0ee4 .node .neo-node{stroke:#999;}#mmfee3977b0ee4 [data-look="neo"].node rect,#mmfee3977b0ee4 [data-look="neo"].cluster rect,#mmfee3977b0ee4 [data-look="neo"].node polygon{stroke:url(#mmfee3977b0ee4-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmfee3977b0ee4 [data-look="neo"].swimlane.cluster rect{filter:none;}#mmfee3977b0ee4 [data-look="neo"].node path{stroke:url(#mmfee3977b0ee4-gradient);stroke-width:1px;}#mmfee3977b0ee4 [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmfee3977b0ee4 [data-look="neo"].node .neo-line path{stroke:#999;filter:none;}#mmfee3977b0ee4 [data-look="neo"].node circle{stroke:url(#mmfee3977b0ee4-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmfee3977b0ee4 [data-look="neo"].node circle .state-start{fill:#000000;}#mmfee3977b0ee4 [data-look="neo"].icon-shape .icon{fill:url(#mmfee3977b0ee4-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmfee3977b0ee4 [data-look="neo"].icon-shape .icon-neo path{stroke:url(#mmfee3977b0ee4-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#mmfee3977b0ee4 :root{--mermaid-font-family:"Segoe UI",Arial,sans-serif;}</style><g><marker id="mmfee3977b0ee4_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mmfee3977b0ee4_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mmfee3977b0ee4_flowchart-v2-pointEnd-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="11.5" refY="7" markerUnits="userSpaceOnUse" markerWidth="10.5" markerHeight="14" orient="auto"><path d="M 0 0 L 11.5 7 L 0 14 z" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></path></marker><marker id="mmfee3977b0ee4_flowchart-v2-pointStart-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="1" refY="7" markerUnits="userSpaceOnUse" markerWidth="11.5" markerHeight="14" orient="auto"><polygon points="0,7 11.5,14 11.5,0" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></polygon></marker><marker id="mmfee3977b0ee4_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmfee3977b0ee4_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmfee3977b0ee4_flowchart-v2-circleEnd-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refY="5" refX="12.25" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmfee3977b0ee4_flowchart-v2-circleStart-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-2" refY="5" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="mmfee3977b0ee4_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mmfee3977b0ee4_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mmfee3977b0ee4_flowchart-v2-crossEnd-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="17.7" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5;"></path></marker><marker id="mmfee3977b0ee4_flowchart-v2-crossStart-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="-3.5" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edges edgePaths"><path d="M184,57L184,93" id="mmfee3977b0ee4-L_a_b_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_a_b_0" data-points="W3sieCI6MTg0LCJ5Ijo1N30seyJ4IjoxODQsInkiOjk3fV0=" data-look="neo" marker-end="url(#mmfee3977b0ee4_flowchart-v2-pointEnd-margin)"></path><path d="M155.89999898274738,257.4999225105712L155.89999898274738,285.6000061035156L155.89999898274738,298.52893829165015Q155.89999898274738,305.6000061035156 148.8289311708819,305.6000061035156L95.07106781186548,305.6000061035156Q88,305.6000061035156 88,312.6710739153811L88,386.6000061035156" id="mmfee3977b0ee4-L_b_x_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 187.6717987060547 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_b_x_0" data-points="W3sieCI6MTU1Ljg5OTk5ODk4Mjc0NzM4LCJ5IjoyNTcuNDk5OTIyNTEwNTcxMn0seyJ4IjoxNTUuODk5OTk4OTgyNzQ3MzgsInkiOjI4NS42MDAwMDYxMDM1MTU2fSx7IngiOjE1NS44OTk5OTg5ODI3NDczOCwieSI6MzA1LjYwMDAwNjEwMzUxNTZ9LHsieCI6ODgsInkiOjMwNS42MDAwMDYxMDM1MTU2fSx7IngiOjg4LCJ5IjozOTAuNjAwMDA2MTAzNTE1Nn1d" data-look="neo" marker-end="url(#mmfee3977b0ee4_flowchart-v2-pointEnd-margin)"></path><path d="M212.10000101725262,257.4999225105712L212.10000101725262,285.6000061035156L212.10000101725262,298.52893829165015Q212.10000101725262,305.6000061035156 219.1710688291181,305.6000061035156L272.9289321881345,305.6000061035156Q280,305.6000061035156 280,312.6710739153811L280,386.6000061035156" id="mmfee3977b0ee4-L_b_c_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 187.6717987060547 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_b_c_0" data-points="W3sieCI6MjEyLjEwMDAwMTAxNzI1MjYyLCJ5IjoyNTcuNDk5OTIyNTEwNTcxMn0seyJ4IjoyMTIuMTAwMDAxMDE3MjUyNjIsInkiOjI4NS42MDAwMDYxMDM1MTU2fSx7IngiOjIxMi4xMDAwMDEwMTcyNTI2MiwieSI6MzA1LjYwMDAwNjEwMzUxNTZ9LHsieCI6MjgwLCJ5IjozMDUuNjAwMDA2MTAzNTE1Nn0seyJ4IjoyODAsInkiOjM5MC42MDAwMDYxMDM1MTU2fV0=" data-look="neo" marker-end="url(#mmfee3977b0ee4_flowchart-v2-pointEnd-margin)"></path><path d="M280,470.8000030517578L280,506.8000030517578" id="mmfee3977b0ee4-L_c_d_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_c_d_0" data-points="W3sieCI6MjgwLCJ5Ijo0NzAuODAwMDAzMDUxNzU3OH0seyJ4IjoyODAsInkiOjUxMC44MDAwMDMwNTE3NTc4fV0=" data-look="neo" marker-end="url(#mmfee3977b0ee4_flowchart-v2-pointEnd-margin)"></path><path d="M254.83333333333331,656.6332693099976L254.83333333333331,681.8000030517578L254.83333333333331,694.7289352398923Q254.83333333333331,701.8000030517578 247.76226552146784,701.8000030517578L191.07106781186548,701.8000030517578Q184,701.8000030517578 184,708.8710708636233L184,782.8000030517578" id="mmfee3977b0ee4-L_d_y_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 187.67176818847656 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_d_y_0" data-points="W3sieCI6MjU0LjgzMzMzMzMzMzMzMzMxLCJ5Ijo2NTYuNjMzMjY5MzA5OTk3Nn0seyJ4IjoyNTQuODMzMzMzMzMzMzMzMzEsInkiOjY4MS44MDAwMDMwNTE3NTc4fSx7IngiOjI1NC44MzMzMzMzMzMzMzMzMSwieSI6NzAxLjgwMDAwMzA1MTc1Nzh9LHsieCI6MTg0LCJ5Ijo3MDEuODAwMDAzMDUxNzU3OH0seyJ4IjoxODQsInkiOjc4Ni44MDAwMDMwNTE3NTc4fV0=" data-look="neo" marker-end="url(#mmfee3977b0ee4_flowchart-v2-pointEnd-margin)"></path><path d="M305.16666666666663,656.6332693099976L305.16666666666663,681.8000030517578L305.16666666666663,694.7289352398923Q305.16666666666663,701.8000030517578 312.2377344785321,701.8000030517578L368.9289321881345,701.8000030517578Q376,701.8000030517578 376,708.8710708636233L376,791.6000022888184" id="mmfee3977b0ee4-L_d_e_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 196.4717254638672 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_d_e_0" data-points="W3sieCI6MzA1LjE2NjY2NjY2NjY2NjYzLCJ5Ijo2NTYuNjMzMjY5MzA5OTk3Nn0seyJ4IjozMDUuMTY2NjY2NjY2NjY2NjMsInkiOjY4MS44MDAwMDMwNTE3NTc4fSx7IngiOjMwNS4xNjY2NjY2NjY2NjY2MywieSI6NzAxLjgwMDAwMzA1MTc1Nzh9LHsieCI6Mzc2LCJ5Ijo3MDEuODAwMDAzMDUxNzU3OH0seyJ4IjozNzYsInkiOjc5NS42MDAwMDIyODg4MTg0fV0=" data-look="neo" marker-end="url(#mmfee3977b0ee4_flowchart-v2-pointEnd-margin)"></path><path d="M376,858.2000007629395L376,903" id="mmfee3977b0ee4-L_e_f_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 40.79998779296875 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_e_f_0" data-points="W3sieCI6Mzc2LCJ5Ijo4NTguMjAwMDAwNzYyOTM5NX0seyJ4IjozNzYsInkiOjkwN31d" data-look="neo" marker-end="url(#mmfee3977b0ee4_flowchart-v2-pointEnd-margin)"></path></g><g class="edgeLabels"><g class="edgeLabel" transform="translate(87.71875, 338.1000061035156)"><g class="label" data-id="L_b_x_0" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-11.21875" y="-3" width="22.4375" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">no</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(279.5546875, 338.1000061035156)"><g class="label" data-id="L_b_c_0" transform="translate(0.3984375, -9.5)"><g><rect class="background" style="" x="-14.453125" y="-3" width="28.109375" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">yes</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(183.7109375, 734.3000030517578)"><g class="label" data-id="L_d_y_0" transform="translate(0, -9.5)"><g><rect class="background" style="" x="-34.2109375" y="-3" width="68.421875" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">non-zero</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(376, 734.3000030517578)"><g class="label" data-id="L_d_e_0" transform="translate(-0.1875, -9.5)"><g><rect class="background" style="" x="-6.3125" y="-3" width="13" height="25"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">0</tspan></tspan></text></g></g></g></g><g class="nodes"><g class="node default" id="mmfee3977b0ee4-flowchart-a-0" data-look="neo" transform="translate(184, 34.5)"><rect class="basic label-container" style="" x="-76" y="-22.5" width="152" height="45"></rect><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Invocation</tspan></tspan></text></g></g></g><g class="node default" id="mmfee3977b0ee4-flowchart-b-1" data-look="neo" transform="translate(184, 191.3000030517578)"><polygon points="94.29999923706055,0 188.5999984741211,-94.29999923706055 94.29999923706055,-188.5999984741211 0,-94.29999923706055" class="label-container" transform="translate(-93.79999923706055, 94.29999923706055)"></polygon><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Rules</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> allow</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> each</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">command?</tspan></tspan></text></g></g></g><g class="node default bad" id="mmfee3977b0ee4-flowchart-x-3" data-look="neo" transform="translate(88, 430.7000045776367)"><rect class="basic label-container" style="" x="-76" y="-40.099998474121094" width="152" height="80.19999694824219"></rect><g class="label" style="" transform="translate(0, -28.099998474121094)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Aborted:</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">permission</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="2.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">check</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> failed</tspan></tspan></text></g></g></g><g class="node default" id="mmfee3977b0ee4-flowchart-c-5" data-look="neo" transform="translate(280, 430.7000045776367)"><rect class="basic label-container" style="" x="-76" y="-40.099998474121094" width="152" height="80.19999694824219"></rect><g class="label" style="" transform="translate(0, -28.099998474121094)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Command</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> runs</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">in</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> current</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="2.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">directory</tspan></tspan></text></g></g></g><g class="node default" id="mmfee3977b0ee4-flowchart-d-7" data-look="neo" transform="translate(280, 596.3000030517578)"><polygon points="85.5,0 171,-85.5 85.5,-171 0,-85.5" class="label-container" transform="translate(-85, 85.5)"></polygon><g class="label" style="" transform="translate(0, -10.5)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Exit</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> code?</tspan></tspan></text></g></g></g><g class="node default bad" id="mmfee3977b0ee4-flowchart-y-9" data-look="neo" transform="translate(184, 826.9000015258789)"><rect class="basic label-container" style="" x="-76" y="-40.099998474121094" width="152" height="80.19999694824219"></rect><g class="label" style="" transform="translate(0, -28.099998474121094)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Aborted:</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> Claude</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">never</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> sees</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> the</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="2.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">body</tspan></tspan></text></g></g></g><g class="node default good" id="mmfee3977b0ee4-flowchart-e-11" data-look="neo" transform="translate(376, 826.9000015258789)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Output</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> replaces</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">the</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> placeholder</tspan></tspan></text></g></g></g><g class="node default" id="mmfee3977b0ee4-flowchart-f-13" data-look="neo" transform="translate(376, 938.2999992370605)"><rect class="basic label-container" style="" x="-76" y="-31.299999237060547" width="152" height="62.599998474121094"></rect><g class="label" style="" transform="translate(0, -19.299999237060547)"><rect></rect><g><rect class="background" style="stroke: none"></rect><text y="-10.1" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">Prompt</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> sent</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> to</tspan></tspan><tspan class="text-outer-tspan row" x="0" y="1em" dy="1.1em"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">the</tspan><tspan font-style="normal" class="text-inner-tspan" font-weight="normal"> model</tspan></tspan></text></g></g></g></g></g></g><defs><filter id="mmfee3977b0ee4-drop-shadow" height="130%" width="130%"><feDropShadow dx="4" dy="4" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><defs><filter id="mmfee3977b0ee4-drop-shadow-small" height="150%" width="150%"><feDropShadow dx="2" dy="2" stdDeviation="0" flood-opacity="0.06" flood-color="#000000"></feDropShadow></filter></defs><linearGradient id="mmfee3977b0ee4-gradient" gradientUnits="objectBoundingBox" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="hsl(0, 0%, 83.3333333333%)" stop-opacity="1"></stop><stop offset="100%" stop-color="hsl(0, 0%, 88.9215686275%)" stop-opacity="1"></stop></linearGradient></svg>
+  <figcaption>Injection is all or nothing: one refused or failing command ends the whole invocation.</figcaption>
+</figure>
+    <h3>Prove the output reached the model</h3>
+    <p>Do not test injection with data the model can already see. A headless session's prompt already carries a short git status snapshot with recent commit subjects: asked for the newest commit subject with injection switched off, Haiku still answered correctly and said it had read it "from the git status snapshot at the start of the conversation". Put a random marker where the snapshot does not reach, such as the commit body, and ask for it back. Lab 3 does that: with injection on the run returned the random <code>ticket-20006</code>; with injection off it returned <code>NONE</code>.</p>
+
+    <h3>What it costs</h3>
+    <p>Injected output is ordinary prompt text. It is billed as <span class="tok in">input</span> or <span class="tok cw">cache write</span> on the turn you invoke the command, and the rendered command stays in the conversation afterwards, so it is re-sent as <span class="tok cr">cache read</span> on every later turn until you compact or clear. A <code>git log -1</code> is a few dozen tokens. A <code>git diff</code> of a large branch or a recursive file listing can be tens of thousands, paid for the rest of the session. Invoking the command again with different output appends a second full copy; an identical render adds only a short note.</p>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>Subscription plan</th><th>API key</th></tr>
+      <tr><td>A 20,000-token injection</td><td>Draws down the 5-hour window on that turn, and a smaller amount on every later turn as cache read.</td><td>Billed once as input or cache write, then at the cache read rate per turn.</td></tr>
+    </table></div>
+
+    <h3>Turning it off</h3>
+    <p>The setting <code>disableSkillShellExecution: true</code> replaces every injection in user, project, plugin and added-directory commands with <code>[shell command execution disabled by policy]</code>. Bundled skills and skills deployed by managed settings are unaffected. It works from any settings file; in lab 3 it took effect from a file passed with <code>--settings</code> and from <code>.claude/settings.json</code>. In managed settings a <code>true</code> cannot be overridden, which is where a security team puts it.</p>
+    <aside class="trap">A command checked into a repository runs its injections on the machine of whoever types it, with that person's credentials. Review <code>!`…`</code> lines and <code>allowed-tools</code> in a pull request the way you review a script.</aside>
+    <aside class="rule">Inject the smallest output that answers the question: <code>--stat</code> before a full diff, <code>-n 20</code> before a whole log.</aside>
+  </div>
+
+  <div class="lesson" id="m4-l5" data-title="Frontmatter that changes behaviour" data-minutes="20">
+    <p>All frontmatter is optional. Most fields describe the command; four change how it runs. A misspelled field is ignored without an error, so check the spelling against the table, hyphens included.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Effect</th><th>Lasts</th></tr>
+      <tr><td><code>allowed-tools</code></td><td>Tools Claude may use without asking, for example <code>Bash(git add *) Bash(git commit *)</code>. It grants; it does not restrict. Every other tool is still callable under your normal rules.</td><td>The turn that invoked the command. Cleared by your next message.</td></tr>
+      <tr><td><code>model</code></td><td>Model for the rest of the turn: an alias such as <code>haiku</code>, a full id, or <code>inherit</code>. Not saved to settings.</td><td>The turn. The session model resumes on your next prompt.</td></tr>
+      <tr><td><code>disable-model-invocation</code></td><td>Only you can invoke the command, and its description leaves the prefix.</td><td>Permanent.</td></tr>
+      <tr><td><code>context: fork</code></td><td>Runs the body as the prompt of a new subagent (type from <code>agent</code>, default <code>general-purpose</code>) that does not see your conversation. Only its final report returns.</td><td>The subagent's run.</td></tr>
+    </table></div>
+    <p>Also useful: <code>effort</code> (level for the turn), <code>disallowed-tools</code> (removes tools while the command is active), <code>argument-hint</code>, <code>arguments</code> and <code>shell</code>.</p>
+
+    <h3>Pinning a cheap model</h3>
+    <p>A command that formats, classifies or summarizes does not need the session's best model. With <code>model: haiku</code> in the frontmatter and the session started with <code>--model sonnet</code>, the run's <code>modelUsage</code> held one key, <code>claude-haiku-5-5</code>, and cost about $0.0015. The same body without the field ran on <code>claude-sonnet-5-5</code> and cost about $0.028, roughly eighteen times as much for the same one-line answer. On a subscription the saving is window share rather than dollars; the ratio is what to look at in both cases.</p>
+    <aside class="trap">In auto mode, or when an organization's <code>availableModels</code> allowlist excludes the value, the session keeps its own model and the field is quietly ignored. Confirm from <code>modelUsage</code>, not from the frontmatter.</aside>
+
+    <h3><code>allowed-tools</code> is a grant, and it travels</h3>
+    <p>Workspace trust does not gate the field: a project command's <code>allowed-tools</code> applies even in a <code>-p</code> run in a folder you have never trusted. A repository can therefore grant its own commands broad tool access. Deny and ask rules in your settings still win over it, and an organization can switch the field off for repository commands with <code>allowManagedPermissionRulesOnly</code>.</p>
+
+    <h3><code>context: fork</code> is not a fork of your conversation</h3>
+    <p>Despite the name, the subagent starts empty apart from its own system prompt, CLAUDE.md (except for <code>Explore</code> and <code>Plan</code>, which skip it) and the rendered command body. Put everything the task needs in the body. A body that holds only guidelines, with no task, comes back with nothing useful. In the terminal a forked command runs in the background unless you set <code>background: false</code>; in <code>claude -p</code> the run waits for it.</p>
+    <aside class="rule">Fork a command when its work would flood your context with reading (a repository survey, a long log); keep it inline when you need its output in the conversation to act on.</aside>
+  </div>
+
+  <div class="lesson" id="m4-l6" data-title="Commands as team work: headless, reviewed, versioned" data-minutes="20">
+    <h3>Commands run headless</h3>
+    <p>Pass a command as the prompt: <code>claude -p "/unowned tickets.csv"</code>. Claude Code renders it exactly as at the terminal: arguments, injections, model and tool grants. Combined with <code>--output-format json</code>, a command becomes a function you can call from a scheduled task or a pipeline step and check by its <code>result</code>, <code>subtype</code> and <code>total_cost_usd</code>. Three flags keep such a run reproducible:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Flag</th><th>Why</th></tr>
+      <tr><td><code>--setting-sources project</code></td><td>Loads only the repository's settings, not the caller's personal ones.</td></tr>
+      <tr><td><code>--strict-mcp-config</code></td><td>Ignores every MCP server not passed with <code>--mcp-config</code>.</td></tr>
+      <tr><td><code>--max-turns N</code></td><td>Bounds the run. Allow two or three turns even for a one-shot command (lesson 2).</td></tr>
+    </table></div>
+    <p>To run with no commands at all, <code>--disable-slash-commands</code> turns off every skill and command for the session.</p>
+
+    <h3>A command is a prompt under change control</h3>
+    <p>A prompt typed into a chat is lost and differs every time. The same prompt in <code>.claude/commands/</code> is a file: it has a diff, a reviewer, a history and a name everyone types the same way. Treat it as code.</p>
+    <ul>
+      <li>One job per command, named by verb: <code>/unowned</code>, <code>/release-notes</code>, <code>/triage</code>.</li>
+      <li>A fixed output shape stated in the body (<code>Reply with exactly one line in the form MISSING=&lt;count&gt;</code>), so a script can check it.</li>
+      <li>A done-test kept next to it: a small fixture and the expected result. Lab 5's test ran the command three times against a five-row CSV and passed 3 of 3 with <code>MISSING=2</code>.</li>
+      <li><code>disable-model-invocation: true</code> on anything with side effects.</li>
+      <li>The narrowest <code>allowed-tools</code> that lets it finish without a prompt.</li>
+    </ul>
+
+    <h3>Command, hook or script</h3>
+    <p>A command is a request to a model: it can misread, improvise or stop early. Choose by what the task needs.</p>
+    <div class="tablewrap"><table>
+      <tr><th>The task</th><th>Use</th><th>Because</th></tr>
+      <tr><td>Needs judgment: summarize, classify, draft, review.</td><td>Command</td><td>Only the model can do it; the command makes it repeatable.</td></tr>
+      <tr><td>Must happen every time an event occurs: block a write, format after an edit, log every tool call.</td><td>Hook</td><td>A hook runs on the event whether or not anyone types anything, and the model cannot talk its way past it.</td></tr>
+      <tr><td>Is fully deterministic: count rows, rename files, call an API.</td><td>Script</td><td>Faster, free and exact. Call it from a command's injection or <code>allowed-tools</code> if the model needs the result.</td></tr>
+      <tr><td>Is a rule that should always be in force.</td><td>CLAUDE.md or a setting</td><td>A command applies only when someone remembers to type it.</td></tr>
+    </table></div>
+    <p>Lab 5's <code>/unowned</code> is honest about this: counting empty cells in a CSV is a one-line script. It is a good lab because the answer is checkable, not because it is a good use of a model. The command earns its keep when the input is messy enough that a script would need judgment.</p>
+    <aside class="rule">If you could write the done-test as the implementation, write the script instead.</aside>
+    <aside class="trap">A command used as a gate ("run <code>/check</code> before every commit") is only as reliable as the person who remembers to run it. Gates belong in hooks or CI.</aside>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m4-lab1" data-title="List the commands your session really has" data-minutes="15">
+      <p class="goal">Read the init line of a headless run, count the commands it lists, and call two built-ins headless at zero cost.</p>
+      <ol class="steps">
+        <li><p>Make the lab folder and move into it.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m4/lab1 | Out-Null; cd ~/bootcamp-labs/m4/lab1</code></pre></li>
+        <li><p>Run a one-line prompt with stream-json output. Every headless run in this module carries <code>--setting-sources project</code> and <code>--strict-mcp-config</code>: the first keeps your personal settings and hooks out, the second keeps your MCP servers out, so what you measure is Claude Code and the lab folder only.</p>
+          <pre><code>claude -p "Reply with the word OK." --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format stream-json --verbose &gt; init.jsonl</code></pre>
+          <p class="expect"><b>Expected:</b> a file of about ten JSON lines. The first is the session's init message.</p></li>
+        <li><p>Print the type, the model and the command list.</p>
+          <pre><code>$init = Get-Content init.jsonl -TotalCount 1 | ConvertFrom-Json
+"type=$($init.type) subtype=$($init.subtype) model=$($init.model)"
+"slash_commands: $($init.slash_commands.Count)"
+$init.slash_commands -join ' '</code></pre>
+          <p class="expect"><b>Expected:</b> <code>type=system subtype=init model=claude-haiku-5-5</code>, then about 50 names (53 on 2.1.322) including <code>context compact clear usage model effort mcp agents doctor</code>. <code>permissions</code>, <code>hooks</code>, <code>memory</code> and <code>plugin</code> are absent: they are interactive-only.</p></li>
+        <li><p>Call <code>/context</code> headless and read its cost.</p>
+          <pre><code>claude -p "/context" --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format json &gt; context.json
+$c = Get-Content context.json -Raw | ConvertFrom-Json
+"num_turns=$($c.num_turns) cost=$($c.total_cost_usd)"; $c.result</code></pre>
+          <p class="expect"><b>Expected:</b> <code>num_turns=0 cost=0</code>, then a Context Usage report: about 17k of 1m tokens, with rows for System prompt (about 3.4k), System tools (about 11.6k), System tools (deferred), Skills (about 2.2k), Messages, Free space and Autocompact buffer, and a per-skill table.</p></li>
+        <li><p>Do the same with <code>/usage</code>.</p>
+          <pre><code>claude -p "/usage" --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format json &gt; usage.json
+$u = Get-Content usage.json -Raw | ConvertFrom-Json
+"num_turns=$($u.num_turns) cost=$($u.total_cost_usd)"; $u.result</code></pre>
+          <p class="expect"><b>Expected:</b> <code>num_turns=0 cost=0</code>. On a subscription the result starts "You are currently using your subscription" and shows the current session and current week as percentages with reset times. On an API key it shows session cost and tokens.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>How many names does your <code>slash_commands</code> array hold, and is <code>permissions</code> among them? Answer: about 50, and no; it only exists in interactive sessions.</li>
+          <li>Which <code>/context</code> category is largest before you type anything? Answer: System tools, the built-in tool definitions, at about 11.6k tokens. That is the fixed overhead every turn carries.</li>
+          <li>Why can a monitoring script call <code>/context</code> every minute without cost? Answer: it is a built-in that reads client state; <code>num_turns</code> 0 shows no model call was made.</li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m4-lab2" data-title="Write a project command with two arguments and call it headless" data-minutes="20">
+      <p class="goal">Create a command that echoes its arguments, a namespaced command and a deliberate name clash, and read how each resolves.</p>
+      <ol class="steps">
+        <li><p>Make the folders.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m4/lab2/.claude/commands/ops, ~/bootcamp-labs/m4/lab2/.claude/skills/clash | Out-Null; cd ~/bootcamp-labs/m4/lab2</code></pre></li>
+        <li><p>Write the argument echo command.</p>
+          <pre data-file=".claude/commands/echo-args.md"><code>@'
+---
+description: Echo back the arguments it received
+argument-hint: &lt;host&gt; &lt;symptom&gt;
+disable-model-invocation: true
+---
+Reply with exactly this one line and nothing else:
+FIRST=$0 | SECOND=$1 | THIRD=$2 | ALL=$ARGUMENTS
+'@ | Set-Content -Encoding utf8 .claude/commands/echo-args.md</code></pre></li>
+        <li><p>Call it with two arguments, the second one quoted with single quotes.</p>
+          <pre><code>claude -p "/echo-args web-01 'disk full'" --model haiku --setting-sources project --strict-mcp-config --max-turns 3 --output-format json &gt; echo.json
+(Get-Content echo.json -Raw | ConvertFrom-Json).result</code></pre>
+          <p class="expect"><b>Expected:</b> <code>FIRST=web-01 | SECOND=disk full | THIRD=$2 | ALL=web-01 'disk full'</code>. <code>$0</code> is the first argument, and <code>$2</code> stays literal because there is no third. The run costs about $0.001 to $0.002.</p></li>
+        <li><p>Write a namespaced command and a clash: a command file and a skill with the same name.</p>
+          <pre><code>@'
+---
+description: Restart note for a host
+---
+Reply with exactly: RESTART-NOTE for $ARGUMENTS
+'@ | Set-Content -Encoding utf8 .claude/commands/ops/restart.md
+'Reply with exactly: FROM-COMMAND-FILE' | Set-Content -Encoding utf8 .claude/commands/clash.md
+@'
+---
+description: Clash test skill
+---
+Reply with exactly: FROM-SKILL
+'@ | Set-Content -Encoding utf8 .claude/skills/clash/SKILL.md</code></pre></li>
+        <li><p>Run the namespaced command and look at the custom names in its init line.</p>
+          <pre><code>claude -p "/ops:restart web-01" --model haiku --setting-sources project --strict-mcp-config --max-turns 3 --output-format stream-json --verbose &gt; restart.jsonl
+$init = Get-Content restart.jsonl -TotalCount 1 | ConvertFrom-Json
+$init.slash_commands | Where-Object { $_ -match 'echo|ops|clash' }
+(Get-Content restart.jsonl | Select-Object -Last 1 | ConvertFrom-Json).result</code></pre>
+          <p class="expect"><b>Expected:</b> the names <code>clash</code>, <code>echo-args</code> and <code>ops:restart</code>, then <code>RESTART-NOTE for web-01</code>.</p></li>
+        <li><p>Run the clash.</p>
+          <pre><code>claude -p "/clash" --model haiku --setting-sources project --strict-mcp-config --max-turns 3 --output-format json &gt; clash.json
+(Get-Content clash.json -Raw | ConvertFrom-Json).result</code></pre>
+          <p class="expect"><b>Expected:</b> <code>FROM-SKILL</code>. The skill wins over the command file.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>What would the result have been with <code>"/echo-args web-01 `"disk full`""</code> in Windows PowerShell 5.1? Answer: <code>SECOND=disk</code>; the embedded double quotes split the prompt and <code>full</code> is lost.</li>
+          <li>Which file do you delete to make <code>/clash</code> answer <code>FROM-COMMAND-FILE</code>? Answer: <code>.claude/skills/clash/SKILL.md</code>.</li>
+          <li>Why <code>--max-turns 3</code> and not 1? Answer: a model-invocable command can make the model call the Skill tool on itself first, which uses up a one-turn budget and ends in <code>error_max_turns</code> with an empty result.</li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m4-lab3" data-title="Inject git output and prove the model saw it" data-minutes="25">
+      <p class="goal">Build a command that reads a random marker from the newest commit body through <code>!`…`</code>, then switch injection off and watch the marker disappear.</p>
+      <ol class="steps">
+        <li><p>Make a repository with two commits. The second commit body holds a random ticket id.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m4/lab3/.claude/commands | Out-Null; cd ~/bootcamp-labs/m4/lab3
+git init -q
+$nonce = 'ticket-' + (Get-Random -Minimum 10000 -Maximum 99999)
+'one' | Set-Content a.txt; git add a.txt; git -c user.name=lab -c user.email=lab@example.com commit -q -m "Add a.txt"
+'two' | Set-Content b.txt; git add b.txt; git -c user.name=lab -c user.email=lab@example.com commit -q -m "Fix b.txt" -m "Refs $nonce"
+"nonce written: $nonce"</code></pre>
+          <p class="expect"><b>Expected:</b> a line such as <code>nonce written: ticket-20006</code>. Git may warn about line endings; that is harmless.</p></li>
+        <li><p>Write the command. The marker is in the commit body on purpose: the session's built-in git status snapshot shows commit subjects, so a subject would prove nothing.</p>
+          <pre><code>@'
+---
+description: Report the ticket in the newest commit body
+disable-model-invocation: true
+---
+Body of the newest commit:
+!`git log -1 --format=%b`
+
+Reply with only the ticket id from that body, or NONE if you see no ticket id.
+'@ | Set-Content -Encoding utf8 .claude/commands/last-ticket.md</code></pre></li>
+        <li><p>Run it.</p>
+          <pre><code>claude -p "/last-ticket" --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format json &gt; on.json
+(Get-Content on.json -Raw | ConvertFrom-Json).result</code></pre>
+          <p class="expect"><b>Expected:</b> exactly your nonce, for example <code>ticket-20006</code>, in one turn. The model could only know it from the injected output.</p></li>
+        <li><p>Run it again with injection disabled through a settings file.</p>
+          <pre><code>'{ "disableSkillShellExecution": true }' | Set-Content -Encoding ascii noshell.json
+claude -p "/last-ticket" --model haiku --setting-sources project --strict-mcp-config --settings noshell.json --max-turns 1 --output-format json &gt; off.json
+(Get-Content off.json -Raw | ConvertFrom-Json).result</code></pre>
+          <p class="expect"><b>Expected:</b> <code>NONE</code>, or a sentence saying shell command execution is disabled by policy. The nonce does not appear.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>What exactly replaced <code>!`git log -1 --format=%b`</code> in the second run? Answer: the text <code>[shell command execution disabled by policy]</code>.</li>
+          <li>Where would you set <code>disableSkillShellExecution</code> so a developer cannot turn it back on? Answer: managed settings; a <code>true</code> there cannot be overridden.</li>
+          <li>What happens if you change the injection to a command that exits 2? Answer: the whole invocation aborts with <code>Shell command failed for pattern</code> and the model sees nothing.</li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m4-lab4" data-title="Pin a command to the cheapest model" data-minutes="20">
+      <p class="goal">Run the same command body with and without <code>model: haiku</code> in a Sonnet session, and read the model and cost of each from <code>modelUsage</code>.</p>
+      <ol class="steps">
+        <li><p>Write two commands that differ only in the <code>model</code> line. This lab is about model choice, so its runs use <code>--model sonnet</code>.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m4/lab4/.claude/commands | Out-Null; cd ~/bootcamp-labs/m4/lab4
+@'
+---
+description: One-line host status summary
+disable-model-invocation: true
+model: haiku
+---
+Summarize in one line of at most ten words: host $0 reports $1.
+'@ | Set-Content -Encoding utf8 .claude/commands/status-line.md
+@'
+---
+description: One-line host status summary, session model
+disable-model-invocation: true
+---
+Summarize in one line of at most ten words: host $0 reports $1.
+'@ | Set-Content -Encoding utf8 .claude/commands/status-line-plain.md</code></pre></li>
+        <li><p>Run both in a Sonnet session.</p>
+          <pre><code>claude -p "/status-line web-01 'disk 91 percent full'" --model sonnet --setting-sources project --strict-mcp-config --max-turns 1 --output-format json &gt; pinned.json
+claude -p "/status-line-plain web-01 'disk 91 percent full'" --model sonnet --setting-sources project --strict-mcp-config --max-turns 1 --output-format json &gt; plain.json</code></pre></li>
+        <li><p>Print the result, the models used and the cost of each.</p>
+          <pre><code>foreach ($f in 'pinned.json','plain.json') {
+  $r = Get-Content $f -Raw | ConvertFrom-Json
+  "$f result=[$($r.result)] cost=$([math]::Round($r.total_cost_usd,4))"
+  foreach ($m in $r.modelUsage.PSObject.Properties) { "  model=$($m.Name) out=$($m.Value.outputTokens) usd=$([math]::Round($m.Value.costUSD,4))" }
+}</code></pre>
+          <p class="expect"><b>Expected:</b> <code>pinned.json</code> shows one model, <code>claude-haiku-5-5</code>, at about $0.0015. <code>plain.json</code> shows <code>claude-sonnet-5-5</code> at about $0.028. Both give a one-line summary of the disk alert.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>What is the cost ratio between your two runs? Answer: about 15 to 20 times; most of it is the per-token price difference applied to the same cached prefix.</li>
+          <li>On a subscription, what does that ratio buy you? Answer: window share. <code>total_cost_usd</code> is an estimate at list prices and nothing is charged per token, but a cheaper model leaves more of the 5-hour and weekly limits for other work.</li>
+          <li>You type a follow-up prompt after <code>/status-line</code> in an interactive session. Which model answers it? Answer: the session model; the override lasts one turn.</li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m4-lab5" data-title="Turn one of your repeated prompts into a command with a done-test" data-minutes="30">
+      <p class="goal">Take a prompt you type more than once a week, make it a project command with a fixed output shape, and keep a script that proves it works.</p>
+      <ol class="steps">
+        <li><p>Work through the worked example first. It counts tickets with no owner in a CSV.</p>
+          <pre><code>New-Item -ItemType Directory -Force ~/bootcamp-labs/m4/lab5/.claude/commands | Out-Null; cd ~/bootcamp-labs/m4/lab5
+@'
+id,host,summary,owner
+101,web-01,disk 91 percent full,ana
+102,web-02,cert expires in 6 days,
+103,db-01,replication lag 40s,raj
+104,web-01,nginx 502 spike,
+105,dns-01,zone serial not bumped,lee
+'@ | Set-Content -Encoding utf8 tickets.csv
+@'
+---
+description: Count tickets with no owner in a CSV file
+argument-hint: &lt;csv-file&gt;
+disable-model-invocation: true
+allowed-tools: Read
+---
+Read the CSV file $0. Count the data rows whose owner column is empty.
+Reply with exactly one line in the form MISSING=&lt;count&gt; and nothing else.
+'@ | Set-Content -Encoding utf8 .claude/commands/unowned.md</code></pre></li>
+        <li><p>Write the done-test as a script and run it. It calls the command three times and passes only if every answer is exact.</p>
+          <pre data-file="done-test.ps1"><code>@'
+$pass = 0
+foreach ($i in 1..3) {
+  claude -p "/unowned tickets.csv" --model haiku --setting-sources project --strict-mcp-config --max-turns 3 --output-format json &gt; "run$i.json"
+  $r = Get-Content "run$i.json" -Raw | ConvertFrom-Json
+  if ($r.result.Trim() -eq 'MISSING=2') { $pass++ }
+  "run $i result=[$($r.result.Trim())] turns=$($r.num_turns) cost=$([math]::Round($r.total_cost_usd,4))"
+}
+"done-test: $pass of 3 passed"
+if ($pass -eq 3) { exit 0 } else { exit 1 }
+'@ | Set-Content -Encoding utf8 done-test.ps1
+powershell -NoProfile -File .\done-test.ps1; "EXIT $LASTEXITCODE"</code></pre>
+          <p class="expect"><b>Expected:</b> three lines with <code>result=[MISSING=2] turns=2</code>, each at about $0.0005 when the prefix is already cached (a first run on a cold cache was about $0.002), then <code>done-test: 3 of 3 passed</code> and <code>EXIT 0</code>.</p></li>
+        <li><p>Now your own. Pick a prompt from your shell history or chat log that you have typed at least three times. Write it to <code>.claude/commands/&lt;verb&gt;.md</code> in a real repository. Use named arguments for its parameters, state an exact output shape in the body, set <code>disable-model-invocation: true</code> if it changes anything, and grant only the tools it needs in <code>allowed-tools</code>.</p></li>
+        <li><p>Copy <code>done-test.ps1</code> next to it, change the call, the fixture and the expected answer, and run it until it passes 3 of 3. Then decide, using the table in the last lesson, whether the task should have been a script or a hook instead.</p>
+          <p class="expect"><b>Expected:</b> your done-test prints <code>3 of 3 passed</code> and exits 0.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Done-test:</b> a command file in a repository and a script beside it that exits 0 after three passing headless runs. Then answer:</p>
+        <ul>
+          <li>Does your done-test compare an exact string or a pattern? Answer: prefer exact. If the answer is free text, make the body end with a fixed line (<code>VERDICT=pass</code>) and test that line.</li>
+          <li>What does a run that passes 2 of 3 tell you? Answer: the prompt is ambiguous or the model too weak for it. Tighten the output shape before you reach for a bigger model.</li>
+          <li>Could the done-test itself do the job? Answer: if yes, as with counting empty CSV cells, replace the command with the script.</li>
+        </ul>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Built-in commands used in this module</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Command</th><th>Job</th><th>Headless on 2.1.322</th></tr>
+      <tr><td><code>/context [all]</code></td><td>Context breakdown by category and skill</td><td>Yes, 0 turns, 0 cost</td></tr>
+      <tr><td><code>/compact [instructions]</code></td><td>Summarize to free context</td><td>Listed</td></tr>
+      <tr><td><code>/clear [name]</code></td><td>Empty conversation</td><td>Listed</td></tr>
+      <tr><td><code>/usage</code> (<code>/cost</code>, <code>/stats</code>)</td><td>Cost, plan limits, activity</td><td>Yes, 0 turns, 0 cost</td></tr>
+      <tr><td><code>/model</code>, <code>/effort</code></td><td>Model and reasoning level</td><td>Listed</td></tr>
+      <tr><td><code>/mcp</code>, <code>/agents</code>, <code>/doctor</code></td><td>MCP servers, subagent reminder, setup checkup</td><td>Listed</td></tr>
+      <tr><td><code>/permissions</code>, <code>/hooks</code>, <code>/memory</code>, <code>/plugin</code></td><td>Rules, hooks, CLAUDE.md, plugins</td><td>Interactive only</td></tr>
+    </table></div>
+
+    <h3>Where commands live</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Path</th><th>Command</th></tr>
+      <tr><td><code>.claude/commands/name.md</code></td><td><code>/name</code></td></tr>
+      <tr><td><code>.claude/commands/sub/name.md</code></td><td><code>/sub:name</code></td></tr>
+      <tr><td><code>.claude/skills/name/SKILL.md</code></td><td><code>/name</code> (or frontmatter <code>name</code>); wins over a command file</td></tr>
+      <tr><td><code>~/.claude/skills/name/SKILL.md</code></td><td><code>/name</code>; wins over project</td></tr>
+      <tr><td><code>&lt;plugin&gt;/skills/name/SKILL.md</code></td><td><code>/&lt;plugin&gt;:name</code></td></tr>
+    </table></div>
+
+    <h3>Substitutions</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Placeholder</th><th>Value</th></tr>
+      <tr><td><code>$ARGUMENTS</code></td><td>Whole argument string as typed</td></tr>
+      <tr><td><code>$ARGUMENTS[N]</code>, <code>$N</code></td><td>Argument N, 0-based; literal if missing</td></tr>
+      <tr><td><code>$name</code></td><td>From <code>arguments: [a, b]</code>, by position; empty if missing</td></tr>
+      <tr><td><code>${CLAUDE_SESSION_ID}</code>, <code>${CLAUDE_EFFORT}</code></td><td>Session id, effort level</td></tr>
+      <tr><td><code>${CLAUDE_SKILL_DIR}</code>, <code>${CLAUDE_PROJECT_DIR}</code></td><td>Skill folder, project root</td></tr>
+      <tr><td><code>!`cmd`</code>, fenced block opened with three backticks and <code>!</code></td><td>Shell output, run once at invocation</td></tr>
+      <tr><td><code>\$1</code></td><td>A literal <code>$1</code></td></tr>
+    </table></div>
+
+    <h3>Frontmatter</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Effect</th></tr>
+      <tr><td><code>description</code></td><td>Shown in the menu and the skill listing</td></tr>
+      <tr><td><code>argument-hint</code></td><td>Autocomplete hint only</td></tr>
+      <tr><td><code>arguments</code></td><td>Names for positional arguments</td></tr>
+      <tr><td><code>disable-model-invocation</code></td><td>Only you can invoke; description leaves the prefix</td></tr>
+      <tr><td><code>user-invocable: false</code></td><td>Only Claude can invoke</td></tr>
+      <tr><td><code>allowed-tools</code></td><td>Pre-approved tools for the invoking turn; not a restriction</td></tr>
+      <tr><td><code>disallowed-tools</code></td><td>Tools removed while active</td></tr>
+      <tr><td><code>model</code>, <code>effort</code></td><td>Model and effort for the rest of the turn</td></tr>
+      <tr><td><code>context: fork</code>, <code>agent</code>, <code>background</code></td><td>Run as a subagent of that type; wait or not</td></tr>
+      <tr><td><code>shell</code></td><td><code>bash</code> (default) or <code>powershell</code> for injections</td></tr>
+      <tr><td><code>name</code>, <code>paths</code></td><td>Skill format only</td></tr>
+    </table></div>
+
+    <h3>Flags and settings</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Item</th><th>Use</th></tr>
+      <tr><td><code>claude -p "/name args"</code></td><td>Run a command headless</td></tr>
+      <tr><td><code>--output-format stream-json --verbose</code></td><td>First line is the init message with <code>slash_commands</code> and <code>skills</code></td></tr>
+      <tr><td><code>--setting-sources project</code>, <code>--strict-mcp-config</code></td><td>Keep personal settings and MCP servers out</td></tr>
+      <tr><td><code>--settings &lt;file&gt;</code></td><td>Extra settings for one run</td></tr>
+      <tr><td><code>--disable-slash-commands</code></td><td>No skills or commands in the session</td></tr>
+      <tr><td><code>disableSkillShellExecution</code></td><td>Replace injections with <code>[shell command execution disabled by policy]</code></td></tr>
+      <tr><td><code>modelUsage</code> in the JSON result</td><td>Which models actually ran, with tokens and <code>costUSD</code></td></tr>
+    </table></div>
+
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>The prompt contains a literal <code>$2</code></td><td>Numbered from 1; arguments are 0-based</td><td>Use <code>$0</code>, <code>$1</code>, or named arguments</td></tr>
+      <tr><td>A quoted argument arrives as one word</td><td>Double quotes inside a <code>claude -p</code> prompt in PowerShell 5.1</td><td>Use single quotes inside the prompt</td></tr>
+      <tr><td>Headless run ends <code>error_max_turns</code> with an empty result</td><td>The model called the Skill tool on the loaded command and used the only turn</td><td><code>--max-turns 3</code>, or <code>disable-model-invocation: true</code></td></tr>
+      <tr><td><code>/deploy</code> runs something other than the repository's file</td><td>A skill, or a personal skill, of the same name wins</td><td>Check the clash table; use a unique prefix or a plugin</td></tr>
+      <tr><td><code>Shell command failed for pattern</code></td><td>An injection exited non-zero</td><td>Fix the command, or append <code>|| true</code> for checks that exit 1</td></tr>
+      <tr><td><code>Shell command permission check failed</code></td><td>An injected command is not allowed by your rules</td><td>Add it to <code>allowed-tools</code> or an allow rule</td></tr>
+      <tr><td>Injection appears as <code>[shell command execution disabled by policy]</code></td><td><code>disableSkillShellExecution</code> is on, perhaps in managed settings</td><td>Move the data gathering into a script the command tells Claude to run</td></tr>
+      <tr><td>Frontmatter has no effect</td><td>Misspelled field, or <code>---</code> not on the first line</td><td>Match the field name exactly; start the file with <code>---</code></td></tr>
+      <tr><td><code>model: haiku</code> set but the bill did not drop</td><td>Auto mode or an <code>availableModels</code> allowlist kept the session model</td><td>Read <code>modelUsage</code> to confirm</td></tr>
+      <tr><td>Context grows after each command run</td><td>Large injected output stays in the conversation</td><td>Inject less (<code>--stat</code>, <code>-n</code>), or use <code>context: fork</code></td></tr>
+    </table></div>
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+      <li>Claude Code docs, "Extend Claude with skills": <a href="https://code.claude.com/docs/en/skills" target="_blank" rel="noopener">code.claude.com/docs/en/skills</a></li>
+      <li>Claude Code docs, "Commands": <a href="https://code.claude.com/docs/en/commands" target="_blank" rel="noopener">code.claude.com/docs/en/commands</a></li>
+      <li>Claude Code docs, "All settings": <a href="https://code.claude.com/docs/en/settings-reference" target="_blank" rel="noopener">code.claude.com/docs/en/settings-reference</a></li>
+      <li>Claude Code docs, "CLI reference": <a href="https://code.claude.com/docs/en/cli-reference" target="_blank" rel="noopener">code.claude.com/docs/en/cli-reference</a></li>
+      <li>Claude Code docs, "Environment variables": <a href="https://code.claude.com/docs/en/env-vars" target="_blank" rel="noopener">code.claude.com/docs/en/env-vars</a></li>
+      <li>Claude Code docs, "Run Claude Code programmatically": <a href="https://code.claude.com/docs/en/headless" target="_blank" rel="noopener">code.claude.com/docs/en/headless</a></li>
+      <li>Measured: every Expected line in the labs comes from a run on Claude Code 2.1.322 on 11 November 2026.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "Your team's /triage command works for you but a colleague says it ignores half the instructions. Both of you run it in the same repository. What do you check first?", "o": ["Whether the colleague's model is older", "Whether the command file has a BOM", "Whether the colleague has a personal skill named triage in their home folder", "Whether the colleague passed too many arguments"], "a": 2, "why": "Personal skills win over project ones with the same name, so a colleague's ~/.claude/skills/triage silently replaces the reviewed command on their machine only. Ask them to check the skill list or the init line's skills. A unique prefix or a plugin namespace prevents it."},
+    {"q": "A command body reads 'Restart service $1 on host $2' and is invoked as /restart nginx web-01. What does the model receive?", "o": ["'Restart service web-01 on host $2'", "'Restart service nginx on host web-01'", "An error, because $2 has no value", "'Restart service nginx web-01 on host'"], "a": 0, "why": "Indexed arguments are 0-based, so $1 is the second argument (web-01) and $2 has no argument and stays as literal text. Nothing fails; the model improvises from a wrong prompt. Use $0 and $1, or named arguments."},
+    {"q": "You want a /pr-context command that pastes the full diff of the current branch into the conversation before asking for a review. The branch often touches hundreds of files. What is the best design?", "o": ["Inject the full diff; the cache makes repeat reads cheap", "Ask the model to run git diff itself", "Use a fenced ! block so the diff is formatted", "Inject git diff --stat and let the command run with context: fork so the reading stays out of your session"], "a": 3, "why": "Injected output stays in the conversation and is re-sent every turn, so a huge diff is paid for all session long even at cache read rates. A forked command does its reading in a separate context and returns only a report, and a --stat injection gives it a map to start from."},
+    {"q": "A repository you just cloned contains .claude/commands/setup.md with allowed-tools: Bash(*) and several !`...` lines. You run claude -p \"/setup\" in it. What is true?", "o": ["Nothing runs until you accept the workspace trust dialog", "The injections run on your machine and the Bash grant applies for that turn, without a trust prompt", "allowed-tools is ignored in headless runs", "Only read-only injections run"], "a": 1, "why": "Workspace trust does not gate a project command's allowed-tools, even in a -p run in an untrusted folder, and injected commands run at render time under your permission rules. Review checked-in commands like scripts before running them. An organization can turn both off with allowManagedPermissionRulesOnly and disableSkillShellExecution in managed settings."},
+    {"q": "Every commit in a repository must have its staged PowerShell files pass a linter. Someone proposes a /precommit command that runs the linter and fixes issues. What do you recommend?", "o": ["Accept it, with disable-model-invocation: true", "Accept it, pinned to Haiku to keep cost down", "Make the check a hook or a CI step, and keep a command only for the judgment part such as explaining or fixing findings", "Put 'always run /precommit' in CLAUDE.md"], "a": 2, "why": "A gate that must hold every time cannot depend on someone typing a command or on the model following an instruction. Hooks and CI run on the event regardless. A command still has a place for the parts that need judgment, like explaining or fixing what the linter found."}
+  ]</script>
+</section>
+
+    <section class="view" id="view-share" hidden>
+      <div>
+        <div class="kicker">Export and share</div>
+        <h2>Hand this module on</h2>
+        <p class="lede">This module is a complete page on its own: briefing, labs, judgment calls and cheat sheet. It names no organization, host, account or internal tool, and every lab runs on plain Claude Code in a scratch folder.</p>
+      </div>
+      <div class="panel">
+        <h3>1. The link</h3>
+        <p>When you are reading this on claude.ai, use Share on this page. A viewer needs only the link. Each module has its own link, so you can send one module to one person. Their progress stays in their own browser and is never visible to you.</p>
+        <h3>2. One HTML file</h3>
+        <p>This module is also the single self-contained file <code>m04-commands.html</code>. It needs no server and no network: mail it, put it on a file share, or open it from a USB stick. Offline it falls back to system fonts; everything else is identical, diagrams and instruments included.</p>
+        <div class="row"><button class="btn" type="button" data-save="m04-commands.html">Save this module as a file</button><span class="note"></span></div>
+        <h3>3. The whole set</h3>
+        <p>All modules plus the catalogue page (<code>index.html</code>) form one folder of files that link to each other. Keep them together and the links between modules work offline. The same folder works behind any static web server with nothing to configure.</p>
+        <h3>Moving progress between copies</h3>
+        <p>The link, the file and a hosted copy each keep their own progress. Use the progress code on this module's overview to carry it across.</p>
+        
+      </div>
+    </section>
+    <div class="pager" id="pager"></div>
+  </main>
+</div>
+
+<script type="application/json" id="manifest">{"edition":"portable","kind":"file","self":"m4","catalogue":"index.html","modules":[{"id":"m1","title":"Context","sub":"What the model sees, and what it costs to show it","level":"foundation","prereq":[],"minutes":240,"lessons":6,"labs":5,"calls":5,"href":"m01-context.html"},{"id":"m2","title":"Tokens and their price","sub":"Input, output, cache write, cache read","level":"foundation","prereq":[],"minutes":220,"lessons":6,"labs":5,"calls":5,"href":"m02-tokens.html"},{"id":"m3","title":"Skills","sub":"Instructions that load only when needed","level":"practitioner","prereq":["m1"],"minutes":230,"lessons":6,"labs":5,"calls":5,"href":"m03-skills.html"},{"id":"m4","title":"Commands","sub":"Built-in and your own","level":"practitioner","prereq":["m1"],"minutes":245,"lessons":6,"labs":5,"calls":5,"href":"m04-commands.html"},{"id":"m5","title":"Hooks","sub":"Rules the model cannot talk its way past","level":"practitioner","prereq":[],"minutes":200,"lessons":6,"labs":5,"calls":5,"href":"m05-hooks.html"},{"id":"m6","title":"Plugins and marketplaces","sub":"Package it, publish it, control it","level":"advanced","prereq":["m3","m5"],"minutes":255,"lessons":5,"labs":5,"calls":5,"href":"m06-marketplaces.html"},{"id":"m7","title":"Headless runs and subagents","sub":"Claude Code as a program, and as a team","level":"practitioner","prereq":["m1","m2"],"minutes":220,"lessons":6,"labs":5,"calls":5,"href":"m07-agents.html"},{"id":"m8","title":"Orchestration","sub":"Briefs, handoffs, queues and the ways they fail","level":"advanced","prereq":["m7"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m08-orchestration.html"},{"id":"m9","title":"Telemetry","sub":"See tokens, cache and cost as they happen","level":"practitioner","prereq":["m2"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m09-telemetry.html"},{"id":"m10","title":"Cutting cost","sub":"The levers, and proof that each one worked","level":"advanced","prereq":["m2","m9"],"minutes":255,"lessons":6,"labs":5,"calls":5,"href":"m10-cost.html"},{"id":"m11","title":"Evals and A/B testing","sub":"Compare prompts, models and setups without fooling yourself","level":"advanced","prereq":["m2","m7"],"minutes":250,"lessons":6,"labs":5,"calls":5,"href":"m11-ab-testing.html"},{"id":"m12","title":"Session transcripts","sub":"The anatomy of the JSONL behind every session","level":"practitioner","prereq":["m1","m2"],"minutes":215,"lessons":6,"labs":5,"calls":5,"href":"m12-transcripts.html"},{"id":"m13","title":"Models and ways to teach them","sub":"Model tiers, retrieval, ingestion, fine-tuning and what you will actually use","level":"foundation","prereq":[],"minutes":230,"lessons":6,"labs":5,"calls":5,"href":"m13-models.html"},{"id":"m14","title":"Agent SDK and agent teams","sub":"Your own agent loop, and sessions that message each other","level":"advanced","prereq":["m7"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m14-agent-sdk.html"},{"id":"m15","title":"The wider ecosystem","sub":"Multiplexers, community skills and how to vet them","level":"practitioner","prereq":["m3"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m15-ecosystem.html"},{"id":"m16","title":"Security","sub":"Permissions, sandboxing, prompt injection and what you install","level":"practitioner","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m16-security.html"},{"id":"m17","title":"Daily workflow","sub":"Plan mode, rewind, worktrees, effort and git habits","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m17-workflow.html"},{"id":"m18","title":"Unattended and CI","sub":"GitHub Actions, review in the pipeline, scheduled runs","level":"advanced","prereq":["m7","m16"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m18-ci.html"},{"id":"m19","title":"Claude API building blocks","sub":"Tool use, structured outputs, vision, citations, batch, computer use","level":"practitioner","prereq":["m2"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m19-api.html"},{"id":"m20","title":"Writing for agents","sub":"Briefs, specs, handoffs and CLAUDE.md design","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m20-writing.html"},{"id":"m21","title":"Where Claude Code runs","sub":"Terminal, VS Code, JetBrains, desktop and web compared","level":"foundation","prereq":[],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m21-surfaces.html"},{"id":"m22","title":"Sensitive data","sub":"PHI, PII and secrets: what leaves the machine and how to stop it","level":"practitioner","prereq":["m5","m16"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m22-sensitive-data.html"},{"id":"m23","title":"MCP: anatomy of the protocol","sub":"JSON-RPC, capabilities, transports, auth, and a server you build","level":"practitioner","prereq":["m1"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m23-mcp.html"},{"id":"m24","title":"MCP server or CLI tool","sub":"The same job both ways, measured in tokens and turns","level":"advanced","prereq":["m2","m23"],"minutes":0,"lessons":0,"labs":0,"calls":0,"href":"m24-mcp-or-cli.html"}]}</script>
+<script>
+/* AI/LLM Bootcamp page script. One file for the catalogue page and every module page.
+   Reads the manifest (module list, links, edition) that the build embeds, then:
+   - theme: a "Theme:" dropdown at the top right, remembered per viewer; light or dark follows the host page or the system
+   - module page: part navigation on the hash (#overview, #l1.., #labs, #calls, #ref, #share), lab step ticks, lab done,
+     drill answers, progress code. State is kept per module in localStorage, so each module page stands alone.
+   - catalogue page: module cards with level, time and prerequisites, a level filter, and progress where it can be read. */
+(function () {
+  'use strict';
+  var PRISTINE = ''; try { PRISTINE = '<!doctype html>\n' + document.documentElement.outerHTML; } catch (e) {}
+  var root = document.documentElement;
+  var MAN = { modules: [] }; try { MAN = JSON.parse(document.getElementById('manifest').textContent); } catch (e) {}
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function put(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function modById(id) { return MAN.modules.filter(function (x) { return x.id === id; })[0]; }
+  function num(id) { return +id.slice(1); }
+  function mins(n) { n = +n || 0; return n >= 60 ? (Math.round(n / 6) / 10) + ' h' : n + ' min'; }
+  function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+  function link(a, href) { if (href) a.href = href; return a; }
+
+  /* ---- theme ---- */
+  var THEMES = [['a', 'Meter'], ['b', 'Workbench'], ['c', 'Blueprint'], ['d', 'Classroom'], ['e', 'Console']];
+  var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null, forced = null;
+  function mode() { var t = forced || root.getAttribute('data-theme'); root.setAttribute('data-mode', t === 'dark' || (t !== 'light' && mq && mq.matches) ? 'dark' : 'light'); }
+  var sel = document.getElementById('theme');
+  function pick(s, keep) { if (!/^[a-e]$/.test(s)) s = 'a'; root.setAttribute('data-style', s); if (sel) sel.value = s; if (keep) put('ai-bootcamp-theme', s); }
+  if (sel) {
+    THEMES.forEach(function (t) { var o = el('option', '', t[1]); o.value = t[0]; sel.appendChild(o); });
+    sel.addEventListener('change', function () { pick(sel.value, true); });
+  }
+  var qs = /[?&]style=([1-5a-e])/.exec(location.search), qm = /[?&]mode=(light|dark)/.exec(location.search);
+  if (qm) forced = qm[1];
+  pick(qs ? (/\d/.test(qs[1]) ? 'abcde'.charAt(+qs[1] - 1) : qs[1]) : (get('ai-bootcamp-theme') || 'a'), false);
+  mode();
+  if (mq && mq.addEventListener) mq.addEventListener('change', mode);
+  try { new MutationObserver(mode).observe(root, { attributes: true, attributeFilter: ['data-theme'] }); } catch (e) {}
+
+  /* ---- code blocks: caption with a file name or "shell", plus a copy button ---- */
+  [].forEach.call(document.querySelectorAll('pre'), function (pre) {
+    var box = el('div', 'codebox'), c = el('div', 'cap');
+    c.appendChild(el('span', '', pre.getAttribute('data-file') ? 'file  ' + pre.getAttribute('data-file') : (pre.getAttribute('data-cap') || 'shell')));
+    var b = el('button', 'copy', 'Copy'); b.type = 'button';
+    b.addEventListener('click', function () {
+      var t = pre.textContent;
+      function pickText() { try { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = 'Selected'; } catch (e) {} }
+      try { navigator.clipboard.writeText(t).then(function () { b.textContent = 'Copied'; }, pickText); } catch (e) { pickText(); }
+      setTimeout(function () { b.textContent = 'Copy'; }, 1600);
+    });
+    c.appendChild(b); pre.parentNode.insertBefore(box, pre); box.appendChild(c); box.appendChild(pre);
+  });
+
+  function levelChip(lv) { return el('span', 'chip lv-' + lv, lv); }
+  function readState(id) { var S = { labs: {}, steps: {}, drill: [], seen: {} }; try { var r = JSON.parse(get('ai-bootcamp-v2-' + id) || 'null'); if (r && typeof r === 'object') { ['labs', 'steps', 'seen'].forEach(function (k) { if (r[k] && typeof r[k] === 'object') S[k] = r[k]; }); if (r.drill && r.drill.length != null) S.drill = r.drill; } } catch (e) {} return S; }
+  function doneCount(S) { var n = 0, k; for (k in S.labs) if (S.labs[k]) n++; (S.drill || []).forEach(function (x) { if (x != null) n++; }); return n; }
+
+  var hn = document.getElementById('home-notes');
+  function homeNotes() { var off = get('ai-bootcamp-home') === '0'; if (hn) hn.checked = !off; document.body.classList.toggle('hide-home', off); }
+  if (hn) hn.addEventListener('change', function () { put('ai-bootcamp-home', hn.checked ? '1' : '0'); homeNotes(); });
+  homeNotes();
+
+  /* ---- save a copy of this page as one file ---- */
+  /* Inside a hosted viewer the page may be given a save function; it is asked for once, at load. Everywhere else
+     (a file on disk, a plain web server) it stays null and the button uses an ordinary download link. */
+  var DL = null;
+  try {
+    if (window.claude && typeof window.claude.use === 'function') {
+      Promise.resolve(window.claude.use('downloads')).then(function (d) { DL = d || null; }, function () { DL = null; });
+    }
+  } catch (e) { DL = null; }
+  [].forEach.call(document.querySelectorAll('[data-save]'), function (b) {
+    b.addEventListener('click', function () {
+      var msg = b.parentNode.querySelector('.note') || b;
+      var name = b.getAttribute('data-save');
+      function say(t) { if (msg !== b) msg.textContent = t; }
+      function viaLink() {
+        try {
+          var a = el('a'); a.href = URL.createObjectURL(new Blob([PRISTINE], { type: 'text/html' })); a.download = name;
+          document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+          say('Saved as ' + name + ' if your browser allows downloads from this page. If nothing happened, use the file from the export set instead.');
+        } catch (e) { say('This page cannot start a download here. Use the file from the export set instead.'); }
+      }
+      if (DL && typeof DL.save === 'function') {
+        DL.save({ filename: name, data: PRISTINE }).then(function () { say('Saved as ' + name + '.'); }, function (err) {
+          var code = err && err.code;
+          if (code === 'declined') return;
+          if (code === 'rate_limited') { say('A save is already waiting for your answer. Wait a moment, then try again.'); return; }
+          viaLink();
+        });
+      } else { viaLink(); }
+    });
+  });
+
+  /* ================= catalogue page ================= */
+  var cards = document.getElementById('cards');
+  if (cards) {
+    var filter = get('ai-bootcamp-level') || 'all', fbar = document.getElementById('levels');
+    var draw = function () {
+      cards.textContent = '';
+      MAN.modules.forEach(function (m) {
+        if (filter !== 'all' && m.level !== filter) return;
+        var c = link(el(m.href ? 'a' : 'div', 'mcard'), m.href);
+        var top = el('div', 'chips'); top.appendChild(el('span', 'n', 'MODULE ' + num(m.id))); top.appendChild(levelChip(m.level)); top.appendChild(el('span', 'chip', mins(m.minutes))); c.appendChild(top);
+        c.appendChild(el('span', 't', m.title)); c.appendChild(el('span', 's', m.sub));
+        c.appendChild(el('span', 'pre', (m.lessons || 0) + ' lessons · ' + (m.labs || 0) + ' labs · ' + (m.prereq.length ? 'after ' + m.prereq.map(function (p) { var x = modById(p); return x ? num(p) + ' ' + x.title : p; }).join(', ') : 'no prerequisites')));
+        if (!m.href) c.appendChild(el('span', 'pre', 'Published as its own page; ask for the link or use the file set.'));
+        var S = readState(m.id), d = doneCount(S), total = (m.labs || 0) + (m.calls || 0);
+        if (d && total) { var mt = el('div', 'meter'), sp = el('span'); sp.style.width = Math.min(100, Math.round(100 * d / total)) + '%'; mt.appendChild(sp); c.appendChild(mt); }
+        cards.appendChild(c);
+      });
+      if (fbar) [].forEach.call(fbar.children, function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-level') === filter ? 'true' : 'false'); });
+    };
+    if (fbar) ['all', 'foundation', 'practitioner', 'advanced'].forEach(function (lv) {
+      var b = el('button', 'btn', lv === 'all' ? 'All levels' : cap(lv)); b.type = 'button'; b.setAttribute('data-level', lv);
+      b.addEventListener('click', function () { filter = lv; put('ai-bootcamp-level', lv); draw(); }); fbar.appendChild(b);
+    });
+    draw();
+    [].forEach.call(document.querySelectorAll('[data-mod]'), function (a) { var m = modById(a.getAttribute('data-mod')); if (m) { if (!a.textContent) a.textContent = num(m.id) + '. ' + m.title; link(a, m.href); } });
+    var tot = document.getElementById('totals');
+    if (tot) { var tl = 0, tm = 0; MAN.modules.forEach(function (m) { tl += m.labs || 0; tm += +m.minutes || 0; }); tot.textContent = MAN.modules.length + ' modules, ' + tl + ' labs, about ' + Math.round(tm / 60) + ' hours in all'; }
+    return;
+  }
+
+  /* ================= module page ================= */
+  var m = document.querySelector('section.module'); if (!m) return;
+  var id = m.id, me = modById(id) || { prereq: [], level: m.getAttribute('data-level') || '', minutes: m.getAttribute('data-minutes') }, KEY = 'ai-bootcamp-v2-' + id;
+  var S = readState(id);
+  function save() { put(KEY, JSON.stringify(S)); }
+  var nav = document.getElementById('nav'), pager = document.getElementById('pager'), crumb = document.getElementById('crumb'), share = document.getElementById('view-share');
+  var overview = m.querySelector('.overview'), labsEl = m.querySelector('.labs'), ref = m.querySelector('.reference');
+  var lessons = [].slice.call(m.querySelectorAll('.lesson')), labEls = [].slice.call(m.querySelectorAll('article.lab'));
+  var drill = el('div', 'drill'); m.appendChild(drill);
+  var qsn = []; try { qsn = JSON.parse(m.querySelector('script.drill').textContent); } catch (e) {}
+
+  var parts = [];
+  if (overview) parts.push({ key: 'overview', n: '', title: 'Overview', el: overview });
+  lessons.forEach(function (l, i) { parts.push({ key: 'l' + (i + 1), n: String(i + 1), title: l.getAttribute('data-title') || 'Lesson ' + (i + 1), el: l, kind: 'Lesson ' + (i + 1) + ' of ' + lessons.length, min: l.getAttribute('data-minutes') }); });
+  if (labsEl && labEls.length) parts.push({ key: 'labs', n: 'L', title: 'Labs', el: labsEl, kind: labEls.length + ' labs' });
+  if (qsn.length) parts.push({ key: 'calls', n: '?', title: 'Calls', el: drill, kind: qsn.length + ' judgment calls' });
+  if (ref && ref.children.length) parts.push({ key: 'ref', n: '#', title: 'Cheat sheet', el: ref, kind: 'Reference' });
+
+  /* header: full on the overview, slim on the other parts */
+  var head = el('div', 'mhead'), kick = el('div', 'kicker'), h = el('h1', '', m.getAttribute('data-title')), meta = el('div', 'meta'), chips = el('div', 'chips');
+  head.appendChild(kick); head.appendChild(h); head.appendChild(meta); head.appendChild(chips); m.insertBefore(head, m.firstChild);
+  chips.appendChild(levelChip(me.level || 'practitioner')); chips.appendChild(el('span', 'chip', mins(m.getAttribute('data-minutes'))));
+  chips.appendChild(el('span', 'chip', lessons.length + ' lessons')); chips.appendChild(el('span', 'chip', labEls.length + ' labs'));
+  (me.prereq || []).forEach(function (p) { var x = modById(p); if (x) chips.appendChild(link(el(x.href ? 'a' : 'span', 'chip'), x.href)).textContent = 'after ' + num(p) + ' ' + x.title; });
+  if (!(me.prereq || []).length) chips.appendChild(el('span', 'chip', 'no prerequisites'));
+
+  /* overview extras: the parts of this module, what to take next, the progress code */
+  if (overview) {
+    var pl = el('div', 'panel'); pl.appendChild(el('div', 'kicker', 'In this module')); var ul = el('ol', 'partlist');
+    parts.forEach(function (p) { if (p.key === 'overview') return; var li = el('li'), a = el('a'); a.href = '#' + p.key; a.appendChild(el('span', 'n', p.n)); a.appendChild(el('span', '', p.title)); a.appendChild(el('span', 'm', p.min ? p.min + ' min' : (p.kind || ''))); li.appendChild(a); ul.appendChild(li); });
+    pl.appendChild(ul); overview.appendChild(pl);
+    var nexts = MAN.modules.filter(function (x) { return x.prereq.indexOf(id) >= 0; });
+    if (nexts.length || MAN.catalogue) {
+      var nx = el('div', 'panel'); nx.appendChild(el('div', 'kicker', 'Where to go from here')); var row = el('div', 'chips'); row.style.marginTop = '8px';
+      nexts.forEach(function (x) { var a = link(el(x.href ? 'a' : 'span', 'chip'), x.href); a.textContent = num(x.id) + ' ' + x.title; row.appendChild(a); });
+      if (MAN.catalogue) { var ca = link(el('a', 'chip'), MAN.catalogue); ca.textContent = 'All modules'; row.appendChild(ca); }
+      nx.appendChild(row); overview.appendChild(nx);
+    }
+    var pp = el('div', 'panel'); pp.appendChild(el('div', 'kicker', 'Progress code'));
+    var pd = el('p', 'muted', 'Progress for this module lives in this browser only. To move it to another device or another copy of this page, copy the code here and load it there.'); pd.style.marginTop = '6px'; pp.appendChild(pd);
+    var pr = el('div', 'row'), pc = el('input'); pc.type = 'text'; pc.setAttribute('aria-label', 'Progress code'); pc.style.cssText = 'flex:1;min-width:200px;font-family:var(--font-mono);font-size:0.8rem';
+    var b1 = el('button', 'btn', 'Copy mine'), b2 = el('button', 'btn', 'Load'), pm = el('p', 'note'); b1.type = b2.type = 'button'; pm.style.marginBottom = '0';
+    pr.appendChild(pc); pr.appendChild(b1); pr.appendChild(b2); pp.appendChild(pr); pp.appendChild(pm); overview.appendChild(pp);
+    b1.addEventListener('click', function () {
+      try { pc.value = 'AIB2.' + id + '.' + btoa(unescape(encodeURIComponent(JSON.stringify(S)))); } catch (e) { pm.textContent = 'Could not build the code.'; return; }
+      pc.select(); try { navigator.clipboard.writeText(pc.value).then(function () { pm.textContent = 'Copied.'; }, function () { pm.textContent = 'Selected. Copy it with Ctrl+C.'; }); } catch (e) { pm.textContent = 'Selected. Copy it with Ctrl+C.'; }
+    });
+    b2.addEventListener('click', function () {
+      try { var v = pc.value.trim(), pre = 'AIB2.' + id + '.'; if (v.indexOf(pre) !== 0) throw 0; var o = JSON.parse(decodeURIComponent(escape(atob(v.slice(pre.length))))); if (!o || typeof o !== 'object') throw 0; put(KEY, JSON.stringify(o)); location.reload(); }
+      catch (e) { pm.textContent = 'That is not a progress code for this module. It starts with AIB2.' + id + '.'; }
+    });
+  }
+
+  /* labs */
+  labEls.forEach(function (lab, li) {
+    var lh = el('div', 'labhead'); lh.appendChild(el('h3', '', 'Lab ' + (li + 1) + '  ' + lab.getAttribute('data-title'))); lh.appendChild(el('span', 'meta', lab.getAttribute('data-minutes') + ' min')); lab.insertBefore(lh, lab.firstChild);
+    [].forEach.call(lab.querySelectorAll('ol.steps > li'), function (step, si) {
+      var c = el('input', 'tick'); c.type = 'checkbox'; c.setAttribute('aria-label', 'Step ' + (si + 1) + ' done'); c.checked = (S.steps[lab.id] || []).indexOf(si) >= 0;
+      c.addEventListener('change', function () { var a = (S.steps[lab.id] || []).filter(function (x) { return x !== si; }); if (c.checked) a.push(si); S.steps[lab.id] = a; save(); });
+      step.insertBefore(c, step.firstChild);
+    });
+    var foot = el('div', 'labfoot'), btn = el('button', 'btn'); btn.type = 'button';
+    function paint() { var d = !!S.labs[lab.id]; lab.classList.toggle('done', d); btn.textContent = d ? 'Done. Undo' : 'Mark lab done'; }
+    btn.addEventListener('click', function () { if (S.labs[lab.id]) delete S.labs[lab.id]; else S.labs[lab.id] = 1; save(); paint(); progress(); });
+    foot.appendChild(btn); lab.appendChild(foot); paint();
+  });
+
+  /* calls */
+  qsn.forEach(function (q, qi) {
+    var box = el('div', 'q'); box.appendChild(el('div', 'qt', (qi + 1) + '. ' + q.q));
+    var opts = el('div', 'opts'), why = el('div', 'why', q.why); why.hidden = true;
+    var btns = q.o.map(function (o, oi) {
+      var b = el('button', 'opt'); b.type = 'button'; b.appendChild(el('span', 'k', 'ABCD'.charAt(oi))); b.appendChild(el('span', '', o));
+      b.addEventListener('click', function () { S.drill[qi] = oi; save(); mark(); progress(); }); opts.appendChild(b); return b;
+    });
+    function mark() { var a = S.drill[qi]; btns.forEach(function (b, oi) { b.classList.toggle('right', a != null && oi === q.a); b.classList.toggle('wrong', a === oi && oi !== q.a); }); why.hidden = a == null; }
+    box.appendChild(opts); box.appendChild(why); drill.appendChild(box); mark();
+  });
+  if (qsn.length) { var reset = el('button', 'btn', 'Clear my answers'); reset.type = 'button'; reset.style.justifySelf = 'start'; reset.addEventListener('click', function () { S.drill = []; save(); location.reload(); }); drill.appendChild(reset); }
+
+  /* navigation */
+  parts.forEach(function (p) {
+    var a = el('a', 'navlink'); a.href = '#' + p.key; a.appendChild(el('span', 'n', p.n || '·')); a.appendChild(el('span', '', p.title)); a.appendChild(el('span', 'p')); nav.appendChild(a); p.nav = a;
+  });
+  var shareNav = null;
+  if (share) { shareNav = el('a', 'navlink'); shareNav.href = '#share'; shareNav.appendChild(el('span', 'n', '\u2197')); shareNav.appendChild(el('span', '', 'Export and share')); shareNav.appendChild(el('span', 'p')); nav.appendChild(shareNav); }
+  function progress() {
+    parts.forEach(function (p) {
+      var t = p.nav.querySelector('.p'), txt = '', full = false;
+      if (p.key === 'labs') { var d = labEls.filter(function (l) { return S.labs[l.id]; }).length; txt = d ? d + '/' + labEls.length : ''; full = d === labEls.length; }
+      else if (p.key === 'calls') { var a = S.drill.filter(function (x) { return x != null; }).length; txt = a ? a + '/' + qsn.length : ''; full = a === qsn.length; }
+      else if (S.seen[p.key]) { txt = '✓'; full = true; }
+      t.textContent = txt; t.classList.toggle('full', full);
+    });
+  }
+  function route() {
+    var key = (location.hash || '#overview').slice(1), isShare = key === 'share' && share;
+    var cur = parts.filter(function (p) { return p.key === key; })[0]; if (!cur && !isShare) cur = parts[0];
+    m.hidden = !!isShare; if (share) share.hidden = !isShare;
+    if (shareNav) shareNav.classList.toggle('active', !!isShare);
+    parts.forEach(function (p) { p.el.hidden = p !== cur; p.nav.classList.toggle('active', p === cur); });
+    if (cur) {
+      var first = cur.key === 'overview';
+      kick.textContent = 'Module ' + num(id) + (first ? ' · ' + cap(me.level || '') : ' · ' + m.getAttribute('data-title'));
+      h.textContent = first ? m.getAttribute('data-title') : cur.title;
+      meta.textContent = first ? m.getAttribute('data-sub') : (cur.kind || '') + (cur.min ? ' · about ' + cur.min + ' min' : '');
+      chips.hidden = !first;
+      if (/^l\d+$/.test(cur.key) && !S.seen[cur.key]) { S.seen[cur.key] = 1; save(); }
+      if (crumb) crumb.textContent = 'Module ' + num(id) + ' · ' + m.getAttribute('data-title') + (first ? '' : ' · ' + cur.title);
+      var i = parts.indexOf(cur); pager.textContent = '';
+      if (i > 0) { var pv = el('a', 'btn', '← ' + parts[i - 1].title); pv.href = '#' + parts[i - 1].key; pager.appendChild(pv); }
+      if (i < parts.length - 1) { var nx2 = el('a', 'btn primary next', parts[i + 1].title + ' →'); nx2.href = '#' + parts[i + 1].key; pager.appendChild(nx2); }
+      try { cur.nav.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {}
+    } else { pager.textContent = ''; if (crumb) crumb.textContent = 'Export and share'; }
+    progress(); window.scrollTo(0, 0);
+  }
+  route(); window.addEventListener('hashchange', route);
+})();
+
+</script>
+<script>
+
+</script>
+
+</body>
+</html>

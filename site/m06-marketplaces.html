@@ -1,0 +1,829 @@
+<section class="module" id="m6" data-title="Plugins and marketplaces" data-sub="Package it, publish it, control it" data-level="advanced" data-prereq="m3,m5" data-minutes="255">
+  <div class="overview">
+    <p class="lede">A plugin is a folder that carries skills, hooks, agents and MCP servers as one installable, versioned unit; a marketplace is a JSON catalogue in a git repository that tells Claude Code where to fetch each plugin. Together they are how a team ships its Claude Code setup the way it ships any other tool: reviewed, pinned to a commit, enabled per repository, and removable. They are also a supply chain, because whatever a plugin runs, it runs as you.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Turn a skill and a hook you already have into a plugin, validate it, load it with <code>--plugin-dir</code> and prove its skill is listed as <code>/plugin-name:skill</code>.</li>
+      <li>Build a marketplace from scratch, add it, install from it at project scope, update, uninstall and remove it, and say what each step wrote and where.</li>
+      <li>Pin a catalogue entry to a full commit sha, publish a new version, and predict whether <code>claude plugin update</code> moves.</li>
+      <li>Make a repository bring its own plugins through <code>extraKnownMarketplaces</code> and <code>enabledPlugins</code>, and let one teammate opt out locally.</li>
+      <li>Say which controls only managed settings can enforce (<code>strictKnownMarketplaces</code>, <code>blockedMarketplaces</code>, <code>allowManagedHooksOnly</code>) and show that the same keys in project settings do nothing.</li>
+      <li>Read a plugin's always-on context cost with <code>claude plugin details</code> and confirm it against a real run.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key). The labs were run on 2.1.322.</li>
+      <li>Windows PowerShell 5.1 or later, and <code>git</code> on the PATH (labs 3 and 4).</li>
+      <li>About $0.02 of API usage for all labs, or a very small share of a plan's 5-hour window. Most steps are <code>claude plugin …</code> commands, which do not call the model.</li>
+      <li>One skill or hook of your own for the last lab.</li>
+    </ul>
+    <div class="recap"><h3>If you skipped the prerequisites</h3><p>This module leans on Skills and Hooks. A skill is a folder with a <code>SKILL.md</code> file: YAML frontmatter (<code>name</code>, <code>description</code> and optional fields such as <code>allowed-tools</code> or <code>disable-model-invocation</code>) followed by instructions. The skill's name and description sit in the context of every session so Claude knows the skill exists; the body loads only when the skill runs, and every skill can be called as <code>/name</code>. A hook is a command Claude Code runs at a lifecycle event such as <code>SessionStart</code>, <code>PreToolUse</code> or <code>PostToolUse</code>. Hooks are configured as <code>hooks</code> &gt; event &gt; a list of <code>{matcher, hooks:[{type, command, …}]}</code> objects; on a blockable event, exit code 2 blocks the action and stderr becomes the reason. Hooks are ordinary processes: they run with your user rights, they cost no model tokens, and they run whether or not the model agrees. Hooks from every source (user, project, local, managed, plugin) merge, and matching hooks run in parallel.</p></div>
+  </div>
+
+  <div class="lesson" id="m6-l1" data-title="What a plugin is" data-minutes="20">
+    <p>A plugin is a directory that Claude Code loads as one unit. Inside it, each kind of component sits in a fixed place under the plugin root, and an optional manifest at <code>.claude-plugin/plugin.json</code> gives the plugin its name. Nothing in the folder is new: the skills, hooks and agents are the same files you already write under <code>.claude/</code>. What the plugin adds is packaging. It has a name, a version, an install and uninstall path, a namespace for its skills, and a place in a catalogue that other people can install from.</p>
+
+    <h3>The layout</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Location (from the plugin root)</th><th>What it holds</th><th>Notes</th></tr>
+      <tr><td><code>.claude-plugin/plugin.json</code></td><td>The manifest</td><td>Optional. Only <code>plugin.json</code> goes in this folder; components saved there do not load.</td></tr>
+      <tr><td><code>skills/&lt;name&gt;/SKILL.md</code></td><td>Skills</td><td>Same format as standalone skills.</td></tr>
+      <tr><td><code>commands/*.md</code></td><td>Commands</td><td>The older flat form of skills. Use <code>skills/</code> for new work.</td></tr>
+      <tr><td><code>agents/*.md</code></td><td>Subagent definitions</td><td>Named <code>plugin-name:agent</code> once loaded.</td></tr>
+      <tr><td><code>hooks/hooks.json</code></td><td>Hooks</td><td>A top-level <code>"hooks"</code> key with the same shape as <code>hooks</code> in a settings file.</td></tr>
+      <tr><td><code>.mcp.json</code></td><td>MCP servers</td><td>Started for every session in which the plugin is enabled.</td></tr>
+      <tr><td><code>bin/</code></td><td>Executables</td><td>Put on the PATH of the Bash tool's shell while the plugin is enabled, after your own PATH entries, so a plugin cannot shadow <code>git</code>.</td></tr>
+      <tr><td><code>settings.json</code></td><td>Default settings</td><td>Only two keys take effect, <code>agent</code> and <code>subagentStatusLine</code>; every other key is dropped.</td></tr>
+    </table></div>
+
+    <h3>The manifest</h3>
+    <p>Only <code>name</code> is required. It must be kebab-case, and it becomes the prefix on every skill and agent the plugin provides. <code>claude plugin validate</code> warns when <code>version</code>, <code>description</code> or <code>author</code> is missing; it does not fail on them.</p>
+    <pre data-file="acme-tools/.claude-plugin/plugin.json"><code>{
+  "name": "acme-tools",
+  "description": "Team helpers: a standup skill and a session log hook",
+  "version": "1.0.0",
+  "author": { "name": "Acme Platform Team" }
+}</code></pre>
+    <p><code>version</code> matters more than it looks. When it is set, it is the version Claude Code uses to decide whether an update exists. Lesson 3 covers what that means for your release flow.</p>
+
+    <h3>Namespacing</h3>
+    <p>A skill called <code>standup</code> inside the plugin <code>acme-tools</code> is invoked as <code>/acme-tools:standup</code>. Two plugins can therefore each ship a <code>review</code> skill without colliding, and a plugin copy of a skill can sit next to your original <code>.claude/skills/standup</code> without either hiding the other. Hooks have no namespace. If the same hook is in your settings file and in a plugin, it runs twice.</p>
+
+    <h3>Two path variables</h3>
+    <p>You do not know where a plugin will be installed, so it refers to its own files through variables. Both are substituted in skill, agent and command text, in hook commands and in MCP server configuration, and both are exported to hook and MCP processes.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Variable</th><th>Points at</th><th>Use it for</th></tr>
+      <tr><td><code>${CLAUDE_PLUGIN_ROOT}</code></td><td>The plugin's install directory. For an installed plugin that is a per-version cache folder, so it changes on every update.</td><td>Reading the plugin's own scripts and files. Never write state here.</td></tr>
+      <tr><td><code>${CLAUDE_PLUGIN_DATA}</code></td><td><code>~/.claude/plugins/data/&lt;id&gt;/</code>, where <code>&lt;id&gt;</code> is the plugin id with every character other than letters, digits, <code>_</code> and <code>-</code> replaced by <code>-</code></td><td>Caches, virtual environments, <code>node_modules</code>, anything that must survive an update.</td></tr>
+    </table></div>
+    <p>In lab 1 a <code>SessionStart</code> hook in a plugin loaded with <code>--plugin-dir</code> logged both values:</p>
+    <pre data-cap="output"><code>session start; root=C:\Users\you\bootcamp-labs\m6\lab1\acme-tools; data=C:\Users\you\.claude\plugins\data\acme-tools-inline</code></pre>
+    <p>The root is the source folder itself, because <code>--plugin-dir</code> loads a plugin in place. The data id is <code>acme-tools-inline</code>: <code>inline</code> is the name Claude Code uses in place of a marketplace for session-only plugins. The data folder existed after the run even though the hook only read the variable.</p>
+
+    <h3>When a plugin is the wrong tool</h3>
+    <p>Everything in a plugin also works on its own. A skill in <code>~/.claude/skills/</code> serves every project on your machine; a hook in <code>.claude/settings.json</code> serves everyone in one repository. Keep that standalone setup while it serves one project or one person. Make a plugin when you want to hand the same setup to several repositories or several people, install and remove it as a unit, and ship versioned releases.</p>
+    <aside class="rule">A plugin is packaging, not a new capability: make one when you need a name, a version and an uninstall, not before.</aside>
+    <aside class="trap">An enabled plugin is part of every session, not only the sessions that use it. Its skill and agent descriptions are in context on every turn, its MCP servers start, and its hooks fire at their events.</aside>
+  </div>
+
+  <div class="lesson" id="m6-l2" data-title="Build, validate and load a plugin" data-minutes="25">
+    <p>The shortest path to a working plugin is to copy parts you already have into the layout, validate it, and load it for one session with <code>--plugin-dir</code>. No marketplace and no install are involved until you want to share it.</p>
+
+    <h3>From parts you already have</h3>
+    <p>Copy each <code>.claude/</code> folder you use to the plugin root, then move the <code>hooks</code> object from your settings file into <code>hooks/hooks.json</code> under a top-level <code>"hooks"</code> key. The shape is identical. In lab 1 the plugin has one skill and one hook:</p>
+    <pre data-file="acme-tools/hooks/hooks.json"><code>{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "command": "Add-Content -Path \"$env:CLAUDE_PROJECT_DIR/plugin-hook.log\" -Value \"session start; root=$env:CLAUDE_PLUGIN_ROOT; data=$env:CLAUDE_PLUGIN_DATA\""
+          }
+        ]
+      }
+    ]
+  }
+}</code></pre>
+    <p>While the originals still sit in <code>.claude/</code>, skills and agents do not collide (the plugin copies carry the prefix), but a hook that is in both places runs twice. Delete the originals once the plugin works.</p>
+
+    <h3>Or scaffold one: <code>claude plugin init</code></h3>
+    <p><code>claude plugin init &lt;name&gt;</code> (alias <code>new</code>) writes a starter plugin into your personal skills directory, <code>~/.claude/skills/&lt;name&gt;/</code>, with a manifest and a root <code>SKILL.md</code>. <code>--with skills</code> also creates <code>skills/example/</code>; other <code>--with</code> values are <code>agents</code>, <code>hooks</code>, <code>mcp</code>, <code>lsp</code>, <code>output-style</code> and <code>channel</code>. A folder in a skills directory that contains <code>.claude-plugin/plugin.json</code> is a skills-directory plugin: it loads in every session with no install step, under the id <code>&lt;name&gt;@skills-dir</code>. On 2.1.322 the command printed:</p>
+    <pre data-cap="output"><code>✔ Created plugin "acme-scratch" at C:\Users\you\.claude\skills\acme-scratch
+  It will auto-load next session as acme-scratch@skills-dir. Run /reload-plugins to load it now.
+  Disable: claude plugin disable acme-scratch@skills-dir. Remove: delete the directory.</code></pre>
+    <p>The root <code>SKILL.md</code> of a skills-directory plugin is invoked as <code>/acme-scratch</code>, not <code>/acme-scratch:acme-scratch</code>; skills under its <code>skills/</code> get the prefix. Because <code>init</code> writes into your user profile, the labs build plugins by hand inside the lab folder instead.</p>
+
+    <h3>Validate</h3>
+    <p><code>claude plugin validate &lt;path&gt;</code> checks the manifest, <code>hooks/hooks.json</code> and the frontmatter of every skill, agent and command. It exits 0 on <code>✔ Validation passed</code> and 1 on failure; <code>--strict</code> turns warnings into errors for CI, and <code>--json</code> prints a machine-readable report with the same exit codes. On 2.1.322 it also prints "plugin directory checks" (missing <code>README.md</code>, missing <code>LICENSE</code> or <code>license</code>, no icon). Those are what Anthropic's public directory would refuse; they do not change the result unless you add <code>--profile directory</code>.</p>
+    <aside class="trap">Windows PowerShell 5.1 writes a byte-order mark with <code>Set-Content -Encoding utf8</code>. A <code>hooks.json</code> with a BOM fails validation (<code>Invalid JSON syntax: JSON Parse error: Unrecognized token</code>, and the directory check names it: <code>UTF-8 BOM at start of file</code>), and at runtime it breaks the whole plugin load: <code>claude plugin list</code> showed <code>Status: ✘ loaded with errors</code> and <code>Hook load failed</code>. The labs write files with <code>[IO.File]::WriteAllText</code>, which writes UTF-8 without a BOM.</aside>
+
+    <h3>Load it for one session: <code>--plugin-dir</code></h3>
+    <p><code>claude --plugin-dir ./acme-tools</code> loads the folder for that session only, in place, without installing anything. Repeat the flag for several plugins, or pass a folder of plugin folders. The flag also works in front of plugin subcommands, which is how you inspect a plugin without a session:</p>
+    <pre><code>claude --plugin-dir ./acme-tools plugin details acme-tools
+claude --plugin-dir ./acme-tools plugin list</code></pre>
+    <pre data-cap="output"><code>Session-only plugins (--plugin-dir / --plugin-url):
+
+  ❯ acme-tools@inline
+    Version: 1.0.0
+    Path: C:\Users\you\bootcamp-labs\m6\lab1\acme-tools
+    Status: ✔ loaded</code></pre>
+    <p>To prove the skill is registered under its namespaced name, read the first line of a stream-json run, the <code>system</code>/<code>init</code> message. Its <code>skills</code> and <code>slash_commands</code> arrays both contained <code>acme-tools:standup</code>, and its <code>plugins</code> array listed <code>{"name":"acme-tools","source":"acme-tools@inline","version":"1.0.0"}</code>. Invoking it headless works the same as typing it:</p>
+    <pre><code>claude -p "/acme-tools:standup fixed the backup job, next is the DNS cutover, waiting on the change window" --model haiku --setting-sources project --strict-mcp-config --plugin-dir ./acme-tools --max-turns 2</code></pre>
+    <pre data-cap="output"><code>Done: fixed the backup job
+Next: DNS cutover
+Blocked: waiting on the change window</code></pre>
+    <p>In a live session, run <code>/reload-plugins</code> after you edit the plugin's files; a <code>--plugin-dir</code> plugin picks up the change without a restart. Common load failures: <code>--plugin-dir</code> pointed at a marketplace root instead of a plugin folder (nothing loads, no error), or <code>skills/</code> placed inside <code>.claude-plugin/</code> (the plugin loads with no skills).</p>
+    <aside class="rule">Validate, then <code>plugin details</code> with <code>--plugin-dir</code>, then one headless run that reads the init line: three checks, no install.</aside>
+  </div>
+
+  <div class="lesson" id="m6-l3" data-title="Marketplaces: catalogue, sources, pins and versions" data-minutes="25">
+    <p>A marketplace is a directory or repository with a <code>.claude-plugin/marketplace.json</code> file that lists plugins and says where to fetch each one. It is a catalogue, not a store: nothing is hosted, and each entry can point at a folder next to the catalogue or at a different repository. The directory that contains <code>.claude-plugin/</code> is the marketplace root, and relative sources resolve from it.</p>
+
+    <h3>The file</h3>
+    <pre data-file="acme-marketplace/.claude-plugin/marketplace.json"><code>{
+  "name": "acme-marketplace",
+  "description": "Internal Claude Code plugins for the Acme platform team",
+  "owner": { "name": "Acme Platform Team" },
+  "plugins": [
+    {
+      "name": "acme-tools",
+      "source": "./plugins/acme-tools",
+      "description": "Standup skill and a session log hook",
+      "category": "productivity"
+    }
+  ]
+}</code></pre>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Level</th><th>Required</th><th>Meaning</th></tr>
+      <tr><td><code>name</code></td><td>top</td><td>yes</td><td>Marketplace id, typed after <code>@</code> on install. Letters, digits, <code>.</code>, <code>_</code>, <code>-</code>. Official Anthropic names, look-alikes and a few others are reserved.</td></tr>
+      <tr><td><code>owner.name</code></td><td>top</td><td>yes</td><td>Maintainer. <code>email</code> and <code>url</code> optional.</td></tr>
+      <tr><td><code>plugins</code></td><td>top</td><td>yes</td><td>The entries. Each is validated on its own, so one bad entry does not fail the catalogue.</td></tr>
+      <tr><td><code>name</code></td><td>entry</td><td>yes</td><td>The install id, <code>&lt;entry-name&gt;@&lt;marketplace&gt;</code>, and the key written to <code>enabledPlugins</code>. Keep it equal to the manifest <code>name</code>.</td></tr>
+      <tr><td><code>source</code></td><td>entry</td><td>yes</td><td>Where to fetch the plugin (table below).</td></tr>
+      <tr><td><code>description</code>, <code>version</code>, <code>category</code>, <code>tags</code></td><td>entry</td><td>no</td><td>Display and version. A <code>version</code> in <code>plugin.json</code> wins over the entry's.</td></tr>
+      <tr><td><code>strict</code></td><td>entry</td><td>no</td><td>Default <code>true</code>: <code>plugin.json</code> is the authority and entry component fields are appended to it.</td></tr>
+    </table></div>
+    <p>Unknown keys are ignored at load time and reported as warnings by <code>claude plugin validate ./acme-marketplace</code>, so a typo loads silently unless you validate.</p>
+
+    <h3>Source types</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Type</th><th>Fields</th><th>Use it when</th></tr>
+      <tr><td>Relative path</td><td>the string, starting <code>./</code></td><td>The plugin lives in the catalogue repository. No <code>..</code> allowed.</td></tr>
+      <tr><td><code>github</code></td><td><code>repo</code>, <code>ref</code>, <code>sha</code></td><td>The plugin is its own GitHub repository (<code>owner/repo</code>).</td></tr>
+      <tr><td><code>url</code></td><td><code>url</code>, <code>ref</code>, <code>sha</code></td><td>Any git repository by URL: <code>https://</code>, <code>http://</code>, <code>file://</code> or <code>git@</code>.</td></tr>
+      <tr><td><code>git-subdir</code></td><td><code>url</code>, <code>path</code>, <code>ref</code>, <code>sha</code></td><td>One folder of a monorepo, fetched with a sparse checkout.</td></tr>
+      <tr><td><code>npm</code></td><td><code>package</code>, <code>version</code>, <code>registry</code></td><td>An npm package, unpacked without running install scripts.</td></tr>
+      <tr><td><code>archive</code></td><td><code>url</code>, <code>sha256</code></td><td>A zip over HTTPS. The <code>sha256</code> pin makes Claude Code refuse a changed download.</td></tr>
+      <tr><td><code>command</code></td><td><code>command</code>, <code>timeout</code>, <code>mode</code></td><td>A directory produced by running a command on the user's machine. Each user must accept the exact command.</td></tr>
+    </table></div>
+
+    <h3>Pinning: <code>ref</code> and <code>sha</code></h3>
+    <p>For the three git sources, <code>ref</code> is a branch or tag (default: the repository's default branch) and <code>sha</code> is a full 40-character lowercase commit. When both are set, Claude Code checks out <code>sha</code>. A <code>ref</code> is a moving label that whoever controls the repository can repoint; a <code>sha</code> is the exact tree you reviewed.</p>
+    <pre data-file="catalogue entry"><code>{
+  "name": "acme-tools",
+  "source": {
+    "source": "url",
+    "url": "https://git.example.com/acme/acme-tools.git",
+    "sha": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+  }
+}</code></pre>
+
+    <h3>How Claude Code decides an update exists</h3>
+    <p>Every installed plugin has a computed version, and <code>claude plugin update</code> only replaces the cached copy when that version changes. The order is: <code>version</code> in <code>plugin.json</code>, then <code>version</code> in the catalogue entry, then a value from the source (a 12-character commit sha for git sources; <code>unknown</code> for a local folder outside git and for npm). The version also names the cache folder, <code>~/.claude/plugins/cache/&lt;marketplace&gt;/&lt;plugin&gt;/&lt;version&gt;/</code>.</p>
+    <figure class="diagram">
+<pre class="mermaid">flowchart TD
+  a["plugin.json version set?"] -- yes --> v1["Use that version"]:::good
+  a -- no --> b["Catalogue entry version set?"]
+  b -- yes --> v2["Use that version"]:::good
+  b -- no --> v3["Use value from source"]:::hot
+  v1 --> c["Version equals cached one?"]
+  v2 --> c
+  v3 --> c
+  c -- yes --> d["Update: already latest"]:::info
+  c -- no --> e["Update: new cache folder"]:::good
+</pre>
+      <figcaption>The first version found in the order decides, and the update replaces the cached copy only when that version differs.</figcaption>
+    </figure>
+    <p>Lab 3 runs the cases against a local repository standing in for a git host:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Catalogue entry</th><th>Upstream change</th><th>Result of <code>claude plugin update</code></th></tr>
+      <tr><td><code>sha</code> = commit of 1.0.0</td><td>1.1.0 committed, pin not moved</td><td><code>✔ acme-tools is already at the latest version (1.0.0).</code></td></tr>
+      <tr><td><code>sha</code> moved to the 1.1.0 commit</td><td>catalogue commit pulled</td><td><code>✔ Plugin "acme-tools" updated from 1.0.0 to 1.1.0 …</code>; cache now holds <code>1.0.0</code> and <code>1.1.0</code></td></tr>
+      <tr><td><code>ref: "main"</code></td><td>a new commit, <code>version</code> still 1.1.0</td><td><code>✔ acme-tools is already at the latest version (1.1.0).</code></td></tr>
+    </table></div>
+    <p>The third row is the trap in the version rule. A pinned <code>"version"</code> string holds every user on their cached copy however many commits you push. Either bump <code>version</code> on every release, or leave it out of both <code>plugin.json</code> and the entry so the commit sha becomes the version. Do not set it in both: <code>plugin.json</code> wins and <code>validate</code> reports the mismatch.</p>
+    <p>A relative-path plugin in a marketplace you added from a local folder is the exception: it is read in place, and your edits show up at the next session start or <code>/reload-plugins</code> whatever the version says. That is convenient while you develop the catalogue and surprising if you expected versioned releases.</p>
+
+    <h3>Getting updates to users</h3>
+    <p>Auto-update is on by default only for Anthropic's official marketplaces; for yours it is off until a user turns it on in <code>/plugin</code> or an administrator sets <code>"autoUpdate": true</code> on the <code>extraKnownMarketplaces</code> entry in managed settings. Without it, users run <code>claude plugin marketplace update &lt;name&gt;</code> to refresh the catalogue and <code>claude plugin update &lt;plugin&gt;@&lt;name&gt;</code> to move the plugin. An update prints <code>Restart to apply changes</code>; a running session keeps the version it loaded until <code>/reload-plugins</code> or a restart. Old version folders get an <code>.orphaned_at</code> marker and are swept 14 days later.</p>
+    <p><code>claude plugin tag &lt;path&gt;</code> creates a <code>&lt;name&gt;--v&lt;version&gt;</code> git tag after checking that <code>plugin.json</code> and any enclosing catalogue entry agree; <code>--dry-run</code> shows the tag without creating it (lab 3 printed <code>Tag: acme-tools--v1.0.0</code>).</p>
+    <aside class="rule">Pin third-party entries to a full <code>sha</code>, and move the pin only after you have read the diff between the two commits.</aside>
+  </div>
+
+  <div class="lesson" id="m6-l4" data-title="Create and run a marketplace for a team" data-minutes="25">
+    <h3>Layout</h3>
+    <p>A team catalogue is one git repository. Plugins that the team owns live under <code>plugins/</code> with relative sources; plugins owned elsewhere get a <code>github</code>, <code>url</code> or <code>git-subdir</code> entry pinned by <code>sha</code>.</p>
+    <pre data-cap="layout"><code>acme-marketplace/
+  .claude-plugin/marketplace.json
+  plugins/
+    acme-tools/
+      .claude-plugin/plugin.json
+      skills/standup/SKILL.md
+      hooks/hooks.json
+      README.md</code></pre>
+
+    <h3>Adding a marketplace</h3>
+    <div class="tablewrap"><table>
+      <tr><th>You pass to <code>claude plugin marketplace add</code></th><th>Recorded as</th></tr>
+      <tr><td><code>./acme-marketplace</code> or another local path to the root</td><td><code>directory</code> (read in place, no copy)</td></tr>
+      <tr><td><code>acme/acme-marketplace</code>, optionally <code>#stable</code></td><td><code>github</code> (cloned)</td></tr>
+      <tr><td><code>https://git.example.com/acme/catalog.git</code> or <code>git@host:path</code>, optionally <code>#ref</code></td><td><code>git</code> (cloned)</td></tr>
+      <tr><td><code>https://plugins.example.com/marketplace.json</code></td><td><code>url</code> (only that file is fetched, so relative sources cannot resolve)</td></tr>
+    </table></div>
+    <p><code>--scope user</code> (the default), <code>project</code> or <code>local</code> says which settings file records the marketplace. <code>--sparse .claude-plugin plugins</code> limits the clone of a monorepo. A <code>file://</code> URL is refused on 2.1.322 (<code>✘ Invalid marketplace source format. Try: owner/repo, https://..., or ./path</code>); for a local repository, add a clone of it by path.</p>
+
+    <figure class="diagram">
+<pre class="mermaid">flowchart LR
+  a["marketplace add"] --> b["Catalogue registered"]
+  b --> c["plugin install"]
+  c --> d["Copy into cache"]:::hot
+  d --> e["enabledPlugins set"]:::good
+</pre>
+      <figcaption>An install runs in this order: register the catalogue, copy the plugin into the cache, then record it as enabled in settings.</figcaption>
+    </figure>
+
+    <h3>What an install at project scope writes</h3>
+    <p>Lab 2 adds a catalogue by path and installs from it at project scope. The project gets one file, <code>.claude/settings.json</code>:</p>
+    <pre data-file=".claude/settings.json" data-cap="output"><code>{
+  "extraKnownMarketplaces": {
+    "acme-marketplace": {
+      "source": {
+        "source": "directory",
+        "path": "C:\\Users\\you\\bootcamp-labs\\m6\\lab2\\acme-marketplace"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "acme-tools@acme-marketplace": true
+  }
+}</code></pre>
+    <p>The machine gets records in <code>~/.claude/plugins/</code>: <code>known_marketplaces.json</code> (the source and its <code>installLocation</code>), <code>installed_plugins.json</code> (scope, version, <code>projectPath</code>) and a copy under <code>cache/acme-marketplace/acme-tools/1.0.0/</code>. <code>claude plugin list --json</code> shows both views: <code>installPath</code> is the cache copy and <code>readFromFolder</code> is the source folder the in-place plugin actually loads from.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Install scope</th><th>Settings file</th><th>Reaches</th></tr>
+      <tr><td><code>user</code></td><td><code>~/.claude/settings.json</code></td><td>You, in every project</td></tr>
+      <tr><td><code>project</code></td><td><code>.claude/settings.json</code> (committed)</td><td>Everyone who clones the repository, once each installs it</td></tr>
+      <tr><td><code>local</code></td><td><code>.claude/settings.local.json</code> (not committed)</td><td>You, in this repository only</td></tr>
+      <tr><td>managed</td><td>Managed settings</td><td>Every user the policy covers; <code>true</code> force-enables, <code>false</code> blocks, nothing overrides it</td></tr>
+    </table></div>
+
+    <figure class="diagram">
+<pre class="mermaid">flowchart TD
+  m["Marketplace catalogue"]:::alt --> p["Plugin source"]
+  p --> c["Cache copy per version"]:::hot
+  c --> u["User scope settings"]
+  c --> pr["Project scope settings"]
+  c --> l["Local scope settings"]
+  l -. outranks .-> pr
+</pre>
+      <figcaption>The catalogue points at the plugin source, the install makes one cache copy, and each scope records in its own settings file whether the plugin is enabled.</figcaption>
+    </figure>
+
+    <h3>A repository that brings its plugins</h3>
+    <p>Commit <code>.claude/settings.json</code> with both keys, and the repository declares its catalogue and the plugins it expects. What a teammate gets depends on the surface:</p>
+    <ul>
+      <li>In an interactive session, <code>extraKnownMarketplaces</code> applies only after the teammate trusts the folder; then Claude Code offers to register the marketplace. A plugin enabled in project settings still has to be installed on each machine; until it is, <code>/plugin</code> shows <code>Plugin "&lt;name&gt;" is enabled in project settings but isn't installed here</code>.</li>
+      <li>From the shell, in lab 4, a fresh plugin store did not pick the marketplace up from the committed file. <code>claude plugin install acme-tools@acme-marketplace --scope project</code> failed with <code>Plugin "acme-tools" not found in marketplace "acme-marketplace"</code>; after <code>claude plugin marketplace add &lt;source&gt; --scope project</code> the same install succeeded.</li>
+    </ul>
+    <p>A teammate who does not want a project plugin sets it to <code>false</code> at local scope, which outranks project scope: <code>claude plugin disable acme-tools@acme-marketplace --scope local</code> writes <code>.claude/settings.local.json</code> and <code>claude plugin list</code> shows <code>Status: ✘ disabled</code>. Make sure <code>.claude/settings.local.json</code> is ignored by git in your repositories (<code>git check-ignore -v .claude/settings.local.json</code>).</p>
+    <aside class="trap">The CLI rewrites <code>.claude/settings.json</code> whenever it adds, installs or removes. In lab 4 a teammate's add only reordered the keys, but it still showed as <code>M .claude/settings.json</code>; and <code>claude plugin marketplace remove</code> emptied both keys in the committed file. Review <code>git diff .claude/settings.json</code> before every commit. Also note the absolute <code>path</code> a <code>directory</code> source records: it is meaningless on a teammate's machine, so commit git-sourced marketplaces, not local folders.</aside>
+
+    <h3>Review and release flow</h3>
+    <ol>
+      <li>A plugin change lands in the catalogue repository (or the plugin's own repository) through a normal pull request with a named reviewer.</li>
+      <li>CI runs <code>claude plugin validate &lt;plugin&gt; --strict</code> and <code>claude plugin validate &lt;marketplace-root&gt;</code>; both must exit 0.</li>
+      <li>The reviewer reads every hook command, <code>.mcp.json</code> and every file in <code>bin/</code> in full, and records the always-on cost from <code>claude --plugin-dir &lt;path&gt; plugin details &lt;name&gt;</code>.</li>
+      <li>On merge, bump <code>version</code> (or rely on the commit sha), tag with <code>claude plugin tag</code>, and move the catalogue entry's <code>sha</code> in a separate, reviewed commit.</li>
+      <li>Users run <code>claude plugin marketplace update</code> and <code>claude plugin update</code>, or get it from auto-update if an administrator turned that on.</li>
+    </ol>
+
+    <h3>Private repositories</h3>
+    <p>Claude Code has no git token of its own and <code>marketplace.json</code> has no field for one. It runs <code>git</code> on the user's machine with prompts turned off and uses whatever credentials are already stored. For SSH, the key must work without a passphrase prompt (loaded in an agent) and the host must be in <code>known_hosts</code>. For HTTPS, a credential the helper already stores works; one it would have to ask for fails. For <code>owner/repo</code>, Claude Code tries SSH first; users without a GitHub SSH key set <code>CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1</code>. A token in <code>GITHUB_TOKEN</code> alone does not authenticate; it takes effect through a credential helper.</p>
+    <aside class="rule">The repository says which plugins it wants; each machine still installs them; managed settings are the only place that can force them.</aside>
+  </div>
+
+  <div class="lesson" id="m6-l5" data-title="Control, supply chain and context cost" data-minutes="20">
+    <h3>What a plugin can do to your machine</h3>
+    <p>A plugin runs code with your user rights. Claude Code's permission rules and sandbox cover the tool calls Claude makes, not the code a plugin runs by itself.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Component</th><th>Runs as</th><th>Covered by permissions and sandbox</th></tr>
+      <tr><td>Hooks (and monitors)</td><td>Shell commands at lifecycle events, with your full user rights</td><td>No. They run outside the sandbox.</td></tr>
+      <tr><td>MCP and LSP servers</td><td>Processes Claude Code starts for every session the plugin is enabled in</td><td>The server process: no. Claude's calls to its tools: yes.</td></tr>
+      <tr><td><code>bin/</code> executables</td><td>Commands on the Bash tool's PATH</td><td>Yes, when Claude runs them as a tool call.</td></tr>
+      <tr><td>Skills, agents, commands</td><td>Instructions in Claude's context</td><td>They steer what Claude does with tools it already has.</td></tr>
+      <tr><td>Updates</td><td>New files on disk, from auto-update if it is on</td><td>The files you reviewed can change.</td></tr>
+    </table></div>
+    <p>So the review that matters happens before install: read <code>hooks/hooks.json</code>, <code>.mcp.json</code> and every file in <code>bin/</code>, then pin the entry to the commit you read. <code>claude plugin marketplace list</code> shows where each marketplace came from. <code>claude --plugin-dir &lt;folder&gt; plugin details &lt;name&gt;</code> lists the components of a plugin you have cloned, without starting a session; after install, <code>claude plugin details &lt;name&gt;</code> does the same for the cached copy.</p>
+    <p>To remove a plugin you no longer trust: <code>claude plugin uninstall &lt;plugin&gt; --scope &lt;scope&gt;</code> (it deletes <code>${CLAUDE_PLUGIN_DATA}</code> unless you pass <code>--keep-data</code>), and <code>claude plugin marketplace remove &lt;name&gt;</code> if you distrust the owner too, which uninstalls every plugin from it. The cached files stay under <code>~/.claude/plugins/cache/</code> for 14 days; delete the folder yourself to remove them now.</p>
+
+    <h3>What only managed settings can enforce</h3>
+    <p>The plugin policy keys are managed settings. Put them in a project's settings file and they do nothing, which lab 4 shows: with <code>"strictKnownMarketplaces": []</code> in <code>.claude/settings.json</code>, adding another marketplace still printed <code>✔ Successfully added marketplace</code>, and with <code>"allowManagedHooksOnly": true</code> there, the plugin's hook still ran.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Key</th><th>Effect</th><th>Does not</th></tr>
+      <tr><td><code>strictKnownMarketplaces</code></td><td>Allowlist of marketplace sources, checked before any download and again at session start. <code>[]</code> blocks every source, the official one included.</td><td>Register anything, restrict entries inside an allowed marketplace, or block <code>--plugin-dir</code>.</td></tr>
+      <tr><td><code>blockedMarketplaces</code></td><td>Blocklist, checked first. Matching is wider than the allowlist's (git URL spellings are canonicalized).</td><td>Block a marketplace already registered from a source it does not match.</td></tr>
+      <tr><td><code>enabledPlugins</code> (managed)</td><td><code>true</code> force-enables, <code>false</code> blocks at every scope.</td><td>Install a plugin whose marketplace is not registered.</td></tr>
+      <tr><td><code>allowManagedHooksOnly</code></td><td>Only managed hooks run, plus hooks from plugins that managed settings force-enable.</td><td>Trust hooks from plugins users enable themselves.</td></tr>
+      <tr><td><code>disableSideloadFlags</code></td><td>Rejects <code>--plugin-dir</code>, <code>--plugin-url</code>, <code>--agents</code> and <code>CLAUDE_CODE_PLUGIN_DIRS</code>.</td><td>Restrict <code>.mcp.json</code> or <code>claude mcp add</code>.</td></tr>
+      <tr><td><code>strictPluginOnlyCustomization</code></td><td>Blocks skills, agents, hooks and MCP servers from user and project sources, so customisation comes only from plugins.</td><td>Choose which plugins may be installed.</td></tr>
+    </table></div>
+    <p>An allowlist without a <code>{"source": "skills-dir"}</code> entry also stops skills-directory plugins from loading. Allowlist matching is exact for <code>github</code> and <code>git</code> entries: <code>repo</code> or <code>url</code>, <code>ref</code> and <code>path</code> must all match, so an entry without <code>ref</code> does not cover a source added with <code>#main</code>. On Windows the managed file lives at <code>C:\Program Files\ClaudeCode\managed-settings.json</code>, which takes administrator rights to write. A policy that allows only your organisation's catalogue, registers it, force-enables one plugin and closes the side doors:</p>
+    <pre data-file="managed-settings.json"><code>{
+  "strictKnownMarketplaces": [
+    { "source": "github", "repo": "acme/*" },
+    { "source": "skills-dir" }
+  ],
+  "blockedMarketplaces": [
+    { "source": "github", "repo": "untrusted-org/*" }
+  ],
+  "extraKnownMarketplaces": {
+    "acme-marketplace": {
+      "source": { "source": "github", "repo": "acme/acme-marketplace" },
+      "autoUpdate": false
+    }
+  },
+  "enabledPlugins": { "acme-tools@acme-marketplace": true },
+  "allowManagedHooksOnly": true,
+  "disableSideloadFlags": true
+}</code></pre>
+    <p>What a project can do for itself is narrower. <code>"disableAllHooks": true</code> in project settings stopped the plugin's hook in lab 4, and a project or local <code>enabledPlugins</code> entry of <code>false</code> turns a plugin off for that repository.</p>
+    <aside class="trap">A non-official marketplace can still look official. Claude Code reserves Anthropic's marketplace names and refuses look-alikes, but a third-party catalogue with a reassuring name is still third-party. Trust comes from the source repository and the commit you pinned, not from the name.</aside>
+
+    <h3>What a plugin costs in context</h3>
+    <p>Every enabled plugin's skill, agent and command names and descriptions are in Claude's context on every turn, used or not. Bodies load only when a component runs. Hooks cost no context at all. MCP servers add what MCP tool search lets through (by default, tool names and server instructions, with definitions deferred). <code>claude plugin details</code> estimates the first two:</p>
+    <pre data-cap="output"><code>Component inventory
+  Skills (1)  standup
+  Agents (0)
+  Hooks (1)  SessionStart  (harness-only — no model context cost)
+  MCP servers (0)
+  LSP servers (0)
+
+Projected token cost
+  Always-on:   ~32 tok   added to every session
+
+Per-component (rounded)
+  component  always-on  on-invoke
+  standup          ~30        ~30</code></pre>
+    <p>A real run agrees to within the noise. The same one-line Haiku prompt showed about 21,730 total input tokens without the plugin and about 21,780 with it (input + cache write + cache read), a difference of about 50. For MCP servers, <code>details</code> gives no estimate; run <code>/context</code> in a session with the plugin enabled and read the <code>MCP tools</code> category. The always-on figure is what every user carries, so it is the number to cut: shorter descriptions, <code>disable-model-invocation: true</code> on skills only people call, or a split into smaller plugins.</p>
+    <p>How you pay changes what that number means. On an API key, the always-on tokens are billed on every request, mostly at the cache-read rate once the prefix is cached. On a subscription plan they draw down the 5-hour window and the weekly limit instead; cached content counts less against those limits, but it still counts. A dozen plugins at a few hundred tokens each is a few thousand tokens on every turn of every session.</p>
+    <aside class="rule">Before you approve a plugin, write down three things: the commit you read, the always-on token figure, and every process it starts.</aside>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m6-lab1" data-title="Build a plugin and prove its skill loads" data-minutes="25">
+      <p class="goal">Build a plugin with one skill and one hook, validate it, load it with <code>--plugin-dir</code>, and hold the init line that lists <code>acme-tools:standup</code> plus a hook log written by the plugin.</p>
+      <ol class="steps">
+        <li><p>Create the lab folder and define a helper that writes UTF-8 without a byte-order mark. Define <code>Write-Utf8</code> again in every new PowerShell window you use for these labs.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m6/lab1 | Out-Null
+Set-Location {{LAB}}/m6/lab1
+function Write-Utf8 ([string]$Path, [string]$Text) { [IO.File]::WriteAllText($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path), $Text) }
+New-Item -ItemType Directory -Force acme-tools/.claude-plugin, acme-tools/skills/standup, acme-tools/hooks | Out-Null</code></pre>
+          <p class="expect"><b>Expected:</b> no output. <code>Get-ChildItem -Recurse acme-tools</code> shows three empty folders.</p></li>
+        <li><p>Write the manifest, the skill and the hook.</p>
+          <pre><code>Write-Utf8 acme-tools/.claude-plugin/plugin.json @'
+{
+  "name": "acme-tools",
+  "description": "Team helpers: a standup skill and a session log hook",
+  "version": "1.0.0",
+  "author": { "name": "Acme Platform Team" }
+}
+'@
+Write-Utf8 acme-tools/skills/standup/SKILL.md @'
+---
+name: standup
+description: Turn rough notes into a three-line standup (done, next, blocked). Use when the user asks for a standup note.
+---
+
+Rewrite the user's notes as exactly three lines:
+Done: ...
+Next: ...
+Blocked: ... (write "nothing" if there is no blocker)
+'@
+Write-Utf8 acme-tools/hooks/hooks.json @'
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "command": "Add-Content -Path \"$env:CLAUDE_PROJECT_DIR/plugin-hook.log\" -Value \"session start; root=$env:CLAUDE_PLUGIN_ROOT; data=$env:CLAUDE_PLUGIN_DATA\""
+          }
+        ]
+      }
+    ]
+  }
+}
+'@</code></pre>
+          <p class="expect"><b>Expected:</b> no output; three files exist.</p></li>
+        <li><p>Validate the plugin, strictly.</p>
+          <pre><code>claude plugin validate ./acme-tools --strict
+"exit: $LASTEXITCODE"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>Validating plugin manifest: …\acme-tools\.claude-plugin\plugin.json</code>, a block of "plugin directory checks" (README missing, LICENSE missing, no icon) that does not change the result, then <code>✔ Validation passed</code> and <code>exit: 0</code>.</p></li>
+        <li><p>See the byte-order-mark trap once, so you recognise it later.</p>
+          <pre><code>New-Item -ItemType Directory -Force bomdemo/.claude-plugin, bomdemo/hooks | Out-Null
+'{ "name": "bomdemo" }' | Set-Content -Encoding utf8 bomdemo/.claude-plugin/plugin.json
+'{ "hooks": {} }' | Set-Content -Encoding utf8 bomdemo/hooks/hooks.json
+claude plugin validate ./bomdemo
+"exit: $LASTEXITCODE"</code></pre>
+          <p class="expect"><b>Expected</b> on Windows PowerShell 5.1: <code>❯ json: Invalid JSON syntax: JSON Parse error: Unrecognized token</code>, a directory-check line <code>HOOKS_JSON_INVALID … (UTF-8 BOM at start of file)</code>, <code>✘ Validation failed</code> and <code>exit: 1</code>. On PowerShell 7, <code>utf8</code> means no BOM and the check passes.</p></li>
+        <li><p>Read the component inventory and the projected cost without starting a session.</p>
+          <pre><code>claude --plugin-dir ./acme-tools plugin details acme-tools</code></pre>
+          <p class="expect"><b>Expected:</b> <code>Source: acme-tools@inline</code>, <code>Skills (1)  standup</code>, <code>Hooks (1)  SessionStart  (harness-only — no model context cost)</code> and <code>Always-on:   ~32 tok   added to every session</code>.</p></li>
+        <li><p>Start one headless session with the plugin and read the init line. <code>--setting-sources project</code> and <code>--strict-mcp-config</code> keep your personal settings, hooks and MCP servers out of the run, so the only extras are the ones this lab adds; every <code>claude -p</code> in this module carries both.</p>
+          <pre><code>$lines = claude -p "Reply with the word ok." --model haiku --setting-sources project --strict-mcp-config --plugin-dir ./acme-tools --max-turns 1 --output-format stream-json --verbose
+$init = $lines | Where-Object { $_ -match '"subtype":"init"' } | Select-Object -First 1 | ConvertFrom-Json
+"skills: " + (($init.skills | Where-Object { $_ -like '*:*' }) -join ', ')
+"slash:  " + (($init.slash_commands | Where-Object { $_ -like '*:*' }) -join ', ')
+$init.plugins | Where-Object { $_.name -eq 'acme-tools' } | ConvertTo-Json -Compress
+$u = ($lines | Where-Object { $_ -match '"type":"result"' } | Select-Object -Last 1 | ConvertFrom-Json).usage
+"total input with plugin: $($u.input_tokens + $u.cache_creation_input_tokens + $u.cache_read_input_tokens)"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>skills: acme-tools:standup</code>, <code>slash:  acme-tools:standup</code>, the plugin object with <code>"source":"acme-tools@inline","version":"1.0.0"</code>, and a total of about 21,800 tokens.</p></li>
+        <li><p>Check that the hook ran and what the two path variables resolved to.</p>
+          <pre><code>Get-Content plugin-hook.log</code></pre>
+          <p class="expect"><b>Expected:</b> one line, <code>session start; root=…\m6\lab1\acme-tools; data=…\.claude\plugins\data\acme-tools-inline</code>. The root is your source folder because <code>--plugin-dir</code> loads in place.</p></li>
+        <li><p>Run the same prompt without the plugin and compare.</p>
+          <pre><code>$u = (claude -p "Reply with the word ok." --model haiku --setting-sources project --strict-mcp-config --max-turns 1 --output-format json | ConvertFrom-Json).usage
+"total input without plugin: $($u.input_tokens + $u.cache_creation_input_tokens + $u.cache_read_input_tokens)"</code></pre>
+          <p class="expect"><b>Expected:</b> about 21,730, roughly 50 fewer than with the plugin. The split between cache write and cache read varies run to run; the total is what to compare.</p></li>
+        <li><p>Call the skill by its namespaced name.</p>
+          <pre><code>claude -p "/acme-tools:standup fixed the backup job, next is the DNS cutover, waiting on the change window" --model haiku --setting-sources project --strict-mcp-config --plugin-dir ./acme-tools --max-turns 2</code></pre>
+          <p class="expect"><b>Expected:</b> three lines: <code>Done: fixed the backup job</code>, <code>Next: DNS cutover</code>, <code>Blocked: waiting on the change window</code>.</p></li>
+        <li><p>Remove the plugin's data folder that the session created in your profile.</p>
+          <pre><code>Remove-Item ~/.claude/plugins/data/acme-tools-inline -Recurse -Force -ErrorAction SilentlyContinue
+Test-Path ~/.claude/plugins/data/acme-tools-inline</code></pre>
+          <p class="expect"><b>Expected:</b> <code>False</code>. Nothing else was installed: <code>--plugin-dir</code> does not touch the plugin store.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Why did <code>plugin details</code> say the hook has no context cost?</b> Hooks run in the harness, as processes; the model never sees their definition. Only skill, agent and command names and descriptions are always-on.</p>
+        <p><b>Your measured difference was about 50 tokens and the estimate was about 32. Which is right?</b> Both are approximate. The estimate counts the name and description; the real run also pays for the listing wrapper around them. Use <code>details</code> to compare plugins and a real run to confirm.</p>
+        <p><b>What would the data path be if you installed the plugin from <code>acme-marketplace</code>?</b> <code>~/.claude/plugins/data/acme-tools-acme-marketplace</code>: the id <code>acme-tools@acme-marketplace</code> with <code>@</code> replaced by <code>-</code>.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m6-lab2" data-title="Create a marketplace, install from it, remove it" data-minutes="20">
+      <p class="goal">Build a one-plugin catalogue, add it by path, install from it at project scope, read what the install wrote, then uninstall and remove it and confirm nothing is left registered.</p>
+      <ol class="steps">
+        <li><p>Lay out the catalogue with the plugin from lab 1 inside it.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m6/lab2 | Out-Null
+Set-Location {{LAB}}/m6/lab2
+function Write-Utf8 ([string]$Path, [string]$Text) { [IO.File]::WriteAllText($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path), $Text) }
+New-Item -ItemType Directory -Force acme-marketplace/.claude-plugin, acme-marketplace/plugins | Out-Null
+Copy-Item -Recurse ../lab1/acme-tools acme-marketplace/plugins/
+Write-Utf8 acme-marketplace/.claude-plugin/marketplace.json @'
+{
+  "name": "acme-marketplace",
+  "description": "Internal Claude Code plugins for the Acme platform team",
+  "owner": { "name": "Acme Platform Team" },
+  "plugins": [
+    {
+      "name": "acme-tools",
+      "source": "./plugins/acme-tools",
+      "description": "Standup skill and a session log hook",
+      "category": "productivity"
+    }
+  ]
+}
+'@
+claude plugin validate ./acme-marketplace
+"exit: $LASTEXITCODE"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>Validating marketplace manifest: …\acme-marketplace\.claude-plugin\marketplace.json</code>, <code>✔ Validation passed</code>, <code>exit: 0</code>.</p></li>
+        <li><p>Make a consumer project and add the catalogue at project scope.</p>
+          <pre><code>New-Item -ItemType Directory -Force project | Out-Null
+Set-Location project
+git init -q
+claude plugin marketplace add ../acme-marketplace --scope project
+claude plugin marketplace list</code></pre>
+          <p class="expect"><b>Expected:</b> <code>✔ Successfully added marketplace: acme-marketplace (declared in project settings)</code>, and the list shows <code>acme-marketplace</code> with <code>Source: Folder (…\lab2\acme-marketplace)</code>. A built-in <code>anthropic-plugin-directory</code> entry may be listed too.</p></li>
+        <li><p>Install at project scope and list.</p>
+          <pre><code>claude plugin install acme-tools@acme-marketplace --scope project
+claude plugin list
+claude plugin details acme-tools</code></pre>
+          <p class="expect"><b>Expected:</b> <code>✔ Successfully installed plugin: acme-tools@acme-marketplace (scope: project)</code>; the list shows <code>Version: 1.0.0</code>, <code>Read from: …\acme-marketplace\plugins\acme-tools</code>, <code>Scope: project</code>, <code>Status: ✔ enabled</code>; <code>details</code> shows <code>Source: acme-tools@acme-marketplace</code> and the same <code>~32 tok</code> always-on cost.</p></li>
+        <li><p>Read what the install wrote, in the project and in the plugin store.</p>
+          <pre><code>Get-Content .claude/settings.json
+claude plugin list --json</code></pre>
+          <p class="expect"><b>Expected:</b> <code>settings.json</code> holds <code>extraKnownMarketplaces.acme-marketplace.source</code> = <code>{"source": "directory", "path": "…\\lab2\\acme-marketplace"}</code> and <code>enabledPlugins</code> = <code>{"acme-tools@acme-marketplace": true}</code>. The JSON list shows <code>"scope": "project"</code>, an <code>installPath</code> under <code>.claude\plugins\cache\acme-marketplace\acme-tools\1.0.0</code>, a <code>readFromFolder</code> pointing at your catalogue, and <code>projectPath</code> = this project.</p></li>
+        <li><p>Uninstall, remove the marketplace, and confirm.</p>
+          <pre><code>claude plugin uninstall acme-tools@acme-marketplace --scope project
+claude plugin marketplace remove acme-marketplace
+claude plugin list
+claude plugin marketplace list
+Get-Content .claude/settings.json</code></pre>
+          <p class="expect"><b>Expected:</b> <code>✔ Successfully uninstalled plugin: acme-tools (scope: project)</code>, <code>✔ Successfully removed marketplace: acme-marketplace</code>, <code>No plugins installed.</code>, no <code>acme-marketplace</code> in the marketplace list, and <code>settings.json</code> reduced to <code>"enabledPlugins": {}</code> and <code>"extraKnownMarketplaces": {}</code>.</p></li>
+        <li><p>Delete the orphaned cache copy now rather than waiting 14 days for the sweep.</p>
+          <pre><code>Remove-Item ~/.claude/plugins/cache/acme-marketplace -Recurse -Force -ErrorAction SilentlyContinue
+Test-Path ~/.claude/plugins/cache/acme-marketplace</code></pre>
+          <p class="expect"><b>Expected:</b> <code>False</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Would this <code>settings.json</code> work for a teammate if you committed it?</b> No. The <code>directory</code> source records an absolute path on your machine. Commit a <code>github</code> or <code>git</code> source instead.</p>
+        <p><b>Did you need to bump the version to see an edit to <code>SKILL.md</code> while it was installed?</b> No. A relative-path plugin in a marketplace added from a local folder is read in place (<code>readFromFolder</code>), so edits apply at the next session start or <code>/reload-plugins</code>.</p>
+        <p><b>Which single command would have done both removal steps?</b> <code>claude plugin marketplace remove acme-marketplace</code>: removing a marketplace uninstalls every plugin installed from it.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m6-lab3" data-title="Pin an entry to a sha and watch updates" data-minutes="30">
+      <p class="goal">Publish two versions of a plugin from a local git repository, pin the catalogue entry by commit sha, and record which updates move and which do not.</p>
+      <ol class="steps">
+        <li><p>Make the plugin its own git repository, standing in for a git host, and record its first commit.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m6/lab3 | Out-Null
+Set-Location {{LAB}}/m6/lab3
+function Write-Utf8 ([string]$Path, [string]$Text) { [IO.File]::WriteAllText($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path), $Text) }
+$root = (Get-Location).Path
+Copy-Item -Recurse ../lab1/acme-tools acme-tools-repo
+git -C acme-tools-repo init -q -b main
+git -C acme-tools-repo add -A
+git -C acme-tools-repo commit -q -m "acme-tools 1.0.0"
+$sha1 = (git -C acme-tools-repo rev-parse HEAD).Trim()
+$pluginUrl = 'file:///' + ($root -replace '\\', '/') + '/acme-tools-repo'
+"sha1 = $sha1"; "url  = $pluginUrl"
+claude plugin tag ./acme-tools-repo --dry-run</code></pre>
+          <p class="expect"><b>Expected:</b> a 40-character <code>sha1</code>, a <code>file:///…/acme-tools-repo</code> URL, and from the dry run <code>Tag:     acme-tools--v1.0.0</code> with <code>✔ Dry run — would create tag acme-tools--v1.0.0 at HEAD</code>. (If <code>git commit</code> complains about your identity, set <code>git config --global user.name</code> and <code>user.email</code> first.)</p></li>
+        <li><p>Write a catalogue whose entry is a <code>url</code> source pinned to that sha, and commit it.</p>
+          <pre><code>New-Item -ItemType Directory -Force acme-catalog/.claude-plugin | Out-Null
+Write-Utf8 acme-catalog/.claude-plugin/marketplace.json @"
+{
+  "name": "acme-catalog",
+  "description": "Acme catalog with pinned entries",
+  "owner": { "name": "Acme Platform Team" },
+  "plugins": [
+    {
+      "name": "acme-tools",
+      "description": "Standup skill and session log hook",
+      "source": { "source": "url", "url": "$pluginUrl", "sha": "$sha1" }
+    }
+  ]
+}
+"@
+claude plugin validate ./acme-catalog
+git -C acme-catalog init -q -b main
+git -C acme-catalog add -A
+git -C acme-catalog commit -q -m "Pin acme-tools to $sha1"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>✔ Validation passed</code>.</p></li>
+        <li><p>As a consumer, try to add the catalogue repository by URL, then add a clone of it by path and install.</p>
+          <pre><code>git clone -q acme-catalog catalog-clone
+New-Item -ItemType Directory -Force project | Out-Null
+Set-Location project
+git init -q
+claude plugin marketplace add ("file:///" + ($root -replace '\\', '/') + "/acme-catalog") --scope project
+claude plugin marketplace add ../catalog-clone --scope project
+claude plugin install acme-tools@acme-catalog --scope project
+claude plugin list</code></pre>
+          <p class="expect"><b>Expected:</b> the <code>file://</code> add fails with <code>✘ Invalid marketplace source format. Try: owner/repo, https://..., or ./path</code>. The clone is added (<code>declared in project settings</code>), the install succeeds, and the list shows <code>acme-tools@acme-catalog</code>, <code>Version: 1.0.0</code>. Against a real host you would add <code>https://git.example.com/acme/acme-catalog.git</code> directly and skip the clone.</p></li>
+        <li><p>Publish 1.1.0 upstream without touching the pin, then try to update.</p>
+          <pre><code>Set-Location $root
+$pj = 'acme-tools-repo/.claude-plugin/plugin.json'
+Write-Utf8 $pj ((Get-Content $pj -Raw) -replace '"version": "1.0.0"', '"version": "1.1.0"')
+git -C acme-tools-repo commit -q -am "acme-tools 1.1.0"
+$sha2 = (git -C acme-tools-repo rev-parse HEAD).Trim()
+Set-Location project
+claude plugin marketplace update acme-catalog
+claude plugin update acme-tools@acme-catalog --scope project</code></pre>
+          <p class="expect"><b>Expected:</b> <code>✔ Successfully updated marketplace: acme-catalog</code>, then <code>✔ acme-tools is already at the latest version (1.0.0).</code> The pin holds.</p></li>
+        <li><p>Move the pin to the 1.1.0 commit in the catalogue, pull it into the consumer's clone, and update again.</p>
+          <pre><code>Set-Location $root
+$mj = 'acme-catalog/.claude-plugin/marketplace.json'
+Write-Utf8 $mj ((Get-Content $mj -Raw).Replace($sha1, $sha2))
+git -C acme-catalog commit -q -am "Pin acme-tools to $sha2"
+git -C catalog-clone pull -q
+Set-Location project
+claude plugin marketplace update acme-catalog
+claude plugin update acme-tools@acme-catalog --scope project
+Get-ChildItem ~/.claude/plugins/cache/acme-catalog/acme-tools -Name</code></pre>
+          <p class="expect"><b>Expected:</b> <code>✔ Plugin "acme-tools" updated from 1.0.0 to 1.1.0 for scope project (…). Restart to apply changes.</code> The cache lists <code>1.0.0</code> and <code>1.1.0</code>.</p></li>
+        <li><p>Switch the entry to track <code>main</code>, push a commit upstream without bumping <code>version</code>, and update.</p>
+          <pre><code>Set-Location $root
+Write-Utf8 $mj ((Get-Content $mj -Raw).Replace(('"sha": "' + $sha2 + '"'), '"ref": "main"'))
+git -C acme-catalog commit -q -am "Track main"
+Add-Content acme-tools-repo/skills/standup/SKILL.md "Keep each line under 80 characters."
+git -C acme-tools-repo commit -q -am "standup: line length rule"
+git -C catalog-clone pull -q
+Set-Location project
+claude plugin marketplace update acme-catalog
+claude plugin update acme-tools@acme-catalog --scope project</code></pre>
+          <p class="expect"><b>Expected:</b> <code>✔ acme-tools is already at the latest version (1.1.0).</code> The new commit does not arrive, because <code>plugin.json</code> still says 1.1.0.</p></li>
+        <li><p>Remove the marketplace (which uninstalls the plugin) and the cache copies.</p>
+          <pre><code>claude plugin marketplace remove acme-catalog
+claude plugin list
+Remove-Item ~/.claude/plugins/cache/acme-catalog -Recurse -Force -ErrorAction SilentlyContinue</code></pre>
+          <p class="expect"><b>Expected:</b> <code>✔ Successfully removed marketplace: acme-catalog</code>, <code>Also uninstalled 1 plugin from this marketplace: acme-tools@acme-catalog</code>, then <code>No plugins installed.</code></p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>In step 4, what had to change for users to get 1.1.0?</b> The catalogue's <code>sha</code>. The upstream repository moved, but the pinned commit did not, so the computed version stayed 1.0.0.</p>
+        <p><b>In step 6, name two ways to make the new commit reach users.</b> Bump <code>version</code> in <code>plugin.json</code>, or remove <code>version</code> from both <code>plugin.json</code> and the entry so the commit sha becomes the version.</p>
+        <p><b>Why does a third-party entry with only <code>ref: "v2.0.0"</code> fall short of a pin?</b> A tag can be deleted and recreated on another commit by whoever controls the repository; a full <code>sha</code> names exactly the tree you reviewed.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m6-lab4" data-title="Make a repository bring its plugins, and test what it cannot lock" data-minutes="25">
+      <p class="goal">Commit a project's plugin settings, play a teammate with a separate plugin store, opt out locally, and prove that the policy keys do nothing in project settings while <code>disableAllHooks</code> does.</p>
+      <ol class="steps">
+        <li><p>As the maintainer, wire a repository to the catalogue from lab 2 and commit the settings.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m6/lab4 | Out-Null
+Set-Location {{LAB}}/m6/lab4
+function Write-Utf8 ([string]$Path, [string]$Text) { [IO.File]::WriteAllText($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path), $Text) }
+$lab4 = (Get-Location).Path
+Copy-Item -Recurse ../lab2/acme-marketplace acme-marketplace
+$mkt = (Resolve-Path acme-marketplace).Path
+New-Item -ItemType Directory -Force team-repo | Out-Null
+Set-Location team-repo
+git init -q -b main
+claude plugin marketplace add $mkt --scope project
+claude plugin install acme-tools@acme-marketplace --scope project
+git add .claude/settings.json
+git commit -q -m "Bring the acme-tools plugin"
+git log --oneline</code></pre>
+          <p class="expect"><b>Expected:</b> the add and install succeed as in lab 2, and the log shows one commit, <code>Bring the acme-tools plugin</code>.</p></li>
+        <li><p>Play a teammate: clone the repository and point Claude Code at an empty plugin store for this window, so the teammate has none of your registrations. (If you normally set <code>CLAUDE_CONFIG_DIR</code>, note its value now.)</p>
+          <pre><code>Set-Location $lab4
+git clone -q team-repo teammate-clone
+$env:CLAUDE_CONFIG_DIR = Join-Path $lab4 'teammate-config'
+Set-Location teammate-clone
+claude plugin list
+claude plugin install acme-tools@acme-marketplace --scope project
+claude plugin marketplace add $mkt --scope project
+claude plugin install acme-tools@acme-marketplace --scope project
+git status --porcelain</code></pre>
+          <p class="expect"><b>Expected:</b> <code>No plugins installed.</code>; the first install fails with <code>Plugin "acme-tools" not found in marketplace "acme-marketplace"</code>; after the add, the install succeeds. <code>git status</code> shows <code> M .claude/settings.json</code>: the add rewrote the file (in this run, only the key order changed).</p></li>
+        <li><p>Opt out on the teammate's machine only.</p>
+          <pre><code>claude plugin disable acme-tools@acme-marketplace --scope local
+claude plugin list
+Get-Content .claude/settings.local.json
+claude plugin enable acme-tools@acme-marketplace --scope local</code></pre>
+          <p class="expect"><b>Expected:</b> <code>✔ Successfully disabled plugin: acme-tools (scope: local)</code>, <code>Status: ✘ disabled</code>, and <code>settings.local.json</code> holds <code>"acme-tools@acme-marketplace": false</code>. The enable sets it back.</p></li>
+        <li><p>Try to lock the project to an empty marketplace allowlist from project settings, then add an unapproved marketplace.</p>
+          <pre><code>$j = Get-Content .claude/settings.json -Raw | ConvertFrom-Json
+$j | Add-Member -NotePropertyName strictKnownMarketplaces -NotePropertyValue @() -Force
+Write-Utf8 .claude/settings.json ($j | ConvertTo-Json -Depth 6)
+New-Item -ItemType Directory -Force ../other-mkt/.claude-plugin | Out-Null
+Write-Utf8 ../other-mkt/.claude-plugin/marketplace.json '{ "name": "other-mkt", "owner": { "name": "Someone Else" }, "plugins": [] }'
+claude plugin marketplace add ../other-mkt --scope local
+"exit: $LASTEXITCODE"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>✔ Successfully added marketplace: other-mkt (declared in local settings)</code> and <code>exit: 0</code>. <code>strictKnownMarketplaces</code> is a managed setting; in a project file it is ignored.</p></li>
+        <li><p>Clean up the teammate's store and give the window back its normal configuration.</p>
+          <pre><code>claude plugin marketplace remove other-mkt
+claude plugin marketplace remove acme-marketplace
+git diff --stat
+Set-Location $lab4
+Remove-Item Env:CLAUDE_CONFIG_DIR</code></pre>
+          <p class="expect"><b>Expected:</b> both removals succeed (the second also uninstalls <code>acme-tools@acme-marketplace</code>), and <code>git diff --stat</code> shows <code>.claude/settings.json | 14 +++-----------</code>: the removal emptied the committed keys. If you had your own <code>CLAUDE_CONFIG_DIR</code>, set it back instead of removing it.</p></li>
+        <li><p>Test the hook controls with the plugin from lab 1, in a fresh folder. First <code>allowManagedHooksOnly</code>, then <code>disableAllHooks</code>, both in project settings.</p>
+          <pre><code>New-Item -ItemType Directory -Force hook-test/.claude | Out-Null
+Set-Location hook-test
+Write-Utf8 .claude/settings.json '{ "allowManagedHooksOnly": true }'
+claude -p "Reply with the word ok." --model haiku --setting-sources project --strict-mcp-config --plugin-dir ../../lab1/acme-tools --max-turns 1
+"hook ran: $(Test-Path plugin-hook.log)"
+Remove-Item plugin-hook.log -ErrorAction SilentlyContinue
+Write-Utf8 .claude/settings.json '{ "disableAllHooks": true }'
+claude -p "Reply with the word ok." --model haiku --setting-sources project --strict-mcp-config --plugin-dir ../../lab1/acme-tools --max-turns 1
+"hook ran: $(Test-Path plugin-hook.log)"</code></pre>
+          <p class="expect"><b>Expected:</b> <code>ok</code>, <code>hook ran: True</code>, then <code>ok</code>, <code>hook ran: False</code>. The managed-only key is ignored in a project file; <code>disableAllHooks</code> is honoured there.</p></li>
+        <li><p>Remove the maintainer's registration and the leftovers in your profile.</p>
+          <pre><code>Set-Location $lab4/team-repo
+claude plugin marketplace remove acme-marketplace
+claude plugin list
+Remove-Item ~/.claude/plugins/cache/acme-marketplace -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item ~/.claude/plugins/data/acme-tools-inline -Recurse -Force -ErrorAction SilentlyContinue</code></pre>
+          <p class="expect"><b>Expected:</b> <code>✔ Successfully removed marketplace: acme-marketplace</code>, <code>Also uninstalled 1 plugin from this marketplace</code>, <code>No plugins installed.</code></p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p><b>Your security team wants this repository to use only <code>acme-marketplace</code>. Where does that rule have to live?</b> In managed settings (<code>strictKnownMarketplaces</code>, plus <code>extraKnownMarketplaces</code> to register it and <code>disableSideloadFlags</code> to close <code>--plugin-dir</code>). A project file cannot enforce it, as step 4 showed.</p>
+        <p><b>Why did the teammate's opt-out win over the committed <code>true</code>?</b> Local settings outrank project settings for <code>enabledPlugins</code>; only managed settings outrank local.</p>
+        <p><b>What should the maintainer commit after step 5's diff?</b> Nothing. The diff is the side effect of removing a marketplace on one machine; restore the file from git instead of committing it.</p>
+      </details>
+    </article>
+
+    <article class="lab" id="m6-lab5" data-title="Package your own skill or hook and review it" data-minutes="40">
+      <p class="goal">Turn one skill or hook from your own setup into a plugin, validate it strictly, measure its always-on cost, and write the review checklist a colleague would have to sign before it goes into a team catalogue.</p>
+      <ol class="steps">
+        <li><p>Pick a skill folder and, if you have one, a <code>hooks</code> block from your own <code>.claude/</code>. Copy them into a new plugin under the lab folder. The example uses a stand-in project with one skill and one <code>PostToolUse</code> hook; replace <code>my-project</code> with the path to yours and <code>ops-kit</code> with your plugin name.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m6/lab5 | Out-Null
+Set-Location {{LAB}}/m6/lab5
+function Write-Utf8 ([string]$Path, [string]$Text) { [IO.File]::WriteAllText($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path), $Text) }
+$name = 'ops-kit'
+$src = 'my-project'   # your project folder that contains .claude/
+New-Item -ItemType Directory -Force "$name/.claude-plugin", "$name/hooks" | Out-Null
+Copy-Item -Recurse "$src/.claude/skills" "$name/"
+$settings = Get-Content "$src/.claude/settings.json" -Raw | ConvertFrom-Json
+if ($settings.hooks) { Write-Utf8 "$name/hooks/hooks.json" (@{ hooks = $settings.hooks } | ConvertTo-Json -Depth 10) }
+Write-Utf8 "$name/.claude-plugin/plugin.json" @"
+{
+  "name": "$name",
+  "description": "One line on what this plugin is for",
+  "version": "0.1.0",
+  "author": { "name": "Your Team" },
+  "license": "MIT"
+}
+"@</code></pre>
+          <p class="expect"><b>Expected:</b> a plugin folder with <code>.claude-plugin/plugin.json</code>, <code>skills/&lt;your-skill&gt;/SKILL.md</code> and, if you had hooks, <code>hooks/hooks.json</code>. Then write a <code>README.md</code> of at least 40 words that says what each component does and what each hook runs.</p></li>
+        <li><p>Validate strictly and read the inventory.</p>
+          <pre><code>claude plugin validate ./$name --strict
+"exit: $LASTEXITCODE"
+claude --plugin-dir ./$name plugin details $name</code></pre>
+          <p class="expect"><b>Expected:</b> <code>✔ Validation passed</code> and <code>exit: 0</code>. With the stand-in skill and hook, <code>details</code> showed <code>Skills (1)  disk-report</code>, <code>Hooks (1)  PostToolUse</code> and <code>Always-on:   ~27 tok</code>. A real skill with a long description will be higher; note your number.</p></li>
+        <li><p>Prove the skill loads under its new name.</p>
+          <pre><code>$lines = claude -p "Reply with the word ok." --model haiku --setting-sources project --strict-mcp-config --plugin-dir ./$name --max-turns 1 --output-format stream-json --verbose
+$init = $lines | Where-Object { $_ -match '"subtype":"init"' } | Select-Object -First 1 | ConvertFrom-Json
+($init.skills | Where-Object { $_ -like "$($name):*" }) -join ', '</code></pre>
+          <p class="expect"><b>Expected:</b> your skills with the prefix, for the stand-in <code>ops-kit:disk-report</code>.</p></li>
+        <li><p>Write <code>REVIEW.md</code> in the plugin folder. Every item is a check a reviewer can do and tick; leave an item unticked until it is true.</p>
+          <pre data-file="ops-kit/REVIEW.md"><code># Review checklist: ops-kit 0.1.0
+
+- [ ] Every hook command read in full (hooks/hooks.json): event, matcher, what it runs, whether it reaches the network or deletes anything.
+- [ ] .mcp.json: absent, or every server's command or URL read and justified.
+- [ ] bin/: absent, or every file read.
+- [ ] Every SKILL.md read; allowed-tools is as narrow as the job allows.
+- [ ] No secrets, tokens or machine-specific absolute paths in any file.
+- [ ] Paths use ${CLAUDE_PLUGIN_ROOT}, ${CLAUDE_PLUGIN_DATA} or $CLAUDE_PROJECT_DIR.
+- [ ] claude plugin validate --strict exits 0.
+- [ ] Always-on cost from claude plugin details recorded: ~__ tok.
+- [ ] Version set; the catalogue entry will pin a full 40-character sha.</code></pre>
+          <p class="expect"><b>Expected:</b> a checklist file with nine items. Go through them against your plugin and tick each one that holds.</p></li>
+        <li><p>Remove anything the test session left in your profile, then optionally take the plugin through labs 2 and 3 with your own catalogue.</p>
+          <pre><code>if ($name) { Remove-Item "~/.claude/plugins/data/$name-inline" -Recurse -Force -ErrorAction SilentlyContinue }
+@(Select-String -Path "$name/REVIEW.md" -Pattern '^- \[ \]').Count</code></pre>
+          <p class="expect"><b>Expected:</b> <code>0</code> once every item is ticked.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check (done-test)</summary>
+        <p>You are done when all four hold: <code>claude plugin validate ./&lt;name&gt; --strict</code> exits 0; the init line lists every one of your skills as <code>&lt;name&gt;:&lt;skill&gt;</code>; <code>REVIEW.md</code> has zero unticked items; and the always-on figure is written in it.</p>
+        <p><b>Your hook worked as a project hook but fails in the plugin. What do you check first?</b> Paths. A project hook can assume the repository layout; a plugin hook must reach its own files through <code>${CLAUDE_PLUGIN_ROOT}</code> and the project through <code>$CLAUDE_PROJECT_DIR</code>. Then check <code>hooks.json</code> for a byte-order mark.</p>
+        <p><b>The always-on figure is 600 tokens for one skill. What do you change?</b> Shorten the <code>description</code> and <code>when_to_use</code> to what Claude needs to match a request, or set <code>disable-model-invocation: true</code> if only people call it, and re-run <code>details</code>.</p>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Commands</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Command</th><th>What it does</th><th>Useful flags</th></tr>
+      <tr><td><code>claude plugin validate &lt;path&gt;</code></td><td>Checks a plugin, or a marketplace root or <code>marketplace.json</code>. Exit 0 pass, 1 fail.</td><td><code>--strict</code>, <code>--json</code>, <code>--profile directory</code></td></tr>
+      <tr><td><code>claude plugin init &lt;name&gt;</code></td><td>Scaffolds a skills-directory plugin in <code>~/.claude/skills/&lt;name&gt;/</code>.</td><td><code>--with skills agents hooks mcp …</code>, <code>--description</code>, <code>--author</code></td></tr>
+      <tr><td><code>claude --plugin-dir &lt;dir&gt;</code></td><td>Loads a plugin folder or <code>.zip</code> for one session, in place. Repeatable.</td><td>Also before <code>plugin details</code> and <code>plugin list</code></td></tr>
+      <tr><td><code>claude plugin details &lt;name&gt;</code></td><td>Component inventory and projected always-on and on-invoke tokens.</td><td></td></tr>
+      <tr><td><code>claude plugin marketplace add &lt;source&gt;</code></td><td>Registers a catalogue: path, <code>owner/repo[#ref]</code>, git URL, or <code>marketplace.json</code> URL.</td><td><code>--scope user|project|local</code>, <code>--sparse</code>, <code>--json</code></td></tr>
+      <tr><td><code>claude plugin marketplace list | update [name] | remove &lt;name&gt;</code></td><td>Show sources; refresh catalogues; remove (uninstalls its plugins).</td><td><code>remove --scope</code></td></tr>
+      <tr><td><code>claude plugin install &lt;plugin&gt;@&lt;marketplace&gt;</code></td><td>Installs and enables. Default scope is <code>user</code>.</td><td><code>--scope</code>, <code>--json</code>, <code>--marketplace &lt;source&gt;</code></td></tr>
+      <tr><td><code>claude plugin update &lt;plugin&gt;@&lt;marketplace&gt;</code></td><td>Moves to a new computed version; restart or <code>/reload-plugins</code> to apply.</td><td><code>--scope</code></td></tr>
+      <tr><td><code>claude plugin enable | disable &lt;plugin&gt;</code></td><td>Turns a plugin on or off at a scope.</td><td><code>--scope</code>, <code>disable --all</code></td></tr>
+      <tr><td><code>claude plugin uninstall &lt;plugin&gt;</code></td><td>Uninstalls from a scope; deletes its data folder from the last scope.</td><td><code>--scope</code>, <code>--keep-data</code></td></tr>
+      <tr><td><code>claude plugin list</code></td><td>Installed, session-only and skills-directory plugins with status.</td><td><code>--json</code>, <code>--available</code></td></tr>
+      <tr><td><code>claude plugin tag [path]</code></td><td>Creates a <code>&lt;name&gt;--v&lt;version&gt;</code> tag after checking manifest and entry agree.</td><td><code>--dry-run</code>, <code>--push</code></td></tr>
+      <tr><td><code>/plugin</code>, <code>/reload-plugins</code></td><td>In a session: plugin manager (Discover, Installed, Marketplaces, Errors tabs); apply on-disk changes. Interactive only.</td><td></td></tr>
+    </table></div>
+
+    <h3>Files and locations</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Path</th><th>What it is</th></tr>
+      <tr><td><code>&lt;plugin&gt;/.claude-plugin/plugin.json</code></td><td>Manifest; only <code>name</code> required</td></tr>
+      <tr><td><code>&lt;plugin&gt;/skills/</code>, <code>agents/</code>, <code>commands/</code>, <code>hooks/hooks.json</code>, <code>.mcp.json</code>, <code>bin/</code>, <code>settings.json</code></td><td>Components</td></tr>
+      <tr><td><code>&lt;root&gt;/.claude-plugin/marketplace.json</code></td><td>Catalogue; <code>name</code>, <code>owner.name</code>, <code>plugins[]</code> required</td></tr>
+      <tr><td><code>~/.claude/plugins/known_marketplaces.json</code>, <code>installed_plugins.json</code></td><td>What this machine has registered and installed</td></tr>
+      <tr><td><code>~/.claude/plugins/cache/&lt;marketplace&gt;/&lt;plugin&gt;/&lt;version&gt;/</code></td><td>Installed copies; <code>${CLAUDE_PLUGIN_ROOT}</code> for copied plugins</td></tr>
+      <tr><td><code>~/.claude/plugins/data/&lt;id&gt;/</code></td><td><code>${CLAUDE_PLUGIN_DATA}</code>; survives updates</td></tr>
+      <tr><td><code>~/.claude/plugins/marketplaces/&lt;name&gt;/</code></td><td>Clones of git-sourced catalogues</td></tr>
+      <tr><td><code>C:\Program Files\ClaudeCode\managed-settings.json</code></td><td>Managed settings file on Windows</td></tr>
+    </table></div>
+
+    <h3>Settings keys</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Key</th><th>Where it works</th><th>Shape</th></tr>
+      <tr><td><code>extraKnownMarketplaces</code></td><td>Any scope (project: after folder trust)</td><td><code>{"name": {"source": {…}, "autoUpdate": bool}}</code></td></tr>
+      <tr><td><code>enabledPlugins</code></td><td>Any scope; managed locks it</td><td><code>{"plugin@marketplace": true|false}</code></td></tr>
+      <tr><td><code>strictKnownMarketplaces</code></td><td>Managed only</td><td>Array of source objects; <code>[]</code> blocks all</td></tr>
+      <tr><td><code>blockedMarketplaces</code></td><td>Managed only</td><td>Array of source objects</td></tr>
+      <tr><td><code>allowManagedHooksOnly</code></td><td>Managed only</td><td><code>true</code></td></tr>
+      <tr><td><code>disableSideloadFlags</code></td><td>Managed only</td><td><code>true</code></td></tr>
+      <tr><td><code>strictPluginOnlyCustomization</code></td><td>Managed only</td><td><code>true</code> or <code>["skills","agents","hooks","mcp"]</code></td></tr>
+      <tr><td><code>disableAllHooks</code></td><td>Any scope (managed value wins)</td><td><code>true</code></td></tr>
+    </table></div>
+
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td><code>Invalid JSON syntax: JSON Parse error: Unrecognized token</code>; list shows <code>Hook load failed</code></td><td>File written with a UTF-8 BOM (Windows PowerShell 5.1 <code>Set-Content -Encoding utf8</code>)</td><td>Write with <code>[IO.File]::WriteAllText</code> or PowerShell 7</td></tr>
+      <tr><td>Plugin loads with no skills</td><td><code>skills/</code> inside <code>.claude-plugin/</code>, or <code>--plugin-dir</code> pointed at a marketplace root</td><td>Move components to the plugin root; point the flag at one plugin folder</td></tr>
+      <tr><td><code>Plugin "x" not found in marketplace "y"</code></td><td>Marketplace not registered in this plugin store, or entry name differs from what you typed</td><td><code>claude plugin marketplace add</code>, then install by the entry <code>name</code></td></tr>
+      <tr><td><code>Invalid marketplace source format</code></td><td><code>file://</code> URL given to <code>marketplace add</code></td><td>Add a clone by path, or use an <code>https://…git</code> or SSH URL</td></tr>
+      <tr><td><code>already at the latest version</code> after a push</td><td>Entry pinned by <code>sha</code>, or <code>version</code> not bumped</td><td>Move the <code>sha</code>; bump <code>version</code> or omit it everywhere</td></tr>
+      <tr><td>A hook runs twice</td><td>Same hook in settings and in the plugin; hooks have no namespace</td><td>Delete the original from settings</td></tr>
+      <tr><td><code>Source path does not exist</code> on install</td><td>Relative <code>source</code> written from the wrong directory</td><td>Write it from the marketplace root, starting <code>./</code></td></tr>
+      <tr><td>Committed <code>settings.json</code> changes after a local add, install or remove</td><td>The CLI rewrites the file</td><td>Review <code>git diff</code>; restore instead of committing side effects</td></tr>
+      <tr><td>Policy keys in <code>.claude/settings.json</code> have no effect</td><td><code>strictKnownMarketplaces</code>, <code>blockedMarketplaces</code>, <code>allowManagedHooksOnly</code> are managed-only</td><td>Deploy them in managed settings</td></tr>
+      <tr><td>Private catalogue fails to clone</td><td>git needs to prompt (passphrase, credential helper) and prompts are off</td><td>Load the key in an agent, store an HTTPS credential, or set <code>CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1</code></td></tr>
+    </table></div>
+
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+        <li>Claude Code docs, "Plugins overview": <a href="https://code.claude.com/docs/en/plugins" target="_blank" rel="noopener">code.claude.com/docs/en/plugins</a></li>
+        <li>Claude Code docs, "Create a marketplace": <a href="https://code.claude.com/docs/en/plugin-marketplaces" target="_blank" rel="noopener">code.claude.com/docs/en/plugin-marketplaces</a></li>
+        <li>Claude Code docs, "Install and manage plugins": <a href="https://code.claude.com/docs/en/discover-plugins" target="_blank" rel="noopener">code.claude.com/docs/en/discover-plugins</a></li>
+        <li>Claude Code docs, "Plugin manifest reference": <a href="https://code.claude.com/docs/en/plugins-reference" target="_blank" rel="noopener">code.claude.com/docs/en/plugins-reference</a></li>
+        <li>Claude Code docs, "All settings": <a href="https://code.claude.com/docs/en/settings-reference" target="_blank" rel="noopener">code.claude.com/docs/en/settings-reference</a></li>
+        <li>Claude Code docs, "Deploy managed settings": <a href="https://code.claude.com/docs/en/managed-settings" target="_blank" rel="noopener">code.claude.com/docs/en/managed-settings</a></li>
+        <li>Measured: every Expected line in the labs comes from a run on Claude Code 2.1.322 on 11 November 2026.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "A colleague's plugin adds a useful review skill and a PreToolUse hook. You have read the SKILL.md and it is harmless. What still needs reading before you install it for the team?", "o": ["Nothing: skills are the only part that reaches the model, so the review is done", "The README, because the directory checks flag a missing README", "hooks/hooks.json, .mcp.json and every file in bin/, because those run as processes with your rights outside the sandbox", "Only the plugin.json version field, to pin it"], "a": 2, "why": "Skills only steer Claude, and Claude's tool calls still pass through permissions. Hook commands, MCP and LSP server processes run as you, outside the sandbox and outside permission rules. Read them in full and pin the entry to the commit you read."},
+    {"q": "Your catalogue entry for a third-party plugin has source {\"source\": \"github\", \"repo\": \"vendor/tool\", \"ref\": \"v2.1.0\"}. Security asks you to make sure users get exactly the code you reviewed. What do you change?", "o": ["Add \"sha\" with the full 40-character commit you reviewed", "Add \"version\": \"2.1.0\" to the catalogue entry", "Switch to ref \"main\" so fixes arrive automatically", "Set strict to false on the entry"], "a": 0, "why": "A tag can be moved by whoever controls the repository. A full sha names one tree, and when ref and sha are both set Claude Code checks out the sha. A version string only decides whether an update is detected; it does not choose the code."},
+    {"q": "You pushed three commits to your plugin's repository; the catalogue entry has ref main and plugin.json says version 1.4.0. Users report they still have the old behaviour after claude plugin update. Why?", "o": ["Auto-update is off, and claude plugin update only works with auto-update on", "The entry needs a sha before updates work at all", "Users must uninstall and reinstall to get new commits", "The computed version comes from plugin.json first; it is still 1.4.0, so Claude Code sees no update"], "a": 3, "why": "Claude Code compares computed versions, and plugin.json's version wins. Bump the version on each release, or drop version from both plugin.json and the entry so the commit sha becomes the version."},
+    {"q": "A team lead adds \"strictKnownMarketplaces\": [] and \"allowManagedHooksOnly\": true to the repository's committed .claude/settings.json to stop people adding random plugins. What happens?", "o": ["Every marketplace, including the team's, is blocked for everyone who clones the repository", "Nothing changes: both keys are managed settings and are ignored in a project file", "Plugin hooks stop running in this repository but marketplaces are unaffected", "Claude Code refuses to start in the repository until the keys are removed"], "a": 1, "why": "Both are managed-only keys; in project settings they have no effect, which you can show by adding another marketplace and watching a plugin hook still run. To enforce them, deploy managed settings. A project can use disableAllHooks or enabledPlugins false for itself."},
+    {"q": "You want every engineer who opens the infra repository to get the team's acme-tools plugin, with no machine-wide policy. Which setup is right?", "o": ["Commit .claude/settings.json with extraKnownMarketplaces pointing at the catalogue's git URL and enabledPlugins {\"acme-tools@acme-marketplace\": true}; each engineer trusts the folder and installs it", "Commit .claude/settings.json with a directory source pointing at your local clone of the catalogue", "Commit .claude/settings.local.json with enabledPlugins true so it overrides everyone's user settings", "Commit the plugin's cache folder from ~/.claude/plugins/cache into the repository"], "a": 0, "why": "Project settings declare the catalogue and the plugins the repository expects; each machine still installs, after folder trust in a session or with the CLI. A directory source records your absolute path, settings.local.json is meant to stay uncommitted, and cache folders are machine state."}
+  ]</script>
+</section>

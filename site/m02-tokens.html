@@ -1,0 +1,587 @@
+<section class="module" id="m2" data-title="Tokens and their price" data-sub="Input, output, cache write, cache read" data-level="foundation" data-prereq="" data-minutes="220">
+  <div class="overview">
+    <p class="lede">Every request to a Claude model is metered in four kinds of token, and their prices differ by a factor of up to 200 on the same model. The bill for an agent session is decided far more by the mix of those four than by the total count. This module teaches you to size text in tokens, read the meter on a real run, price it by hand, and see what makes the expensive kinds appear.</p>
+    <h3>After this module you can</h3>
+    <ul class="outcomes">
+      <li>Estimate the token count of prose, JSON and log text from its size in bytes, with ratios you measured yourself.</li>
+      <li>Name the four token types, their usage fields and their price multipliers, and say which one dominates a given bill.</li>
+      <li>Price any <code>claude -p</code> result by hand from its <code>usage</code> block and match <code>total_cost_usd</code> to the last digit.</li>
+      <li>Predict whether a change to a prompt, a flag or a setting will cause a cache miss, and how much that miss costs.</li>
+      <li>Explain what <code>total_cost_usd</code> means on a subscription plan and on an API key, and where each kind of limit shows up.</li>
+    </ul>
+    <h3>What you need</h3>
+    <ul class="needs">
+      <li>Claude Code 2.1 or later, signed in (plan or API key).</li>
+      <li>Windows PowerShell 5.1 or PowerShell 7.</li>
+      <li>About $0.02 of usage at Haiku prices for all five labs, or the equivalent share of a plan window.</li>
+    </ul>
+  </div>
+
+  <div class="lesson" id="m2-l1" data-title="What a token is and how to size text" data-minutes="15">
+    <h3>The unit the model reads and writes</h3>
+    <p>A model does not see characters or words. A tokenizer cuts the text into tokens: common words are one token, rare words split into pieces, and digits, punctuation, hex strings and identifiers break into many short tokens. Everything is counted in these units: the window size, the output limit, the rate limits and the price.</p>
+    <p>Current models have a 1M-token context window and a maximum output of 128k tokens per response. Both limits count tokens, so you need a way to turn "a 6 KB log excerpt" into a number before you paste it.</p>
+
+    <h3>Sizing rules, measured</h3>
+    <p>These ratios come from measurement, not from a rule of thumb: each sample was piped into a headless run and the growth of the prompt count was read from <code>usage</code> (you repeat this in the lab "Measure tokens per kilobyte"). Haiku 5.5 and Sonnet 5.5 gave identical counts for the same text.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Content</th><th class="num">Bytes per token</th><th class="num">Tokens per KB</th><th>Why</th></tr>
+      <tr><td>English prose (runbook narrative)</td><td class="num">3.5</td><td class="num">about 296</td><td>Common words are single tokens.</td></tr>
+      <tr><td>Compact JSON (records with ids, paths, numbers)</td><td class="num">2.0</td><td class="num">about 508</td><td>Quotes, braces, keys repeated on every record, numbers split up.</td></tr>
+      <tr><td>Application log (timestamps, hosts, hex request ids)</td><td class="num">1.8</td><td class="num">about 567</td><td>Timestamps and hex ids tokenize into many short pieces.</td></tr>
+    </table></div>
+    <p>So a 100 KB log file is not "about 25k tokens" as a prose ratio would suggest. It is closer to 57k. Machine-generated text costs roughly twice what prose of the same size costs, both in window space and in money.</p>
+
+    <h3>The fixed overhead of a session</h3>
+    <p>Before your prompt arrives, Claude Code sends its own system prompt, tool definitions and an environment block (working directory, platform, shell, git status). A headless run with no MCP servers and no personal settings measured about 21,700 prompt tokens for a one-word answer. Each MCP server, skill description and CLAUDE.md line adds to that. You pay for this overhead on every request, which is why caching matters so much: in that run about 14,500 tokens were already cached and only the rest was new.</p>
+    <pre data-cap="output"><code>input_tokens                : 2
+cache_creation_input_tokens : 7206
+cache_read_input_tokens     : 14517
+output_tokens               : 4</code></pre>
+    <p>The answer was four output tokens. The prompt side was over 21,000. For short tasks the overhead is the cost.</p>
+
+    <h3>Counting before you send</h3>
+    <p>The API offers a token counting endpoint. It is free and its result is an estimate. In Claude Code the practical counter is the run itself: the sum of <code>input_tokens</code>, <code>cache_creation_input_tokens</code> and <code>cache_read_input_tokens</code> is the full prompt the model read. Subtract a baseline run and you have the cost of whatever you added.</p>
+
+    <aside class="rule">Size machine output at about 2 bytes per token and prose at about 3.5, then measure when the number decides something.</aside>
+    <aside class="trap">Estimating a log or a JSON dump with the prose ratio underestimates it by about half. The window fills, or the bill grows, at twice the rate you planned.</aside>
+  </div>
+
+  <div class="lesson" id="m2-l2" data-title="The four token types" data-minutes="20">
+    <h3>Four meters, not one</h3>
+    <p>Every response carries a <code>usage</code> block with four counts. Each is billed at its own rate, expressed as a multiple of the model's base input price.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Type</th><th>What it counts</th><th>Usage field</th><th class="num">Price vs base input</th></tr>
+      <tr><td><span class="tok in">input</span></td><td>Prompt tokens after the last cache breakpoint: neither read from nor written to the cache.</td><td><code>input_tokens</code></td><td class="num">1x</td></tr>
+      <tr><td><span class="tok cw">cache write</span></td><td>Prompt tokens processed and stored so a later request can reuse them. Split by lifetime in <code>cache_creation.ephemeral_5m_input_tokens</code> and <code>cache_creation.ephemeral_1h_input_tokens</code>.</td><td><code>cache_creation_input_tokens</code></td><td class="num">1.25x (5 min) or 2x (1 hour)</td></tr>
+      <tr><td><span class="tok cr">cache read</span></td><td>Prompt tokens served from the cache.</td><td><code>cache_read_input_tokens</code></td><td class="num">0.1x; 0.05x on Opus 5.5 and Sonnet 5.5; 0.025x on Fable 5.2</td></tr>
+      <tr><td><span class="tok out">output</span></td><td>Everything the model generates, thinking included. The thinking share is in <code>output_tokens_details.thinking_tokens</code>.</td><td><code>output_tokens</code></td><td class="num">5x</td></tr>
+    </table></div>
+    <p>The full prompt the model read is <code>input_tokens + cache_creation_input_tokens + cache_read_input_tokens</code>. The <code>input_tokens</code> field alone is not the prompt size. In Claude Code it is usually a single-digit number, because Claude Code places a cache breakpoint at the end of the conversation and almost nothing sits after it.</p>
+
+<figure class="diagram">
+<pre class="mermaid">flowchart LR
+  r["One request"] --> i["input: after last breakpoint, 1x"]:::info
+  r --> w["cache write: stored prefix, 1.25x or 2x"]:::hot
+  r --> c["cache read: served from cache, 0.1x or less"]:::good
+  r --> o["output: generated, thinking included, 5x"]:::alt
+</pre>
+  <figcaption>Each request splits into four counts, and each count is billed at its own multiple of the base input price.</figcaption>
+</figure>
+    <h3>Thinking is output</h3>
+    <p>Extended thinking tokens are billed as output and count toward the context window. In a measured run that asked Haiku for a 400-word explanation, <code>output_tokens</code> was 1,121 and <code>output_tokens_details.thinking_tokens</code> was 302. The cost matched only when all 1,121 were priced as output, so the thinking share is inside the output count, not on top of it.</p>
+
+    <h3>Why the mix matters more than the total</h3>
+    <p>An agent re-sends its whole conversation on every turn. Take one turn at a 150,000-token context on Opus 5.5 (input $4, output $20, 5-minute write $5, read $0.20 per million), adding 2,000 new tokens and writing a 1,500-token answer. The token total is the same in both columns. The bill is not.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Tokens</th><th class="num">Warm cache</th><th class="num">Cost</th><th class="num">Cold cache (expired)</th><th class="num">Cost</th></tr>
+      <tr><td><span class="tok cr">cache read</span></td><td class="num">150,000</td><td class="num">$0.030</td><td class="num">0</td><td class="num">$0</td></tr>
+      <tr><td><span class="tok cw">cache write</span></td><td class="num">2,000</td><td class="num">$0.010</td><td class="num">152,000</td><td class="num">$0.760</td></tr>
+      <tr><td><span class="tok out">output</span></td><td class="num">1,500</td><td class="num">$0.030</td><td class="num">1,500</td><td class="num">$0.030</td></tr>
+      <tr><td>Total</td><td class="num">153,500</td><td class="num">$0.070</td><td class="num">153,500</td><td class="num">$0.790</td></tr>
+    </table></div>
+    <p>The same turn costs about eleven times more when the cache has expired. In a healthy long session, cache read is the largest type by volume, often above 90 percent, while cost is spread across cache read, cache write and output. A session where cache write stays large turn after turn is a session where something keeps changing the prefix.</p>
+
+    <h3>Reading volume and cost separately</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Pattern in <code>usage</code></th><th>What it means</th></tr>
+      <tr><td>Cache read large, cache write small, every turn</td><td>Normal warm session. Cost tracks context size times the read rate.</td></tr>
+      <tr><td>Cache write large on one turn, then small again</td><td>One cache miss: first turn, model switch, compaction, or a return after the lifetime ran out.</td></tr>
+      <tr><td>Cache write large on every turn</td><td>The prefix changes each request: a timestamp or other varying text early in the prompt, or tool definitions changing.</td></tr>
+      <tr><td>Both cache counts zero</td><td>Nothing was cached: the prompt was under the minimum cacheable size, caching is disabled, or a gateway stripped the markers.</td></tr>
+      <tr><td>Output a large share of cost</td><td>Long answers or heavy thinking. Output is 5x input and 50x to 200x a cache read.</td></tr>
+    </table></div>
+    <aside class="rule">Read the four counts before the total: volume is mostly cache read, cost is mostly whatever is going wrong.</aside>
+    <aside class="trap">Treating <code>input_tokens</code> as the prompt size. In Claude Code it reads 2 while the model actually read 21,000 tokens.</aside>
+  </div>
+
+  <div class="lesson" id="m2-l3" data-title="The price table" data-minutes="20">
+    <h3>List prices per million tokens</h3>
+    <p>These are the API list prices for the current models on 2026-11-11. Output is five times input on every current model.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Model</th><th class="num">Input</th><th class="num">5-min write</th><th class="num">1-hour write</th><th class="num">Cache read</th><th class="num">Output</th></tr>
+      <tr><td>Fable 5.2</td><td class="num">$8</td><td class="num">$10</td><td class="num">$16</td><td class="num">$0.20</td><td class="num">$40</td></tr>
+      <tr><td>Opus 5.5</td><td class="num">$4</td><td class="num">$5</td><td class="num">$8</td><td class="num">$0.20</td><td class="num">$20</td></tr>
+      <tr><td>Sonnet 5.5</td><td class="num">$2</td><td class="num">$2.50</td><td class="num">$4</td><td class="num">$0.10</td><td class="num">$10</td></tr>
+      <tr><td>Haiku 5.5, prompt up to 100k tokens</td><td class="num">$0.10</td><td class="num">$0.125</td><td class="num">$0.20</td><td class="num">$0.01</td><td class="num">$0.50</td></tr>
+      <tr><td>Haiku 5.5, prompt over 100k tokens</td><td class="num">$0.50</td><td class="num">$0.625</td><td class="num">$1</td><td class="num">$0.05</td><td class="num">$2.50</td></tr>
+    </table></div>
+    <p>The cache read column is not a flat tenth. Opus 5.5 and Sonnet 5.5 read at 0.05x input and Fable 5.2 at 0.025x, so a long warm session on Opus 5.5 costs the same per read token as one on Fable 5.2.</p>
+
+    <h3>The Haiku 5.5 step at 100k</h3>
+    <p>Haiku 5.5 is the only current model with a long-context price. When a request's prompt passes 100,000 tokens, every rate for that request steps up fivefold, output included. The prompt length that decides it counts cache reads and cache writes, not just <code>input_tokens</code>. A warm turn at 99,000 tokens of cache read costs about $0.001; the same turn at 101,000 costs about $0.005. A Haiku agent in a 1M window that drifts past 100k pays the higher rate on every turn until the context shrinks again.</p>
+
+    <h3>What one bare run costs per model</h3>
+    <p>The same one-word headless run (about 21,700 prompt tokens, mostly cache) measured on two models, with a third computed from the same counts:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Model</th><th class="num">Cache write (1 hour)</th><th class="num">Cache read</th><th class="num"><code>total_cost_usd</code></th><th>Source</th></tr>
+      <tr><td>Haiku 5.5</td><td class="num">7,206</td><td class="num">14,517</td><td class="num">$0.0016</td><td>measured</td></tr>
+      <tr><td>Sonnet 5.5</td><td class="num">6,391</td><td class="num">14,517</td><td class="num">$0.0271</td><td>measured</td></tr>
+      <tr><td>Opus 5.5</td><td class="num">6,391</td><td class="num">14,517</td><td class="num">about $0.054</td><td>computed</td></tr>
+    </table></div>
+    <p>The model choice multiplies everything. A cheap model running an expensive pattern can still cost less than an expensive model running a good one, which is why the module "Cutting cost" treats model choice and cache hygiene together.</p>
+
+    <h3>Batch: half price for work that can wait</h3>
+    <p>The Message Batches API takes up to 100,000 requests or 256 MB per batch, returns results within 24 hours, and bills input and output at 50 percent off. The discount stacks with the cache multipliers and with the Haiku step. Batch is an API feature for jobs you submit yourself, such as classifying a ticket backlog overnight. It is not a Claude Code flag, and whether Claude Code itself can use it is not documented.</p>
+
+    <h3>Other things that change the rate</h3>
+    <ul>
+      <li>Thinking: billed as output at the output rate, as shown in the previous lesson.</li>
+      <li>Data residency: Claude Code multiplies the list price by 1.1 when a response reports <code>usage.inference_geo</code> as <code>"us"</code>. A normal run reports <code>"global"</code>.</li>
+      <li>Contracted rates: Claude Code computes every figure at list price unless the managed setting <code>modelPricing</code> carries your rates. <code>modelUsage.&lt;model&gt;.costBasis</code> reads <code>"list"</code> on a default install.</li>
+      <li>API rate limits: <code>cache_read_input_tokens</code> do not count toward the input-tokens-per-minute limit, so caching also buys throughput on an API key.</li>
+    </ul>
+    <aside class="rule">Look up four numbers for your model before you estimate anything: input, write, read and output. Input alone predicts nothing about an agent.</aside>
+    <aside class="trap">Running Haiku 5.5 with a large context because "Haiku is cheap". Past 100k prompt tokens it is five times its headline price, and every request in that state pays it.</aside>
+  </div>
+
+  <div class="lesson" id="m2-l4" data-title="How prompt caching works" data-minutes="25">
+    <h3>A prefix, matched exactly</h3>
+    <p>The API caches a request by its prefix. The prefix is assembled in a fixed order: <code>tools</code>, then <code>system</code>, then <code>messages</code>. A cache entry is a hash of everything up to a breakpoint, so the match is exact: one changed character at position N recomputes everything after N. There is no per-file or per-section caching.</p>
+    <p>Claude Code builds each request so the parts that rarely change come first:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Layer</th><th>Content</th><th>Changes when</th></tr>
+      <tr><td>System prompt</td><td>Core instructions, tool definitions</td><td>The set of loaded tool definitions changes</td></tr>
+      <tr><td>Project context</td><td>CLAUDE.md, auto memory, unscoped rules</td><td>Session start, <code>/clear</code>, <code>/compact</code></td></tr>
+      <tr><td>Conversation</td><td>Messages, responses, tool results</td><td>Every turn (appended at the end)</td></tr>
+    </table></div>
+
+    <h3>Breakpoints</h3>
+    <ul>
+      <li>A breakpoint is a <code>cache_control</code> marker on a content block. A request can carry at most 4. Breakpoints themselves cost nothing.</li>
+      <li>A cache write happens only at a breakpoint. On a read, the API checks the hash at the breakpoint and then walks back up to 20 blocks looking for an entry an earlier request wrote.</li>
+      <li>Automatic caching (one top-level <code>cache_control</code>) puts the breakpoint on the last cacheable block and moves it forward as the conversation grows. It uses one of the 4 slots.</li>
+      <li>A breakpoint on a block that changes every request (a timestamp, a request id) never hits: every request writes, none reads. Put the breakpoint on the last block that stays identical.</li>
+    </ul>
+
+    <h3>Lifetimes and their prices</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Lifetime</th><th>How to request it (API)</th><th class="num">Write price</th><th>Claude Code uses it for</th></tr>
+      <tr><td>5 minutes</td><td>default</td><td class="num">1.25x input</td><td>API key, usage credits and cloud providers; on a subscription, subagents, compaction and most other side requests</td></tr>
+      <tr><td>1 hour</td><td><code>"cache_control": {"type": "ephemeral", "ttl": "1h"}</code></td><td class="num">2x input</td><td>The main conversation on a subscription within plan usage</td></tr>
+    </table></div>
+    <p>A cache hit refreshes the lifetime at no extra cost, so a session that keeps working stays warm indefinitely. The lifetime runs from the start of the request that wrote or read the entry, not from the end of the response: a response that streams for 4 minutes leaves about 1 minute of a 5-minute entry.</p>
+<figure class="diagram">
+<pre class="mermaid">stateDiagram-v2
+  [*] --> Written: "cache write"
+  Written --> Warm: "lifetime runs"
+  Warm --> Warm: "cache read refreshes it"
+  Warm --> Expired: "no request in time"
+  Expired --> Written: "next request writes again"
+</pre>
+  <figcaption>A cache entry stays warm as long as requests keep reading it inside the lifetime; after expiry the next request pays the write price again.</figcaption>
+</figure>
+    <p>Caching pays for itself only after reuse. Counting the cost of the same prefix sent n times, in units of base input:</p>
+    <div class="tablewrap"><table>
+      <tr><th class="num">Uses</th><th class="num">No cache</th><th class="num">5-min cache (0.1x read)</th><th class="num">1-hour cache (0.1x read)</th></tr>
+      <tr><td class="num">1</td><td class="num">1.0</td><td class="num">1.25</td><td class="num">2.0</td></tr>
+      <tr><td class="num">2</td><td class="num">2.0</td><td class="num">1.35</td><td class="num">2.1</td></tr>
+      <tr><td class="num">3</td><td class="num">3.0</td><td class="num">1.45</td><td class="num">2.2</td></tr>
+      <tr><td class="num">10</td><td class="num">10.0</td><td class="num">2.15</td><td class="num">2.9</td></tr>
+    </table></div>
+    <p>The 1-hour lifetime is worth its double write price only when you idle between 5 and 60 minutes and come back. For bursts that never pause past 5 minutes it is pure overhead.</p>
+
+    <h3>What invalidates what</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Change</th><th>Tools</th><th>System</th><th>Messages</th></tr>
+      <tr><td>Tool definitions (names, descriptions, parameters)</td><td>miss</td><td>miss</td><td>miss</td></tr>
+      <tr><td>Web search or citations toggled, speed (fast mode) changed</td><td>kept</td><td>miss</td><td>miss</td></tr>
+      <tr><td><code>tool_choice</code> changed, images added or removed</td><td>kept</td><td>kept</td><td>miss</td></tr>
+      <tr><td>Thinking parameters or effort changed</td><td>model-specific</td><td>model-specific</td><td>miss</td></tr>
+    </table></div>
+    <p>In Claude Code terms, these cause a full or partial re-read: switching models (each model has its own cache), changing effort on older models (Opus 5.5, Sonnet 5.5, Haiku 5.5 and Fable 5.1 or later keep the cache on an API key or subscription), turning fast mode on or off, adding or removing tools when tool search is off, <code>/compact</code> (the conversation layer), and the first session after a Claude Code upgrade. Editing files, editing CLAUDE.md mid-session, changing permission mode, invoking skills and spawning a subagent keep the parent's cache.</p>
+    <p>The cache is effectively scoped to one machine and one directory, because the system prompt carries memory paths and the first message carries the working directory and git status. In the lab runs, about 14,500 tokens of tools and core instructions were shared across directories and the remaining 7,200 were written fresh in each new folder.</p>
+
+    <h3>Minimum size</h3>
+    <p>The minimum cacheable prompt is 512 tokens on current models. A shorter prefix is processed uncached with no error: both cache counts read zero. Claude Code's overhead is far above this, so the minimum only bites when you call the API directly with short prompts.</p>
+
+    <h3>Controls in Claude Code</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Control</th><th>Effect</th></tr>
+      <tr><td><code>promptCacheTtl</code> setting or <code>CLAUDE_CODE_PROMPT_CACHE_TTL</code></td><td><code>5m</code> or <code>1h</code> for the main conversation; <code>1h</code> works on an API key</td></tr>
+      <tr><td><code>subagentPromptCacheTtl</code> or <code>CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL</code></td><td>Same for subagents and other side requests</td></tr>
+      <tr><td><code>FORCE_PROMPT_CACHING_5M=1</code></td><td>Forces 5 minutes everywhere; overrides everything else</td></tr>
+      <tr><td><code>ENABLE_PROMPT_CACHING_1H=1</code></td><td>Requests 1 hour for both buckets</td></tr>
+      <tr><td><code>DISABLE_PROMPT_CACHING=1</code></td><td>Turns caching off (debugging only)</td></tr>
+    </table></div>
+    <aside class="rule">Put whatever varies at the end of the prompt, never at the start.</aside>
+    <aside class="trap">A script that passes a date or run id through <code>--append-system-prompt</code> changes the system layer on every run, so every run re-writes about 7,000 tokens instead of reading them.</aside>
+  </div>
+
+  <div class="lesson" id="m2-l5" data-title="Reading a real result" data-minutes="20">
+    <h3>The fields that carry cost</h3>
+    <p><code>claude -p "…" --output-format json</code> prints one JSON object. Three of its fields carry token and cost data, and they do not cover the same scope.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Scope</th><th>Subagents</th><th>On <code>--resume</code></th></tr>
+      <tr><td><code>usage</code></td><td>The main loop of this run, summed over its API calls</td><td>Excluded</td><td>This run only</td></tr>
+      <tr><td><code>modelUsage.&lt;model&gt;</code></td><td>Per model: <code>inputTokens</code>, <code>outputTokens</code>, <code>cacheReadInputTokens</code>, <code>cacheCreationInputTokens</code>, the 5m/1h split, <code>costUSD</code>, <code>costBasis</code></td><td>Included</td><td>Whole conversation so far</td></tr>
+      <tr><td><code>total_cost_usd</code></td><td>Sum of <code>costUSD</code> over all models</td><td>Included</td><td>Whole conversation so far</td></tr>
+    </table></div>
+    <p>The resume behaviour was measured: a task run cost $0.00210; resuming it with one more question gave a <code>usage</code> block for the new call alone (about 300 written, 22,100 read, 65 output) while <code>total_cost_usd</code> read $0.00242, the sum of both. Use <code>modelUsage</code> or <code>total_cost_usd</code> for accounting, and <code>usage</code> for "what did this call do".</p>
+    <p>Other fields worth knowing: <code>num_turns</code> (API round trips in the agent loop), <code>usage.iterations</code> (per-call counts), <code>usage.service_tier</code>, <code>usage.inference_geo</code>, <code>duration_ms</code> and <code>duration_api_ms</code>.</p>
+
+    <h3>A real result, trimmed</h3>
+    <pre data-cap="output"><code>{
+  "total_cost_usd": 0.00158857,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 7206,
+    "cache_read_input_tokens": 14517,
+    "output_tokens": 4,
+    "output_tokens_details": { "thinking_tokens": 0 },
+    "service_tier": "standard",
+    "cache_creation": { "ephemeral_1h_input_tokens": 7206, "ephemeral_5m_input_tokens": 0 },
+    "inference_geo": "global"
+  },
+  "modelUsage": {
+    "claude-haiku-5-5": { "costUSD": 0.00158857, "costBasis": "list", "contextWindow": 1000000, "maxOutputTokens": 128000 }
+  },
+  "num_turns": 1,
+  "result": "OK"
+}</code></pre>
+
+    <h3>Working the cost by hand</h3>
+    <p>Multiply each count by its rate for the model (Haiku 5.5, prompt under 100k) and add:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Type</th><th class="num">Tokens</th><th class="num">$ per million</th><th class="num">Cost</th></tr>
+      <tr><td><span class="tok cw">cache write, 1 hour</span></td><td class="num">7,206</td><td class="num">0.20</td><td class="num">$0.00144120</td></tr>
+      <tr><td><span class="tok cr">cache read</span></td><td class="num">14,517</td><td class="num">0.01</td><td class="num">$0.00014517</td></tr>
+      <tr><td><span class="tok in">input</span></td><td class="num">2</td><td class="num">0.10</td><td class="num">$0.00000020</td></tr>
+      <tr><td><span class="tok out">output</span></td><td class="num">4</td><td class="num">0.50</td><td class="num">$0.00000200</td></tr>
+      <tr><td>Total</td><td class="num">21,729</td><td></td><td class="num">$0.00158857</td></tr>
+    </table></div>
+    <p>The hand figure equals <code>total_cost_usd</code> to the last digit. When it does not, the usual reasons are: a write priced at the wrong lifetime (check the <code>cache_creation</code> split), the Haiku step (prompt over 100k), subagent spend that is in <code>total_cost_usd</code> but not in <code>usage</code>, or a resumed run whose total includes earlier spend.</p>
+    <p>Here 91 percent of the cost is the 1-hour cache write: a cold one-shot run pays for a cache it never reuses. Without caching the same prompt would have cost about $0.0022, so even this run came out ahead only because 14,517 tokens were already warm.</p>
+
+    <h3>The cost meter</h3>
+    <p>Paste a <code>claude -p</code> JSON result or just its <code>usage</code> block below and pick the model. The meter shows the four token types by volume and by cost, and what the same run would cost with and without caching.</p>
+    <div class="tool" data-tool="cost"></div>
+
+    <h3>Estimates, not invoices</h3>
+    <p><code>total_cost_usd</code> and <code>costUSD</code> are computed on your machine from a price table bundled with Claude Code. They drift from the real bill when prices change, when the installed version does not know a model, or when billing rules apply that the client cannot model. Use them for development insight and budgeting; the authoritative figure is the Console on an API key and the plan usage page on a subscription.</p>
+    <aside class="rule">Price a run by hand once per model you use; after that, trust the meter and check its split.</aside>
+    <aside class="trap">Summing <code>total_cost_usd</code> across a script that resumes the same session. Each resumed result already contains the earlier spend, so the sum counts it again.</aside>
+  </div>
+
+  <div class="lesson" id="m2-l6" data-title="Subscription versus API: same meter, different bill" data-minutes="15">
+    <h3>The tokens are identical, the bill is not</h3>
+    <p>The model, the tokenizer and the four token types are the same whichever way you sign in. What changes is what a token costs you and which limit stops you.</p>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>API key</th><th>Subscription plan</th></tr>
+      <tr><td>You pay</td><td>Per token, by type and model, at the price table</td><td>A flat monthly fee</td></tr>
+      <tr><td>What stops you</td><td>Rate limits per minute and the monthly spend cap of your tier</td><td>A 5-hour window (starts at your first message, resets fully 5 hours later) and weekly limits; Max and Ultra also have a weekly Fable limit</td></tr>
+      <tr><td><code>total_cost_usd</code></td><td>An estimate of what you will be billed</td><td>Notional: what the same tokens would cost at list price; nothing is charged</td></tr>
+      <tr><td>Main conversation cache lifetime</td><td>5 minutes (<code>ephemeral_5m_input_tokens</code>)</td><td>1 hour (<code>ephemeral_1h_input_tokens</code>) within plan usage; 5 minutes once usage credits are in use</td></tr>
+      <tr><td>A cheaper model saves</td><td>Dollars</td><td>Window share: more work before the limit</td></tr>
+      <tr><td>Cache reads</td><td>Billed at the read rate; do not count toward input rate limits</td><td>Count less against plan limits than uncached input</td></tr>
+      <tr><td>Where to look</td><td>The Console usage and cost pages</td><td><code>/usage</code>, and Settings &gt; Usage on claude.ai</td></tr>
+    </table></div>
+
+    <h3>Windows instead of dollars</h3>
+    <p>On a plan, there is no published exchange rate between tokens and window percent. What is documented: usage depends on model, context length, features and effort; cached content counts less; the session and weekly limits span all models, so switching models does not escape them. Claude.ai, the desktop app, IDE extensions and Claude Code all draw on one pool.</p>
+    <p><code>/usage</code> works headless and costs nothing: the run reports <code>num_turns</code> 0 and <code>total_cost_usd</code> 0. On a subscription its <code>result</code> starts with the window state:</p>
+    <pre data-cap="output"><code>You are currently using your subscription to power your Claude Code usage
+
+Current session: 12% used · resets Nov 11, 6:30pm
+Current week (all models): 40% used · resets Nov 12, 1am</code></pre>
+    <p>It goes on to list what contributed to usage on this machine (sessions run at once, context size, subagents, MCP servers), each with a share.</p>
+
+    <h3>Which lifetime you observe</h3>
+    <p>The <code>cache_creation</code> split tells you which regime a run was billed under. Every run in this module's labs, on a subscription login, wrote only <code>ephemeral_1h_input_tokens</code>. On an API key the same run writes <code>ephemeral_5m_input_tokens</code> unless you set <code>promptCacheTtl</code> to <code>1h</code>. That changes the arithmetic: a 1-hour write is 2x input against 1.25x for 5 minutes, so the same cold run shows a higher notional cost on a plan than it would bill on a key, and a resumed session after a 20-minute break is warm on the plan and cold on the key.</p>
+
+    <h3>Which one a run used</h3>
+    <ul>
+      <li>With <code>-p</code>, an API key in the environment is always used when present, and the run is billed as API usage even if you also have a plan. Interactive sessions ask once.</li>
+      <li>The stream-json init line reports <code>apiKeySource</code>; on a subscription login it reads <code>"none"</code>.</li>
+      <li><code>/status</code> shows the account and login method.</li>
+    </ul>
+    <aside class="rule">On a plan, budget in window percent and watch <code>/usage</code>; on a key, budget in dollars and reconcile against the Console.</aside>
+    <aside class="trap">A stray <code>ANTHROPIC_API_KEY</code> in a CI runner or a shell profile turns every headless run into paid API usage, silently, while you believe the plan covers it.</aside>
+  </div>
+
+  <div class="labs">
+    <article class="lab" id="m2-lab1" data-title="Read the meter on one run and price it by hand" data-minutes="15">
+      <p class="goal">Run one headless prompt, find the four token counts, and reproduce <code>total_cost_usd</code> from the price table.</p>
+      <ol class="steps">
+        <li><p>Make the lab folder and move into it.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m2 | Out-Null
+Set-Location {{LAB}}/m2</code></pre></li>
+        <li><p>Run one prompt and keep the JSON result. Every headless run in this module carries <code>--setting-sources project</code> and <code>--strict-mcp-config</code>: the first keeps your personal settings and hooks out, the second loads no MCP servers. Without them your own configuration would change the token counts you measure.</p>
+          <pre><code>claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json | Set-Content -Encoding utf8 run1.json</code></pre>
+          <p class="expect"><b>Expected:</b> no screen output; <code>run1.json</code> holds one JSON object.</p></li>
+        <li><p>Print the four counts, the cache lifetime split and the meter.</p>
+          <pre><code>$r = Get-Content run1.json -Raw | ConvertFrom-Json
+$r.usage | Select-Object input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens
+$r.usage.cache_creation
+$r.total_cost_usd</code></pre>
+          <p class="expect"><b>Expected:</b> <code>input_tokens</code> 2, <code>cache_creation_input_tokens</code> about 7,200, <code>cache_read_input_tokens</code> about 14,500, <code>output_tokens</code> 4. On a subscription all the writes are under <code>ephemeral_1h_input_tokens</code> and <code>total_cost_usd</code> is about 0.0016. On an API key they are under <code>ephemeral_5m_input_tokens</code> and the cost is lower. The split between write and read depends on what was already warm; the sum stays about 21,700.</p></li>
+        <li><p>Price it by hand with the Haiku 5.5 rates (dollars per million, prompt under 100k).</p>
+          <pre><code>$in = 0.10; $out = 0.50; $w5 = 0.125; $w1 = 0.20; $rd = 0.01
+$u = $r.usage
+$cost = ($u.input_tokens * $in + $u.output_tokens * $out + $u.cache_creation.ephemeral_5m_input_tokens * $w5 + $u.cache_creation.ephemeral_1h_input_tokens * $w1 + $u.cache_read_input_tokens * $rd) / 1e6
+"by hand: {0:N8}" -f $cost
+"meter:   {0:N8}" -f $r.total_cost_usd</code></pre>
+          <p class="expect"><b>Expected:</b> two identical lines, for example <code>by hand: 0.00158857</code> and <code>meter:   0.00158857</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>Which token type is the largest share of the cost? <i>Cache write: about 91 percent on a subscription (1-hour writes at $0.20 per million). A one-word answer cost almost nothing to generate.</i></li>
+          <li>What is the full prompt size? <i><code>input_tokens + cache_creation_input_tokens + cache_read_input_tokens</code>, about 21,700. Not 2.</i></li>
+          <li>What would the same counts cost on Sonnet 5.5? <i>Write 7,206 x $4 + read 14,517 x $0.10 + output 4 x $10, per million: about $0.030, roughly 19 times the Haiku figure.</i></li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m2-lab2" data-title="Watch a cache write turn into a cache read, then break it" data-minutes="20">
+      <p class="goal">Run the same prompt repeatedly in a fresh folder, see the write become a read, then change one character of the system prompt and see the miss.</p>
+      <ol class="steps">
+        <li><p>Make a fresh subfolder. A new directory gives a new prefix, so the first run starts partly cold.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m2/cache | Out-Null
+Set-Location {{LAB}}/m2/cache</code></pre></li>
+        <li><p>Run the identical prompt twice, then twice with an appended system prompt, then once with one character of it changed.</p>
+          <pre><code>claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json | Set-Content -Encoding utf8 a.json
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json | Set-Content -Encoding utf8 b.json
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --append-system-prompt "House style: plain text." --output-format json | Set-Content -Encoding utf8 c.json
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --append-system-prompt "House style: plain text." --output-format json | Set-Content -Encoding utf8 d.json
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --append-system-prompt "House style: plain text!" --output-format json | Set-Content -Encoding utf8 e.json</code></pre></li>
+        <li><p>Tabulate the five runs.</p>
+          <pre><code>'a','b','c','d','e' | ForEach-Object {
+  $r = Get-Content "$_.json" -Raw | ConvertFrom-Json; $u = $r.usage
+  [pscustomobject]@{ run = $_; input = $u.input_tokens; cache_write = $u.cache_creation_input_tokens; cache_read = $u.cache_read_input_tokens; output = $u.output_tokens; cost = [math]::Round($r.total_cost_usd, 6) }
+} | Format-Table -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> close to this (observed):</p>
+          <pre data-cap="output"><code>run input cache_write cache_read output     cost
+--- ----- ----------- ---------- ------     ----
+a       2        7210      14517      4 0.001590
+b       2           0      21727      4 0.000219
+c       2        7216      14526      4 0.001591
+d       2           0      21742      4 0.000220
+e       2        7216      14526      4 0.001591</code></pre>
+          <p class="expect">Run b reads everything and costs about a seventh of run a. Runs c and e each rewrite about 7,200 tokens: the appended text sits in the system layer, so everything from there on misses, while the roughly 14,500 tokens of tools and core instructions before it still hit. In one of two trials, run b still wrote about 4,500 tokens; if you see that, run b once more and it reads in full.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>How many characters changed between d and e, and what did it cost? <i>One character. It turned a $0.00022 run into a $0.00159 run, about seven times more.</i></li>
+          <li>Why did c and e still read about 14,500 tokens? <i>The prefix order is tools, then system, then messages. The change sits after the tool definitions and core instructions, so the part before it still matches.</i></li>
+          <li>On an API key, how long would you have between runs before b turned into a write again? <i>5 minutes from the start of run a. On a subscription the main conversation gets 1 hour.</i></li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m2-lab3" data-title="See what output costs" data-minutes="15">
+      <p class="goal">Compare a one-word answer with a 400-word answer and measure the output share of the cost.</p>
+      <ol class="steps">
+        <li><p>From <code>{{LAB}}/m2</code>, run a short and a long answer.</p>
+          <pre><code>Set-Location {{LAB}}/m2
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json | Set-Content -Encoding utf8 short.json
+claude -p "Explain in about 400 words how a DNS lookup works, from stub resolver to authoritative server." --model haiku --setting-sources project --strict-mcp-config --output-format json | Set-Content -Encoding utf8 long.json</code></pre></li>
+        <li><p>Compare them. The output share uses the Haiku 5.5 output price of $0.50 per million.</p>
+          <pre><code>'short','long' | ForEach-Object {
+  $r = Get-Content "$_.json" -Raw | ConvertFrom-Json; $u = $r.usage
+  [pscustomobject]@{ run = $_; cache_write = $u.cache_creation_input_tokens; cache_read = $u.cache_read_input_tokens; output = $u.output_tokens; thinking = $u.output_tokens_details.thinking_tokens; words = ($r.result -split '\s+').Count; cost = [math]::Round($r.total_cost_usd, 6); output_share = '{0:P0}' -f ($u.output_tokens * 0.50 / 1e6 / $r.total_cost_usd) }
+} | Format-Table -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> close to this (observed):</p>
+          <pre data-cap="output"><code>run   cache_write cache_read output thinking words     cost output_share
+---   ----------- ---------- ------ -------- -----     ---- ------------
+short           0      21723      4        0     1 0.000219 1%
+long         4550      17191   1121      302   416 0.001643 34%</code></pre>
+          <p class="expect">The short run reads its whole prompt from cache, warmed by the first lab. The long run writes about 4,500 tokens because a different prompt changes the first message, which also carries the environment block. Its output is about 1,100 tokens, about 300 of them thinking, and is about a third of the cost.</p></li>
+        <li><p>Check that thinking is billed inside <code>output_tokens</code>: price the long run by hand.</p>
+          <pre><code>$u = (Get-Content long.json -Raw | ConvertFrom-Json).usage
+"{0:N8}" -f (($u.cache_creation.ephemeral_1h_input_tokens * 0.20 + $u.cache_creation.ephemeral_5m_input_tokens * 0.125 + $u.cache_read_input_tokens * 0.01 + $u.input_tokens * 0.10 + $u.output_tokens * 0.50) / 1e6)</code></pre>
+          <p class="expect"><b>Expected:</b> the same figure as the long run's cost, about 0.00164. Adding the thinking tokens a second time would overshoot.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>What would the long run's output alone cost on Opus 5.5? <i>1,121 x $20 per million, about $0.022: more than thirteen times the whole Haiku run.</i></li>
+          <li>Which lever cuts this run's cost most on Haiku: shorter answer or no cache write? <i>The cache write (about 55 percent) edges out output (about 34 percent) here. In a warm multi-turn session the write disappears and output becomes the main lever.</i></li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m2-lab4" data-title="Measure tokens per kilobyte" data-minutes="25">
+      <p class="goal">Build three samples (prose, JSON, log), pipe each into a run, and compute tokens per KB from the growth of the prompt count.</p>
+      <ol class="steps">
+        <li><p>Make a subfolder and write the prose sample. The samples are plain ASCII on purpose: Windows PowerShell 5.1 pipes text to a native program as ASCII by default, so other characters would arrive as question marks.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m2/sizing | Out-Null
+Set-Location {{LAB}}/m2/sizing
+$prose = @'
+When the change window opened, the team drained traffic from the first web node and watched the error rate. Nothing moved for ten minutes, so they patched the kernel, rebooted, and let the load balancer bring the node back once its health check passed. The second node took longer: a stale mount held the shutdown for almost four minutes, which nobody had seen in the test environment. The runbook now says to unmount the archive share before the reboot, and to check for open handles first. By the end of the night all six nodes were on the new build, the dashboards were quiet, and the only open item was a ticket to find out why the mount had hung in the first place.
+Capacity planning works the same way every quarter. Someone pulls the peak numbers, someone else argues that last quarter was unusual, and the group settles on a figure that leaves a little headroom without buying hardware nobody will use. The useful part is not the number itself but the list of assumptions written next to it, because that list is what you check when the forecast turns out wrong.
+'@
+($prose + "`n") * 6 | Set-Content -Encoding ascii prose.txt</code></pre>
+          <p class="expect"><b>Expected:</b> <code>prose.txt</code> of 6,428 bytes. Repeating the passage does not change the ratio: a tokenizer does not compress repeats.</p></li>
+        <li><p>Write a JSON sample and a log sample. The fixed seed makes your files match the ones measured here.</p>
+          <pre><code>Get-Random -SetSeed 42 | Out-Null
+$rows = 1..60 | ForEach-Object { [ordered]@{ id = 1000 + $_; host = "web-0$($_ % 6 + 1)"; status = (200, 200, 200, 404, 500)[(Get-Random -Maximum 5)]; latency_ms = (Get-Random -Minimum 5 -Maximum 900); path = "/api/orders/$(Get-Random -Minimum 10000 -Maximum 99999)"; tags = @('prod', 'eu-west') } }
+$rows | ConvertTo-Json -Compress | Set-Content -Encoding ascii data.json
+$levels = 'INFO', 'INFO', 'INFO', 'WARN', 'ERROR'
+$t = [datetime]'2026-11-11T08:00:00'
+$lines = 1..90 | ForEach-Object { $t = $t.AddMilliseconds((Get-Random -Maximum 4000)); '{0:yyyy-MM-ddTHH:mm:ss.fffZ} {1,-5} web-0{2} GET /api/orders/{3} status={4} dur={5}ms req={6:x10}' -f $t, $levels[(Get-Random -Maximum 5)], (Get-Random -Minimum 1 -Maximum 7), (Get-Random -Minimum 10000 -Maximum 99999), (200, 200, 404, 500)[(Get-Random -Maximum 4)], (Get-Random -Minimum 3 -Maximum 900), (Get-Random -Maximum 2147483647) }
+$lines | Set-Content -Encoding ascii app.log
+Get-ChildItem prose.txt, data.json, app.log | Select-Object Name, Length</code></pre>
+          <p class="expect"><b>Expected:</b> <code>data.json</code> about 6,650 bytes and <code>app.log</code> about 8,700 bytes.</p></li>
+        <li><p>Run a baseline, then pipe each sample into the same prompt and compute the difference.</p>
+          <pre><code>function Get-PromptTokens($file) { $u = (Get-Content $file -Raw | ConvertFrom-Json).usage; $u.input_tokens + $u.cache_creation_input_tokens + $u.cache_read_input_tokens }
+claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json | Set-Content -Encoding utf8 base.json
+$base = Get-PromptTokens base.json
+'prose.txt', 'data.json', 'app.log' | ForEach-Object {
+  $f = $_
+  Get-Content $f -Raw | claude -p "Reply with the single word OK." --model haiku --setting-sources project --strict-mcp-config --output-format json | Set-Content -Encoding utf8 "$f.result.json"
+  $bytes = (Get-Item $f).Length; $delta = (Get-PromptTokens "$f.result.json") - $base
+  [pscustomobject]@{ file = $f; bytes = $bytes; tokens = $delta; tokens_per_KB = [math]::Round($delta / ($bytes / 1024)); bytes_per_token = [math]::Round($bytes / $delta, 1) }
+} | Format-Table -AutoSize</code></pre>
+          <p class="expect"><b>Expected:</b> close to this (observed):</p>
+          <pre data-cap="output"><code>file      bytes tokens tokens_per_KB bytes_per_token
+----      ----- ------ ------------- ---------------
+prose.txt  6428   1856           296             3.5
+data.json  6651   3299           508               2
+app.log    8718   4827           567             1.8</code></pre>
+          <p class="expect">The baseline drifts by up to about 10 tokens between runs, which is noise against differences in the thousands. Piping adds no measurable wrapper: a one-character stdin moved the count by less than that noise.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <ul>
+          <li>How many tokens would a 200 KB log of this shape add to a prompt? <i>About 200 x 567, so roughly 113,000. On Haiku 5.5 that alone crosses the 100k step.</i></li>
+          <li>Why does the log cost more per byte than the JSON, though both are machine text? <i>Timestamps with milliseconds and 10-digit hex request ids break into many short tokens; the JSON has more repeated keys, which tokenize well.</i></li>
+          <li>Does piping the file make it cheaper than pasting it into the prompt? <i>No. Piped stdin becomes part of the prompt and is counted the same way.</i></li>
+        </ul>
+      </details>
+    </article>
+
+    <article class="lab" id="m2-lab5" data-title="Price a real session with the cost meter" data-minutes="30">
+      <p class="goal">Run a small multi-turn task, resume it, read the three cost fields, check your plan window, then do the same with a real task of your own and paste it into the meter.</p>
+      <ol class="steps">
+        <li><p>Make two small files to work on.</p>
+          <pre><code>New-Item -ItemType Directory -Force {{LAB}}/m2/own | Out-Null
+Set-Location {{LAB}}/m2/own
+@'
+deploy notes, 2026-11-10
+- web-01 patched, rebooted, healthy
+- web-02 stuck on a stale mount, unmounted by hand
+- db-01 not touched
+'@ | Set-Content -Encoding utf8 notes.txt
+@'
+open: find why the archive mount hung on web-02
+open: patch db-01 next window
+done: update the runbook reboot step
+'@ | Set-Content -Encoding utf8 todo.txt</code></pre></li>
+        <li><p>Run a task that needs tools. <code>--allowedTools "Read"</code> grants file reads only.</p>
+          <pre><code>claude -p "Read notes.txt and todo.txt and list the open items in one line each." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Read" --max-turns 6 --output-format json | Set-Content -Encoding utf8 task.json
+$r = Get-Content task.json -Raw | ConvertFrom-Json
+"num_turns: $($r.num_turns)  cost: $($r.total_cost_usd)"
+$r.usage | Select-Object input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens</code></pre>
+          <p class="expect"><b>Expected:</b> <code>num_turns</code> about 3 and a cost about 0.0021. Cache read is about 36,000, more than the 21,700 overhead, because <code>usage</code> sums all three API calls and each one re-read the prefix. Cache write about 7,600, output about 440.</p></li>
+        <li><p>Resume the same session with one more question and compare <code>usage</code> with <code>modelUsage</code>.</p>
+          <pre><code>claude -p "Which open item is riskier? One sentence." --resume $r.session_id --model haiku --setting-sources project --strict-mcp-config --output-format json | Set-Content -Encoding utf8 task2.json
+$r2 = Get-Content task2.json -Raw | ConvertFrom-Json
+"cost: $($r2.total_cost_usd)"
+$r2.usage | Select-Object input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens
+$r2.modelUsage.PSObject.Properties | ForEach-Object { "$($_.Name): cw=$($_.Value.cacheCreationInputTokens) cr=$($_.Value.cacheReadInputTokens) out=$($_.Value.outputTokens) cost=$($_.Value.costUSD)" }</code></pre>
+          <p class="expect"><b>Expected:</b> <code>usage</code> shows only the new call: about 300 written, 22,100 read, 65 output. <code>modelUsage</code> and <code>total_cost_usd</code> show the whole conversation: about 7,900 written, 58,000 read, 500 output, cost about 0.0024, which is the first run's cost plus about 0.0003.</p></li>
+        <li><p>Check your plan window. This runs a local command and sends nothing to the model.</p>
+          <pre><code>$p = claude -p "/usage" --setting-sources project --strict-mcp-config --output-format json | ConvertFrom-Json
+"num_turns=$($p.num_turns) cost=$($p.total_cost_usd)"
+$p.result</code></pre>
+          <p class="expect"><b>Expected:</b> <code>num_turns=0 cost=0</code>. On a subscription the result starts with <code>Current session: N% used · resets …</code> and <code>Current week (all models): N% used · resets …</code>, then a breakdown of what contributed.</p></li>
+        <li><p>Paste the contents of <code>task2.json</code> into the cost meter in the lesson "Reading a real result" and pick Haiku 5.5. Then do the same for a real task of your own: in one of your repositories, run a headless task you would normally do by hand, with the same two isolation flags, read-only tools and a turn limit, and paste its result.</p>
+          <pre><code>Get-Content task2.json -Raw | Set-Clipboard
+claude -p "Summarise what changed in the last five commits." --model haiku --setting-sources project --strict-mcp-config --allowedTools "Bash(git log *)" "Bash(git show *)" --max-turns 8 --output-format json | Set-Content -Encoding utf8 {{LAB}}/m2/mine.json</code></pre>
+          <p class="expect"><b>Expected:</b> on a small test repository with five commits the run took about 4 turns, read about 81,000 tokens from cache, wrote about 8,600, produced about 740 output tokens and cost about 0.0029; <code>permission_denials</code> listed two git commands outside the allowlist, which the model worked around. In the meter, cache read is the largest bar by volume and a different type, usually cache write or output, as the largest bar by cost. Its "with caching" figure matches <code>total_cost_usd</code>.</p></li>
+      </ol>
+      <details class="check"><summary>Self-check</summary>
+        <p>You are done when you can write down, for your own run in <code>mine.json</code>:</p>
+        <ul>
+          <li>The hand-priced cost, within 1 percent of <code>total_cost_usd</code>. <i>Use the lab 1 formula with the rates for the model in <code>modelUsage</code>. If it is off, check for subagent spend (in <code>modelUsage</code>, not in <code>usage</code>) or a second model in <code>modelUsage</code>.</i></li>
+          <li>The largest cost type and the one change that would shrink it. <i>Cache write: keep the prefix stable and stay within the lifetime. Output: ask for shorter answers or lower effort. Cache read: carry less context.</i></li>
+          <li>What the figure means for you. <i>On an API key it is the approximate charge. On a subscription it is notional, and the number that matters is the window percent from step 4.</i></li>
+        </ul>
+      </details>
+    </article>
+  </div>
+
+  <div class="reference">
+    <h3>Usage fields</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Field</th><th>Meaning</th></tr>
+      <tr><td><code>usage.input_tokens</code></td><td>Uncached prompt tokens after the last breakpoint</td></tr>
+      <tr><td><code>usage.cache_creation_input_tokens</code></td><td>Prompt tokens written to the cache</td></tr>
+      <tr><td><code>usage.cache_creation.ephemeral_5m_input_tokens</code> / <code>ephemeral_1h_input_tokens</code></td><td>The write split by lifetime</td></tr>
+      <tr><td><code>usage.cache_read_input_tokens</code></td><td>Prompt tokens served from the cache</td></tr>
+      <tr><td><code>usage.output_tokens</code></td><td>Generated tokens, thinking included</td></tr>
+      <tr><td><code>usage.output_tokens_details.thinking_tokens</code></td><td>The thinking share of output</td></tr>
+      <tr><td><code>usage.iterations</code></td><td>Per-API-call counts within the run</td></tr>
+      <tr><td><code>modelUsage.&lt;model&gt;</code></td><td>Per-model totals including subagents and earlier resumed runs; <code>costUSD</code>, <code>costBasis</code></td></tr>
+      <tr><td><code>total_cost_usd</code></td><td>Client-side estimate at list price, whole conversation</td></tr>
+      <tr><td><code>num_turns</code></td><td>API round trips in the agent loop</td></tr>
+    </table></div>
+
+    <h3>Price multipliers (base input = 1)</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Type</th><th class="num">Multiplier</th></tr>
+      <tr><td><span class="tok in">input</span></td><td class="num">1</td></tr>
+      <tr><td><span class="tok cw">cache write, 5 min</span></td><td class="num">1.25</td></tr>
+      <tr><td><span class="tok cw">cache write, 1 hour</span></td><td class="num">2</td></tr>
+      <tr><td><span class="tok cr">cache read</span></td><td class="num">0.1 (Haiku 5.5); 0.05 (Opus 5.5, Sonnet 5.5); 0.025 (Fable 5.2)</td></tr>
+      <tr><td><span class="tok out">output</span></td><td class="num">5</td></tr>
+      <tr><td>Batch API</td><td class="num">0.5 on input and output</td></tr>
+      <tr><td>Haiku 5.5, prompt over 100k</td><td class="num">5 on every rate</td></tr>
+    </table></div>
+
+    <h3>Sizing</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Content</th><th class="num">Tokens per KB</th></tr>
+      <tr><td>Prose</td><td class="num">about 296</td></tr>
+      <tr><td>Compact JSON</td><td class="num">about 508</td></tr>
+      <tr><td>Log with timestamps and hex ids</td><td class="num">about 567</td></tr>
+      <tr><td>Claude Code headless overhead, no MCP</td><td class="num">about 21,700 tokens per request</td></tr>
+    </table></div>
+
+    <h3>Flags, commands and settings</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Item</th><th>Use</th></tr>
+      <tr><td><code>--output-format json</code></td><td>One JSON result with <code>usage</code>, <code>modelUsage</code>, <code>total_cost_usd</code></td></tr>
+      <tr><td><code>--setting-sources project --strict-mcp-config</code></td><td>Measure without personal settings, hooks or MCP servers</td></tr>
+      <tr><td><code>--append-system-prompt</code></td><td>Adds to the system layer; any change misses the cache from there on</td></tr>
+      <tr><td><code>--resume &lt;id&gt;</code></td><td>Continues a session; cost fields then include earlier spend</td></tr>
+      <tr><td><code>--max-budget-usd</code></td><td>Stops a headless run at a spend estimate</td></tr>
+      <tr><td><code>claude -p "/usage"</code></td><td>Plan windows and session cost; free, works headless</td></tr>
+      <tr><td><code>promptCacheTtl</code>, <code>subagentPromptCacheTtl</code></td><td><code>5m</code> or <code>1h</code> per bucket</td></tr>
+      <tr><td><code>CLAUDE_CODE_PROMPT_CACHE_TTL</code>, <code>FORCE_PROMPT_CACHING_5M</code>, <code>ENABLE_PROMPT_CACHING_1H</code>, <code>DISABLE_PROMPT_CACHING</code></td><td>Environment overrides for the cache lifetime</td></tr>
+      <tr><td><code>modelPricing</code> (managed setting)</td><td>Report costs at contracted rates instead of list</td></tr>
+    </table></div>
+
+    <h3>Failure modes</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+      <tr><td>Cache write large on every turn</td><td>Varying text early in the prefix (date, run id in the system prompt), or tool set changing</td><td>Move varying text to the end of the user message; keep tools fixed for the session</td></tr>
+      <tr><td>First turn after a break is expensive</td><td>Cache lifetime expired (5 minutes on an API key)</td><td>Set <code>promptCacheTtl</code> to <code>1h</code> if you regularly idle 5 to 60 minutes; otherwise accept it</td></tr>
+      <tr><td>Expensive turn right after <code>/model</code></td><td>Each model has its own cache</td><td>Choose the model at session start</td></tr>
+      <tr><td>Haiku bill five times the estimate</td><td>Prompt over 100k tokens, counting cache reads and writes</td><td>Keep Haiku contexts under 100k: <code>/compact</code>, <code>/clear</code>, smaller inputs</td></tr>
+      <tr><td>Hand price does not match <code>total_cost_usd</code></td><td>Wrong write lifetime, subagent spend, resumed run, second model</td><td>Price from <code>modelUsage</code>, using the <code>cache_creation</code> split</td></tr>
+      <tr><td>Both cache counts zero</td><td>Prompt under 512 tokens, caching disabled, or a gateway dropping <code>cache_control</code></td><td>Check the environment variables and the gateway</td></tr>
+      <tr><td>Headless runs billed to the API despite a plan</td><td><code>ANTHROPIC_API_KEY</code> set; <code>-p</code> always uses it</td><td>Unset it where the plan should apply; check <code>apiKeySource</code></td></tr>
+      <tr><td>Daily totals double-counted</td><td>Summing <code>total_cost_usd</code> across resumed runs of one session</td><td>Take the last result per session</td></tr>
+    </table></div>
+    <div class="sources">
+      <h3>Sources</h3>
+      <ul>
+      <li>Claude API docs, "Pricing": <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener">platform.claude.com/docs/en/about-claude/pricing</a></li>
+      <li>Claude API docs, "Prompt caching": <a href="https://platform.claude.com/docs/en/build-with-claude/prompt-caching" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/prompt-caching</a></li>
+      <li>Claude Code docs, "Manage costs effectively": <a href="https://code.claude.com/docs/en/costs" target="_blank" rel="noopener">code.claude.com/docs/en/costs</a></li>
+      <li>Claude Code docs, "How Claude Code uses prompt caching": <a href="https://code.claude.com/docs/en/prompt-caching" target="_blank" rel="noopener">code.claude.com/docs/en/prompt-caching</a></li>
+      <li>Claude Code docs, "Track cost and usage": <a href="https://code.claude.com/docs/en/agent-sdk/cost-tracking" target="_blank" rel="noopener">code.claude.com/docs/en/agent-sdk/cost-tracking</a></li>
+      <li>Claude Code docs, "Environment variables": <a href="https://code.claude.com/docs/en/env-vars" target="_blank" rel="noopener">code.claude.com/docs/en/env-vars</a></li>
+      <li>Claude Code docs, "CLI reference": <a href="https://code.claude.com/docs/en/cli-reference" target="_blank" rel="noopener">code.claude.com/docs/en/cli-reference</a></li>
+      <li>Measured: every Expected line in the labs comes from a run on Claude Code 2.1.322 on 11 November 2026.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="application/json" class="drill">[
+    {"q": "A long Opus 5.5 session shows 1.8 million cache read tokens and 30,000 output tokens. You want to cut its cost. Which line of the bill is bigger?", "o": ["The cache reads, by a wide margin, because volume drives cost", "Neither: both are billed below the input rate", "The output: about $0.60 against about $0.36 for the reads", "They are equal, because output and cache read have the same multiplier"], "a": 2, "why": "Opus 5.5 reads cost $0.20 per million, so 1.8 million is about $0.36. Output costs $20 per million, so 30,000 is $0.60. Sixty times fewer tokens cost more: read the mix, not the volume."},
+    {"q": "A Haiku 5.5 agent runs at about 95,000 prompt tokens per turn. A colleague wants to paste a 15 KB log excerpt into its context for the rest of the session. What is the main cost concern?", "o": ["The log adds about 8,500 tokens and pushes the prompt past 100,000, so every rate on every later turn rises fivefold", "The log is billed as output because the model will quote it", "Logs cannot be cached, so it is billed as input on every turn", "There is no concern: Haiku has no long-context premium"], "a": 0, "why": "Logs run at about 567 tokens per KB, so 15 KB is about 8,500 tokens. Haiku 5.5 prices prompts over 100,000 tokens, counting cache reads and writes, at five times every rate including output. Summarise the log or trim the context first."},
+    {"q": "On an API key, a developer comes back to a large session after a 20-minute meeting and the first turn costs as much as the previous twenty. Nothing else changed. What explains it, and what is the lever?", "o": ["Claude Code compacted the session during the break; turn off compaction", "The model changed during the break; pin the model with --model", "The cache was invalidated by edits to CLAUDE.md; avoid editing it mid-session", "The 5-minute cache expired, so the whole context was rewritten; set promptCacheTtl to 1h if such breaks are routine"], "a": 3, "why": "API-key sessions get 5-minute cache writes on the main conversation. After 20 idle minutes the prefix is gone and the next turn writes it again at 1.25x input. A 1-hour lifetime costs 2x per write but survives breaks of up to an hour, which pays off when breaks are common. Mid-session CLAUDE.md edits do not invalidate the cache."},
+    {"q": "A nightly script runs claude -p a hundred times with --append-system-prompt \"Run id: RUN-ID\" so the logs can be matched later. Each run shows about 7,000 cache-write tokens and no hit beyond about 14,500 shared tokens. What is the best fix?", "o": ["Switch to the 1-hour cache lifetime so entries last longer", "Move the run id out of the system prompt into the end of the user prompt, or into the script's own log only", "Add more cache breakpoints so the run id is cached separately", "Disable prompt caching, since it does not help this workload"], "a": 1, "why": "The system layer comes before the messages, so a value that changes every run (here a fresh id per run) invalidates everything from that point on. A longer lifetime or more breakpoints cannot help, because the prefix never repeats. Varying text belongs at the end, or outside the prompt."},
+    {"q": "On a Max subscription, a day of headless runs adds up to $40 in total_cost_usd. Your manager asks whether you overspent. What is the accurate answer?", "o": ["Yes: subscription runs are billed at API rates on top of the fee", "It depends on whether the runs used the 1-hour cache, which is billed separately", "No money was charged for those runs within plan usage; the figure is a list-price estimate, and the limit that matters is the window percent shown by /usage", "The figure is wrong: total_cost_usd is always zero on a subscription"], "a": 2, "why": "total_cost_usd is a client-side estimate at list price. On a plan within its included usage it is notional; the real constraint is the 5-hour window and weekly limits. The exceptions are usage credits, billed at API rates once turned on and used, and an ANTHROPIC_API_KEY in the environment, which -p always uses."}
+  ]</script>
+</section>
