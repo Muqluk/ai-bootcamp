@@ -57,15 +57,18 @@ function Expand-Diagrams([string]$html, [string]$where) {
 $done = 0
 foreach ($m in $modules) {
   $f = Join-Path $site $m.file
-  if (Test-Path $f) {
-    $raw = [IO.File]::ReadAllText($f, $utf8)
+  # A fragment still being written (a lab step marked EXPECTED-TBD, or no closing tag yet) is built as a stub, not shipped half done.
+  $raw = if (Test-Path $f) { [IO.File]::ReadAllText($f, $utf8) } else { '' }
+  if ($raw -and ($raw.Contains('EXPECTED-TBD') -or -not $raw.TrimEnd().EndsWith('</section>'))) { "pending: $($m.file) is still being written; built as a stub"; $raw = '' }
+  $m.stub = -not $raw
+  if ($raw) {
     $m.html = Expand-Diagrams $raw $m.file; $done++
     if ($m.html -notmatch "<section class=`"module`" id=`"$($m.id)`"") { throw "build: $($m.file) does not start a section.module with id $($m.id)" }
     # Checked on the fragment as written: a rendered diagram's inline SVG carries its own style element.
     if ($raw -match '<script(?![^>]*class="drill")' -or $raw -match '<style|\son\w+=|<link|<img') { Write-Warning "build: $($m.file) has a script, style, handler or image; check it" }
     try { $q = [regex]::Match($m.html, '(?s)<script type="application/json" class="drill">(.*?)</script>').Groups[1].Value | ConvertFrom-Json; $m.calls = @($q).Count } catch { throw "build: $($m.file) drill JSON does not parse: $_" }
   } else {
-    $m.html = "<section class=`"module`" id=`"$($m.id)`" data-title=`"$($m.title)`" data-sub=`"$($m.sub)`" data-level=`"$($m.level)`" data-prereq=`"$($m.prereq -join ',')`" data-minutes=`"0`"><div class=`"overview`"><p class=`"lede`">This module is being written. Check back shortly.</p></div><div class=`"labs`"></div><script type=`"application/json`" class=`"drill`">[]</script></section>"
+    $m.html = "<section class=`"module`" id=`"$($m.id)`" data-title=`"$($m.title)`" data-sub=`"$($m.sub)`" data-level=`"$($m.level)`" data-prereq=`"$($m.prereq -join ',')`" data-minutes=`"0`"><div class=`"overview`"><p class=`"lede`">This module is planned and not written yet. The catalogue lists the modules that are ready.</p></div><div class=`"labs`"></div><script type=`"application/json`" class=`"drill`">[]</script></section>"
     $m.calls = 0
   }
   $m.minutes = [int]([regex]::Match($m.html, '<section class="module"[^>]*data-minutes="(\d+)"').Groups[1].Value)
@@ -87,7 +90,7 @@ function Href([string]$id, [string]$edition, [string]$kind) {
 function Render([string]$self) {
   $edition = 'portable'; $kind = 'file'
   $man = [ordered]@{ edition = $edition; kind = $kind; self = $self; catalogue = (Href 'index' $edition $kind); modules = @($modules | ForEach-Object {
-        [ordered]@{ id = $_.id; title = $_.title; sub = $_.sub; level = $_.level; prereq = @($_.prereq); minutes = $_.minutes; lessons = $_.lessons; labs = $_.labs; calls = $_.calls; href = (Href $_.id $edition $kind) } }) }
+        [ordered]@{ id = $_.id; title = $_.title; sub = $_.sub; level = $_.level; prereq = @($_.prereq); minutes = $_.minutes; stub = [bool]$_.stub; lessons = $_.lessons; labs = $_.labs; calls = $_.calls; href = (Href $_.id $edition $kind) } }) }
   $catHref = Href 'index' $edition $kind
   $target = ''
   if ($self -eq 'index') {
@@ -95,7 +98,7 @@ function Render([string]$self) {
   } else {
     $m = $modules | Where-Object { $_.id -eq $self }
     $catLink = if ($catHref) { "<a href=`"$catHref`"$target>All modules</a>" } else { '' }
-    $body = $moduleBody.Replace('{{FRAGMENT}}', $m.html).Replace('{{CATALOGUE_LINK}}', $catLink).Replace('{{FILE}}', $m.file)
+    $body = $moduleBody.Replace('{{FRAGMENT}}', $m.html).Replace('{{CATALOGUE_LINK}}', $catLink).Replace('{{FILE}}', $m.file).Replace('{{SHARE_LEDE}}', $(if ($m.stub) { 'This module is planned and not written yet, so there is little to hand on. Once it is written, the same link and file carry the full module.' } else { 'This module is a complete page on its own: briefing, labs, judgment calls and cheat sheet. It names no organization, host, account or internal tool, and every lab runs on plain Claude Code in a scratch folder.' }))
     $title = "$($m.title) $([char]0xB7) AI/LLM Bootcamp"; $crumb = ''; $file = $m.file; $useTools = $m.tools
     $catAttr = if ($catHref) { "href=`"$catHref`"$target" } else { 'href="#overview"' }
   }

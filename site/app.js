@@ -99,9 +99,9 @@
       MAN.modules.forEach(function (m) {
         if (filter !== 'all' && m.level !== filter) return;
         var c = link(el(m.href ? 'a' : 'div', 'mcard'), m.href);
-        var top = el('div', 'chips'); top.appendChild(el('span', 'n', 'MODULE ' + num(m.id))); top.appendChild(levelChip(m.level)); top.appendChild(el('span', 'chip', mins(m.minutes))); c.appendChild(top);
+        var top = el('div', 'chips'); top.appendChild(el('span', 'n', 'MODULE ' + num(m.id))); top.appendChild(levelChip(m.level)); top.appendChild(el('span', 'chip', m.stub ? 'Planned' : mins(m.minutes))); c.appendChild(top);
         c.appendChild(el('span', 't', m.title)); c.appendChild(el('span', 's', m.sub));
-        c.appendChild(el('span', 'pre', (m.lessons || 0) + ' lessons · ' + (m.labs || 0) + ' labs · ' + (m.prereq.length ? 'after ' + m.prereq.map(function (p) { var x = modById(p); return x ? num(p) + ' ' + x.title : p; }).join(', ') : 'no prerequisites')));
+        c.appendChild(el('span', 'pre', (m.stub ? 'Not written yet · ' : (m.lessons || 0) + ' lessons · ' + (m.labs || 0) + ' labs · ') + (m.prereq.length ? 'after ' + m.prereq.map(function (p) { var x = modById(p); return x ? num(p) + ' ' + x.title : p; }).join(', ') : 'no prerequisites')));
         if (!m.href) c.appendChild(el('span', 'pre', 'Published as its own page; ask for the link or use the file set.'));
         var S = readState(m.id), d = doneCount(S), total = (m.labs || 0) + (m.calls || 0);
         if (d && total) { var mt = el('div', 'meter'), sp = el('span'); sp.style.width = Math.min(100, Math.round(100 * d / total)) + '%'; mt.appendChild(sp); c.appendChild(mt); }

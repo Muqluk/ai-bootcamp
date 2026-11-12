@@ -5,7 +5,7 @@
 **Run it, read the meter, then change one thing.**<br>
 A hands-on course on Claude Code and LLMs, for people who already run systems for a living.
 
-![Licence: MIT code](https://img.shields.io/badge/code-MIT-2ea44f?style=flat-square) ![Licence: CC BY 4.0 content](https://img.shields.io/badge/content-CC%20BY%204.0-1f6feb?style=flat-square) ![Works offline](https://img.shields.io/badge/works-offline-8250df?style=flat-square) ![No install](https://img.shields.io/badge/install-none-bf8700?style=flat-square) ![Modules](https://img.shields.io/badge/modules-13%20written%20%C2%B7%2024%20planned-d1242f?style=flat-square)
+![Licence: MIT code](https://img.shields.io/badge/code-MIT-2ea44f?style=flat-square) ![Licence: CC BY 4.0 content](https://img.shields.io/badge/content-CC%20BY%204.0-1f6feb?style=flat-square) ![Works offline](https://img.shields.io/badge/works-offline-8250df?style=flat-square) ![No install](https://img.shields.io/badge/install-none-bf8700?style=flat-square) ![Modules](https://img.shields.io/badge/modules-24%20%C2%B7%20120%20labs-2ea44f?style=flat-square)
 
 <img src="docs/images/catalogue.png" alt="The course catalogue: module cards with level, time and prerequisites, and a level filter" width="900">
 
@@ -13,7 +13,7 @@ A hands-on course on Claude Code and LLMs, for people who already run systems fo
 
 ## What it is
 
-A bootcamp in 24 modules (13 written, 11 on the way), built as plain static HTML. Each module is its own page with a briefing in several lessons, **labs you run in a scratch folder**, judgment calls, a drill and a cheat sheet. Every lab ends in a number or a file you can check, because the habits that matter here are measuring and verifying.
+A bootcamp in 24 modules and 120 labs, built as plain static HTML. Each module is its own page with a briefing in several lessons, **labs you run in a scratch folder**, judgment calls, a drill and a cheat sheet. Every lab ends in a number or a file you can check, because the habits that matter here are measuring and verifying.
 
 Topics: context, tokens and cost, skills, commands, hooks, plugins, headless runs and subagents, orchestration, telemetry, evals and A/B testing, session transcripts, model choice.
 
@@ -57,7 +57,7 @@ Foundation modules assume nothing but a working install. Practitioner modules bu
 
 ## Modules
 
-Modules 1 to 13 are written. Modules 14 to 24 appear in the catalogue as "being written".
+All 24 modules are written: 120 labs, about 92 hours in all. The links below open the built pages from a clone; on GitHub they show the HTML source, so clone the repo (or download it as a zip) and open the files locally.
 
 | # | Module | Level | Time | What you learn |
 | ---: | --- | --- | ---: | --- |
@@ -74,17 +74,17 @@ Modules 1 to 13 are written. Modules 14 to 24 appear in the catalogue as "being 
 | 11 | [Evals and A/B testing](dist/m11-ab-testing.html) | Advanced | 4.2 h | Compare prompts, models and setups without fooling yourself |
 | 12 | [Session transcripts](dist/m12-transcripts.html) | Practitioner | 3.6 h | The anatomy of the JSONL behind every session |
 | 13 | [Models and ways to teach them](dist/m13-models.html) | Foundation | 3.8 h | Model tiers, retrieval, ingestion, fine-tuning and what you will actually use |
-| 14 | [Agent SDK and agent teams](dist/m14-agent-sdk.html) | Advanced | planned | Your own agent loop, and sessions that message each other |
-| 15 | [The wider ecosystem](dist/m15-ecosystem.html) | Practitioner | planned | Multiplexers, community skills and how to vet them |
-| 16 | [Security](dist/m16-security.html) | Practitioner | planned | Permissions, sandboxing, prompt injection and what you install |
-| 17 | [Daily workflow](dist/m17-workflow.html) | Foundation | planned | Plan mode, rewind, worktrees, effort and git habits |
-| 18 | [Unattended and CI](dist/m18-ci.html) | Advanced | planned | GitHub Actions, review in the pipeline, scheduled runs |
-| 19 | [Claude API building blocks](dist/m19-api.html) | Practitioner | planned | Tool use, structured outputs, vision, citations, batch, computer use |
-| 20 | [Writing for agents](dist/m20-writing.html) | Foundation | planned | Briefs, specs, handoffs and CLAUDE.md design |
-| 21 | [Where Claude Code runs](dist/m21-surfaces.html) | Foundation | planned | Terminal, VS Code, JetBrains, desktop and web compared |
-| 22 | [Sensitive data](dist/m22-sensitive-data.html) | Practitioner | planned | PHI, PII and secrets: what leaves the machine and how to stop it |
-| 23 | [MCP: anatomy of the protocol](dist/m23-mcp.html) | Practitioner | planned | JSON-RPC, capabilities, transports, auth, and a server you build |
-| 24 | [MCP server or CLI tool](dist/m24-mcp-or-cli.html) | Advanced | planned | The same job both ways, measured in tokens and turns |
+| 14 | [Agent SDK and agent teams](dist/m14-agent-sdk.html) | Advanced | 3.8 h | Your own agent loop, and sessions that message each other |
+| 15 | [The wider ecosystem](dist/m15-ecosystem.html) | Practitioner | 3.5 h | Multiplexers, community skills and how to vet them |
+| 16 | [Security](dist/m16-security.html) | Practitioner | 3.7 h | Permissions, sandboxing, prompt injection and what you install |
+| 17 | [Daily workflow](dist/m17-workflow.html) | Foundation | 3.5 h | Plan mode, rewind, worktrees, effort and git habits |
+| 18 | [Unattended and CI](dist/m18-ci.html) | Advanced | 3.8 h | GitHub Actions, review in the pipeline, scheduled runs |
+| 19 | [Claude API building blocks](dist/m19-api.html) | Practitioner | 3.7 h | Tool use, structured outputs, vision, citations, batch, computer use |
+| 20 | [Writing for agents](dist/m20-writing.html) | Foundation | 3.8 h | Briefs, specs, handoffs and CLAUDE.md design |
+| 21 | [Where Claude Code runs](dist/m21-surfaces.html) | Foundation | 2.8 h | Terminal, VS Code, JetBrains, desktop and web compared |
+| 22 | [Sensitive data](dist/m22-sensitive-data.html) | Practitioner | 4.4 h | PHI, PII and secrets: what leaves the machine and how to stop it |
+| 23 | [MCP: anatomy of the protocol](dist/m23-mcp.html) | Practitioner | 3.8 h | JSON-RPC, capabilities, transports, auth, and a server you build |
+| 24 | [MCP server or CLI tool](dist/m24-mcp-or-cli.html) | Advanced | 3.8 h | The same job both ways, measured in tokens and turns |
 
 ## Layout
 

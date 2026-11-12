@@ -18,18 +18,19 @@ for (let i = 0; i < args.length; i++) {
 
 // [rule name, regex]. Case-sensitive unless the regex says otherwise.
 const RULES = [
-  ['email-address', /\b[A-Za-z0-9._%+-]+@(?!example\.(com|org|net)\b|users\.noreply\.github\.com\b)[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/],
+  ['email-address', /\b[A-Za-z0-9._%+-]+@(?!example\.(com|org|net|invalid)\b|users\.noreply\.github\.com\b|(?<=\bnoreply@)anthropic\.com\b)[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/],
   ['private-ip-172.16', /\b172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}\b/],
   ['private-ip-10', /\b10\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/],
   ['private-ip-192.168', /\b192\.168\.\d{1,3}\.\d{1,3}\b/],
   ['internal-domain', /([a-z0-9-]\.(local|internal|corp|lan)(?![.\w-]))/i],
   ['unc-share-path', /\\\\[A-Za-z0-9_.-]+\\[A-Za-z0-9_$.-]+/],
   ['local-repo-path', /C:[\\/]+(repo|scratch)\b/i],
-  ['user-profile-path', /C:[\\/]+Users[\\/]+(?!you\b|<|%|\$|\{|\.\.\.|Public\b|Default\b|name\b|USERNAME\b|username\b|user\b|me\b)[A-Za-z0-9._-]+/i],
-  ['unix-home-path', /\/(home|Users)\/(?!you\b|user\b|me\b|name\b|username\b|<|\$|\{|\.\.\.)[a-z][A-Za-z0-9._-]+/],
+  ['user-profile-path', /C:[\\/]+Users[\\/]+(?!you\b|<|%|\$|\{|\.\.\.|Public\b|Default\b|name\b|USERNAME\b|username\b|user\b|me\b|alice\b)[A-Za-z0-9._-]+/i],
+  ['unix-home-path', /\/(home|Users)\/(?!you\b|user\b|me\b|name\b|username\b|alice\b|<|\$|\{|\.\.\.)[a-z][A-Za-z0-9._-]+/],
   ['tracker-id', /\bW-\d{2,}\b/],
   ['herdr-pane-id', /\bw\d+:p[A-Za-z0-9]+\b/],
-  ['secrets-path', /\bsecrets[\\/]/i],
+  // A permission rule such as Read(./secrets/**) is documented syntax, not a path on this machine.
+  ['secrets-path', /(?<!\b(?:Read|Edit|Write)\(\.?\/)\bsecrets[\\/]/i],
   ['github-token', /\bgh[pousr]_[A-Za-z0-9]{20,}/],
   ['anthropic-key', /\bsk-ant-[A-Za-z0-9_-]{10,}/],
   ['aws-key', /\bAKIA[0-9A-Z]{16}\b/],
