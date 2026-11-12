@@ -1,45 +1,29 @@
-<div align="center">
-
 # AI/LLM Bootcamp
 
-**Run it, read the meter, then change one thing.**<br>
-A hands-on course on Claude Code and LLMs, for people who already run systems for a living.
+**Run it, read the meter, then change one thing.**
 
-![Licence: MIT code](https://img.shields.io/badge/code-MIT-2ea44f?style=flat-square) ![Licence: CC BY 4.0 content](https://img.shields.io/badge/content-CC%20BY%204.0-1f6feb?style=flat-square) ![Works offline](https://img.shields.io/badge/works-offline-8250df?style=flat-square) ![No install](https://img.shields.io/badge/install-none-bf8700?style=flat-square) ![Modules](https://img.shields.io/badge/modules-24%20%C2%B7%20120%20labs-2ea44f?style=flat-square)
+A hands-on course on Claude Code and LLMs in 24 modules and 120 labs. Each module is one page: short lessons, labs that end in a number or a file you can check, a drill and a cheat sheet. It runs in your web browser, offline, with nothing to install.
 
-<img src="docs/images/catalogue.png" alt="The course catalogue: module cards with level, time and prerequisites, and a level filter" width="900">
+## Start here
 
-</div>
+You need only Claude Code, working in a terminal. Copy this prompt, paste it into Claude Code and press Enter:
 
-## What it is
+```text
+Set up the AI/LLM Bootcamp course for me. I am new to this, so before each step tell me in one plain sentence what it does.
+1. Download the course from https://github.com/Muqluk/ai-bootcamp into a folder named ai-bootcamp in my home folder, so that ai-bootcamp/dist/index.html exists. Use git if it is installed; if not, download https://github.com/Muqluk/ai-bootcamp/archive/refs/heads/main.zip and unzip it there. If the folder is already there, update it instead.
+2. Make an empty folder named bootcamp-labs in my home folder. The course's labs work in it and call it ~/bootcamp-labs.
+3. Open ai-bootcamp/dist/index.html in my web browser.
+4. Tell me the full path of both folders.
+Do not install anything and do not change any settings.
+```
 
-A bootcamp in 24 modules and 120 labs, built as plain static HTML. Each module is its own page with a briefing in several lessons, **labs you run in a scratch folder**, judgment calls, a drill and a cheat sheet. Every lab ends in a number or a file you can check, because the habits that matter here are measuring and verifying.
-
-Topics: context, tokens and cost, skills, commands, hooks, plugins, headless runs and subagents, orchestration, telemetry, evals and A/B testing, session transcripts, model choice.
-
-**Who it's for:** engineers, admins and platform people who already run systems and want to use Claude Code and the Claude API well, with evidence rather than folklore. Take one module, a path, or all of them: each module lists its prerequisites and opens with a recap of what it needs from them, so you can start anywhere.
-
-## Open it
-
-Open **`dist/index.html`** in a browser. That's the whole install.
-
-- Works offline from a `file://` path, and behind any static web server.
-- Keep the `dist/` folder together: the module pages sit beside the catalogue and link to each other.
-- Progress is stored per module in your browser; each module's overview has a progress code that carries it to another browser.
-- Pages ask Google Fonts for their typefaces when online and fall back to system fonts offline.
-
-<div align="center">
-<img src="docs/images/module-page.png" alt="A module page: lesson navigation on the left, learning outcomes and requirements on the right" width="760">
-<br><sub>A module page: lessons down the left, outcomes and what you need up front.</sub>
-</div>
+Claude asks before it runs each command. Read what it is about to run, then allow it: checking what the model does is the habit this course teaches. When the catalogue opens in your browser, start with any Foundation module.
 
 ## Pick by level
 
-Foundation modules assume nothing but a working install. Practitioner modules build things. Advanced modules run them at scale and prove what changed. The catalogue's level filter shows each tier:
-
 ### Foundation
 
-*Assume nothing but a working install.*
+*Assume nothing but a working Claude Code.*
 
 <img src="docs/images/level-foundation.png" alt="Catalogue filtered to Foundation modules" width="900">
 
@@ -57,7 +41,7 @@ Foundation modules assume nothing but a working install. Practitioner modules bu
 
 ## Modules
 
-All 24 modules are written: 120 labs, about 92 hours in all. The links below open the built pages from a clone; on GitHub they show the HTML source, so clone the repo (or download it as a zip) and open the files locally.
+About 92 hours in all. Each module lists its prerequisites and opens with a recap of them, so you can start anywhere. The links open the pages once the course is on your computer (the prompt above does that); on GitHub they show the page source.
 
 | # | Module | Level | Time | What you learn |
 | ---: | --- | --- | ---: | --- |
@@ -86,52 +70,18 @@ All 24 modules are written: 120 labs, about 92 hours in all. The links below ope
 | 23 | [MCP: anatomy of the protocol](dist/m23-mcp.html) | Practitioner | 3.8 h | JSON-RPC, capabilities, transports, auth, and a server you build |
 | 24 | [MCP server or CLI tool](dist/m24-mcp-or-cli.html) | Advanced | 3.8 h | The same job both ways, measured in tokens and turns |
 
-## Layout
+## For contributors
 
-| Path | What it is |
-| --- | --- |
-| `site/` | Source: `page.html` frame, `style.css`, `app.js`, `tools.js` (the in-page calculators), `catalogue.html`, one `mNN-*.html` fragment per module, `diagrams/` (pre-rendered SVG) |
-| `dist/` | The built course (committed): `index.html` and one self-contained page per module |
-| `tools/` | Build and check helpers (below) |
-| `reference/` | Fact sheets the modules were written from, with their source links |
-| `docs/images/` | The screenshots on this page |
+The source is in `site/`, the built pages in `dist/`, and the build and check helpers in `tools/`. Rebuilding needs PowerShell and Node 18 or later, and no packages. After editing, paste this into Claude Code from the `ai-bootcamp` folder:
 
-## Build
-
-Requires Windows PowerShell 5.1 or PowerShell 7, and Node 18 or later. No packages.
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File site/build.ps1   # writes dist/ and out/ai-bootcamp.zip
-node tools/test-tools.js                                                   # maths behind the in-page calculators
-node tools/render-diagrams.mjs --check                                     # every Mermaid block has a rendered SVG
-node tools/render-diagrams.mjs                                             # render missing diagrams (Chrome, Mermaid pinned and hash-checked)
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/shoot.ps1 -Shots 'index.html|1300x1600'   # headless screenshot
-node tools/public-scan.js                                                  # public-release scan (below)
+```text
+Rebuild this course and check it: run site/build.ps1 with PowerShell, then node tools/test-tools.js, node tools/render-diagrams.mjs --check and node tools/public-scan.js. Tell me whether each one passed and show any failure in full. Change nothing else.
 ```
 
-Labs that run `claude -p` can be wrapped with `tools/lab-run.ps1`, which keeps your own settings, hooks and MCP servers out of the run.
+`tools/public-scan.js` must pass before you publish a change. It reads extra private patterns, one regex per line, from the file named by the `PUBLIC_SCAN_EXTRA` environment variable or from `tools/.scan-extra.txt` (git-ignored).
 
-## Themes
-
-Five themes (`?style=a` to `?style=e`) in light and dark (`?mode=light` or `?mode=dark`), also picked from the **Theme** menu in the page header. The screenshots above use the default light theme.
-
-## Before you publish a change
-
-`node tools/public-scan.js` greps the whole tree for emails, private host names and addresses, internal domains, local paths, tracker ids, secrets, and image metadata, and exits non-zero on a hit. Keep your own private patterns (names, employer) one regex per line in a file named by the `PUBLIC_SCAN_EXTRA` environment variable, or in `tools/.scan-extra.txt` (git-ignored). To run it on every commit:
-
-```sh
-cp tools/pre-commit.sample .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
-```
-
-## Sources and credits policy
-
-- Every claim about a product comes from its public documentation, linked in the module's sources block, or from a run you can repeat with the labs. Where the documentation is silent, the module says so and gives you the lab that finds out.
-- Measured numbers (tokens, cost, timings) are from real runs in November 2026 on the versions named beside them. Yours will differ a little; the shape should not.
-- Vendor names and product names belong to their owners. This course is independent and is not affiliated with or endorsed by Anthropic.
-- Examples use placeholder names (acme, web-01, example.com). The course contains no employer code or data.
-- Mermaid (MIT) renders the diagrams at build time; the pages carry the resulting SVG and no library.
+This course is independent and not affiliated with or endorsed by Anthropic. Product claims link to public documentation in each module's sources block, and measured numbers come from runs in November 2026.
 
 ## Licence
 
-- **Code** (`tools/`, `site/build.ps1`, `site/app.js`, `site/tools.js`, and other scripts): MIT, see [`LICENSE`](LICENSE).
-- **Content** (the lessons, labs, drills, diagrams, and reference sheets, including the built pages in `dist/`): Creative Commons Attribution 4.0 International, see [`LICENSE-CONTENT.md`](LICENSE-CONTENT.md).
+Code is MIT ([`LICENSE`](LICENSE)); content, including the built pages in `dist/`, is CC BY 4.0 ([`LICENSE-CONTENT.md`](LICENSE-CONTENT.md)).
