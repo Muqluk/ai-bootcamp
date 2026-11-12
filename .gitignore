@@ -6,3 +6,4 @@ tools/.scan-extra.txt
 .scan-extra.txt
 Thumbs.db
 .DS_Store
+debug.log
